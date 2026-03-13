@@ -5,7 +5,8 @@
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { EphemerisData, EphemerisResponse, DataSource } from '@/lib/types';
 
 // --- Types ---
@@ -38,11 +39,40 @@ interface UseEphemerisOptions {
   timeoutMs?: number;
 }
 
+interface FetchEphemerisParams {
+  date: string;
+  timeoutMs: number;
+  force?: boolean;
+  signal?: AbortSignal;
+}
+
+class EphemerisFetchError extends Error {
+  readonly type: EphemerisErrorType;
+  readonly canRetry: boolean;
+  readonly technicalDetails?: string;
+  readonly isAbort: boolean;
+
+  constructor(
+    type: EphemerisErrorType,
+    message: string,
+    canRetry: boolean,
+    technicalDetails?: string,
+    isAbort = false
+  ) {
+    super(message);
+    this.type = type;
+    this.canRetry = canRetry;
+    this.technicalDetails = technicalDetails;
+    this.isAbort = isAbort;
+  }
+}
+
 // --- Constants ---
 
 const DEFAULT_TIMEOUT_MS = 15000;
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
+const STALE_TIME_MS = 60 * 1000; // 1 minute
 
 // --- Helper Functions (outside hook for stability) ---
 
@@ -75,6 +105,126 @@ async function loadFallbackData(): Promise<EphemerisData[]> {
   }
 }
 
+function toEphemerisError(error: EphemerisFetchError): EphemerisError {
+  return {
+    type: error.type,
+    message: error.message,
+    technicalDetails: error.technicalDetails,
+    canRetry: error.canRetry,
+  };
+}
+
+async function fetchEphemeris({
+  date,
+  timeoutMs,
+  force = false,
+  signal,
+}: FetchEphemerisParams): Promise<EphemerisResponse> {
+  const abortController = new AbortController();
+  let didTimeout = false;
+
+  const timeoutId = setTimeout(() => {
+    didTimeout = true;
+    abortController.abort();
+  }, timeoutMs);
+
+  const handleAbort = () => abortController.abort();
+  if (signal) {
+    if (signal.aborted) {
+      abortController.abort();
+    } else {
+      signal.addEventListener('abort', handleAbort, { once: true });
+    }
+  }
+
+  try {
+    const url = force
+      ? `/api/ephemeris?date=${date}&force=true`
+      : `/api/ephemeris?date=${date}`;
+
+    const response = await fetch(url, {
+      signal: abortController.signal,
+    });
+
+    if (!response.ok) {
+      throw new EphemerisFetchError(
+        'NASA_API_ERROR',
+        `API error: ${response.status} ${response.statusText}`,
+        true
+      );
+    }
+
+    const result: EphemerisResponse = await response.json();
+
+    if (!result.data || !Array.isArray(result.data)) {
+      throw new EphemerisFetchError(
+        'VALIDATION_ERROR',
+        'Invalid API response format: missing data array',
+        false
+      );
+    }
+
+    const validatedData = validateData(result.data);
+
+    if (validatedData.length === 0) {
+      throw new EphemerisFetchError(
+        'VALIDATION_ERROR',
+        'No valid ephemeris data received',
+        false
+      );
+    }
+
+    return {
+      ...result,
+      data: validatedData,
+    };
+  } catch (error) {
+    if (error instanceof EphemerisFetchError) {
+      throw error;
+    }
+
+    if (error instanceof Error && error.name === 'AbortError') {
+      if (didTimeout) {
+        throw new EphemerisFetchError(
+          'TIMEOUT_ERROR',
+          'Request timed out',
+          true,
+          `Timeout after ${timeoutMs}ms`
+        );
+      }
+
+      throw new EphemerisFetchError(
+        'UNKNOWN_ERROR',
+        'Request aborted',
+        false,
+        undefined,
+        true
+      );
+    }
+
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new EphemerisFetchError(
+        'NETWORK_ERROR',
+        'Network error while fetching ephemeris data',
+        true,
+        error.message
+      );
+    }
+
+    throw new EphemerisFetchError(
+      'UNKNOWN_ERROR',
+      'Unknown error occurred',
+      true,
+      error instanceof Error ? error.stack : undefined
+    );
+  } finally {
+    clearTimeout(timeoutId);
+    if (signal) {
+      signal.removeEventListener('abort', handleAbort);
+    }
+  }
+}
+
 // --- Hook ---
 
 export function useEphemeris(options: UseEphemerisOptions = {}) {
@@ -84,181 +234,90 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
     timeoutMs = DEFAULT_TIMEOUT_MS,
   } = options;
 
-  const [state, setState] = useState<EphemerisState>({
-    data: [],
-    isLoading: false,
-    error: null,
-    source: null,
-    isFallback: false,
+  const queryClient = useQueryClient();
+  const [fallbackData, setFallbackData] = useState<EphemerisData[] | null>(null);
+  const [fallbackError, setFallbackError] = useState<EphemerisError | null>(null);
+  const [source, setSource] = useState<DataSource | null>(null);
+  const [isFallback, setIsFallback] = useState(false);
+  const [isFallbackLoading, setIsFallbackLoading] = useState(false);
+
+  const query = useQuery<EphemerisResponse, EphemerisFetchError>({
+    queryKey: ['ephemeris', date],
+    queryFn: ({ signal }) => fetchEphemeris({ date, timeoutMs, signal }),
+    enabled: autoFetch,
+    retry: (failureCount, error) => error.canRetry && failureCount < MAX_RETRIES,
+    retryDelay: (attempt) => RETRY_DELAY_MS * attempt,
+    staleTime: STALE_TIME_MS,
   });
 
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const retryCountRef = useRef(0);
-
-  // Fetch function - React 19 compiler handles memoization
-  const fetchEphemeris = async (retryAttempt = 0, forceRefresh = false): Promise<void> => {
-    // Cancel any pending request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
-
-    setState((prev) => ({
-      ...prev,
-      isLoading: true,
-      error: null,
-    }));
-
-    try {
-      // Create timeout
-      const timeoutId = setTimeout(() => {
-        abortController.abort();
-      }, timeoutMs);
-
-      // Build URL with optional force parameter to bypass cache
-      const url = forceRefresh
-        ? `/api/ephemeris?date=${date}&force=true`
-        : `/api/ephemeris?date=${date}`;
-
-      const response = await fetch(url, {
-        signal: abortController.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status} ${response.statusText}`);
-      }
-
-      const result: EphemerisResponse = await response.json();
-
-      // Validate response structure
-      if (!result.data || !Array.isArray(result.data)) {
-        throw new Error('Invalid API response format: missing data array');
-      }
-
-      // Validate individual entries
-      const validatedData = validateData(result.data);
-
-      if (validatedData.length === 0) {
-        throw new Error('No valid ephemeris data received');
-      }
-
-      const isFallback = result.meta.source === 'FALLBACK_DATASET';
-
-      setState({
-        data: validatedData,
-        isLoading: false,
-        error: null,
-        source: result.meta.source,
-        isFallback,
-      });
-
-      retryCountRef.current = 0;
-      console.log(
-        `[useEphemeris] Loaded ${validatedData.length} bodies from ${result.meta.source}`
-      );
-    } catch (error) {
-      // Handle abort (user-initiated or timeout)
-      if (error instanceof Error && error.name === 'AbortError') {
-        const isTimeout = retryAttempt === 0;
-
-        if (isTimeout && retryAttempt < MAX_RETRIES) {
-          console.log(`[useEphemeris] Request timeout, retrying (${retryAttempt + 1}/${MAX_RETRIES})`);
-          setTimeout(() => fetchEphemeris(retryAttempt + 1), RETRY_DELAY_MS);
-          return;
-        }
-
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: {
-            type: 'TIMEOUT_ERROR',
-            message: 'Request timed out',
-            technicalDetails: `Timeout after ${timeoutMs}ms`,
-            canRetry: true,
-          },
-        }));
-        return;
-      }
-
-      // Determine error type
-      let errorType: EphemerisErrorType = 'UNKNOWN_ERROR';
-      let canRetry = true;
-
-      if (error instanceof TypeError && error.message.includes('fetch')) {
-        errorType = 'NETWORK_ERROR';
-      } else if (error instanceof Error && error.message.includes('API error')) {
-        errorType = 'NASA_API_ERROR';
-      } else if (error instanceof Error && error.message.includes('Invalid')) {
-        errorType = 'VALIDATION_ERROR';
-        canRetry = false;
-      }
-
-      // Retry logic for retryable errors
-      if (canRetry && retryAttempt < MAX_RETRIES) {
-        console.log(
-          `[useEphemeris] Error, retrying (${retryAttempt + 1}/${MAX_RETRIES}):`,
-          error
-        );
-        retryCountRef.current = retryAttempt + 1;
-        setTimeout(() => fetchEphemeris(retryAttempt + 1), RETRY_DELAY_MS * (retryAttempt + 1));
-        return;
-      }
-
-      // Load fallback data
-      console.log('[useEphemeris] Loading fallback data due to error');
-      const fallbackData = await loadFallbackData();
-
-      setState({
-        data: fallbackData,
-        isLoading: false,
-        error: {
-          type: errorType,
-          message: error instanceof Error ? error.message : 'Unknown error occurred',
-          technicalDetails: error instanceof Error ? error.stack : undefined,
-          canRetry,
-        },
-        source: 'FALLBACK_DATASET',
-        isFallback: true,
-      });
-    }
-  };
-
-  // Manual retry function
-  const retry = () => {
-    retryCountRef.current = 0;
-    fetchEphemeris(0);
-  };
-
-  // Manual refresh function (forces new fetch even if cached)
-  const refresh = () => {
-    retryCountRef.current = 0;
-    console.log('[useEphemeris] Force refreshing - bypassing cache');
-    fetchEphemeris(0, true); // force=true bypasses Redis cache
-  };
-
-  // Auto-fetch on mount and date change
   useEffect(() => {
-    if (autoFetch) {
-      fetchEphemeris(0);
-    }
+    if (!query.data) return;
+
+    setFallbackData(null);
+    setFallbackError(null);
+    setIsFallback(false);
+    setSource(query.data.meta.source);
+  }, [query.data]);
+
+  useEffect(() => {
+    if (!query.error || query.error.isAbort) return;
+
+    let cancelled = false;
+    setIsFallbackLoading(true);
+
+    loadFallbackData()
+      .then((data) => {
+        if (cancelled) return;
+        setFallbackData(data);
+        setIsFallback(true);
+        setSource('FALLBACK_DATASET');
+        setFallbackError(toEphemerisError(query.error));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsFallbackLoading(false);
+        }
+      });
 
     return () => {
-      // Cleanup: abort pending request
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
+      cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoFetch, date, timeoutMs]);
+  }, [query.error]);
+
+  const data = query.data?.data ?? fallbackData ?? [];
+  const isLoading = query.isFetching || isFallbackLoading;
+
+  const retry = () => {
+    setFallbackData(null);
+    setFallbackError(null);
+    setIsFallback(false);
+    query.refetch();
+  };
+
+  const refresh = async () => {
+    setFallbackData(null);
+    setFallbackError(null);
+    setIsFallback(false);
+
+    try {
+      await queryClient.fetchQuery({
+        queryKey: ['ephemeris', date],
+        queryFn: ({ signal }) => fetchEphemeris({ date, timeoutMs, force: true, signal }),
+      });
+    } catch (error) {
+      if (error instanceof EphemerisFetchError && error.isAbort) return;
+      // Let the query error flow trigger fallback handling in the effect.
+    }
+  };
 
   return {
-    ...state,
+    data,
+    isLoading,
+    error: fallbackError,
+    source,
+    isFallback,
     retry,
     refresh,
-    retryCount: retryCountRef.current,
+    retryCount: query.failureCount ?? 0,
   };
 }

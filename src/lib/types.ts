@@ -17,6 +17,16 @@ export interface EphemerisData {
   timestamp: string;
 }
 
+export interface SelectedPlanet {
+  bodyId: string;
+  name: string;
+  englishName: string;
+  position: EphemerisPosition;
+  velocity?: EphemerisPosition; // km/s from NASA API
+  radius: number;
+  distanceFromSun: number;
+}
+
 export type DataSource = 'NASA_LIVE' | 'CACHE_HIT' | 'FALLBACK_DATASET';
 
 export interface EphemerisResponse {

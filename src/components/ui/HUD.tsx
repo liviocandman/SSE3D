@@ -3,27 +3,15 @@
 import { useState, useEffect } from 'react';
 import { PlanetInfo } from './PlanetInfo';
 import { DateSelector } from './DateSelector';
-import type { ViewMode } from '@/lib/scales';
+import { useSolarStore } from '@/store/solarStore';
 
 // --- Types ---
 
-interface SelectedPlanet {
-  bodyId: string;
-  englishName: string;
-  position: { x: number; y: number; z: number };
-  velocity?: { x: number; y: number; z: number }; // km/s from NASA API
-  distanceFromSun: number;
-}
-
 interface HUDProps {
-  selectedPlanet: SelectedPlanet | null;
   earthPosition?: { x: number; y: number; z: number };
-  currentDate: string;
   onDateChange: (date: string) => void;
   onRefresh?: () => void;
   isFallback?: boolean;
-  viewMode?: ViewMode;
-  onToggleViewMode?: () => void;
 }
 
 // --- Hook for responsive detection ---
@@ -65,16 +53,16 @@ function getPlanetAccentClass(bodyId: string): string {
 // --- Component ---
 
 export function HUD({
-  selectedPlanet,
   earthPosition,
-  currentDate,
   onDateChange,
   onRefresh,
   isFallback = false,
-  viewMode = 'didactic',
-  onToggleViewMode,
 }: HUDProps) {
   const isMobile = useIsMobile();
+  const selectedPlanet = useSolarStore((state) => state.selectedPlanet);
+  const currentDate = useSolarStore((state) => state.currentDate);
+  const viewMode = useSolarStore((state) => state.viewMode);
+  const toggleViewMode = useSolarStore((state) => state.toggleViewMode);
   // Start expanded if planet is already selected, otherwise collapsed
   const [isExpanded, setIsExpanded] = useState(() => !!selectedPlanet);
 
@@ -151,16 +139,14 @@ export function HUD({
         </h1>
         <div className="flex items-center gap-2">
           {/* Scale Toggle Button */}
-          {onToggleViewMode && (
-            <button
-              onClick={onToggleViewMode}
-              className="inline-flex items-center gap-1 px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-md text-[10px] font-bold text-blue-400 uppercase transition-colors"
-              title={viewMode === 'didactic' ? 'Switch to realistic scale' : 'Switch to didactic scale'}
-            >
-              <span>{viewMode === 'didactic' ? '📐' : '🔭'}</span>
-              <span>{viewMode === 'didactic' ? 'Didactic' : 'Realistic'}</span>
-            </button>
-          )}
+          <button
+            onClick={toggleViewMode}
+            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-md text-[10px] font-bold text-blue-400 uppercase transition-colors"
+            title={viewMode === 'didactic' ? 'Switch to realistic scale' : 'Switch to didactic scale'}
+          >
+            <span>{viewMode === 'didactic' ? '📐' : '🔭'}</span>
+            <span>{viewMode === 'didactic' ? 'Didactic' : 'Realistic'}</span>
+          </button>
           {isFallback && (
             <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded-md text-[10px] font-bold text-yellow-500 uppercase">
               <span>⚠️</span>

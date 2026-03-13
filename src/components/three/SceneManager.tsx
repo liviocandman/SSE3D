@@ -8,45 +8,24 @@ import { QualityTierProvider, useQualityTier } from '@/contexts/QualityTierConte
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { Sun } from './Sun';
 import { CelestialBody } from './CelestialBody';
-import type { EphemerisData } from '@/lib/types';
+import type { EphemerisData, SelectedPlanet } from '@/lib/types';
 import { getPlanetConfig, getTexturePath, TextureTier } from '@/lib/textureConfig';
-import { getDidacticRadius, getRadius, scalePositionFromKm, AU_TO_UNIT, ViewMode } from '@/lib/scales';
+import { getRadius, scalePositionFromKm, AU_TO_UNIT } from '@/lib/scales';
 import { CameraController } from '@/hooks/useCameraAnimation';
 import { OrbitLine, getOrbitOpacity } from './OrbitLine';
 import * as THREE from 'three';
+import { useSolarStore } from '@/store/solarStore';
 
 // --- Types ---
-
-export interface SelectedPlanet {
-  bodyId: string;
-  name: string;
-  englishName: string;
-  position: { x: number; y: number; z: number };
-  velocity?: { x: number; y: number; z: number }; // km/s from NASA API
-  radius: number;
-  distanceFromSun: number;
-}
 
 interface SceneManagerProps {
   children?: ReactNode;
   ephemerisData?: EphemerisData[];
-  onPlanetClick?: (planet: SelectedPlanet | null) => void;
-  onPlanetDoubleClick?: (planet: SelectedPlanet) => void;
-  selectedPlanetId?: string | null;
-  travelTarget?: { x: number; y: number; z: number } | null;
-  travelTargetRadius?: number;
-  viewMode?: ViewMode;
 }
 
 interface SceneContentProps {
   children?: ReactNode;
   ephemerisData?: EphemerisData[];
-  onPlanetClick?: (planet: SelectedPlanet | null) => void;
-  onPlanetDoubleClick?: (planet: SelectedPlanet) => void;
-  selectedPlanetId?: string | null;
-  travelTarget?: { x: number; y: number; z: number } | null;
-  travelTargetRadius?: number;
-  viewMode?: ViewMode;
 }
 
 // --- Helper Components ---
@@ -104,14 +83,15 @@ function calculateMillionKmFromSun(position: [number, number, number]): number {
 function SceneContent({
   children,
   ephemerisData,
-  onPlanetClick,
-  onPlanetDoubleClick,
-  selectedPlanetId,
-  travelTarget,
-  travelTargetRadius,
-  viewMode = 'didactic'
 }: SceneContentProps) {
   const { settings, tier } = useQualityTier();
+  const selectedPlanet = useSolarStore((state) => state.selectedPlanet);
+  const setSelectedPlanet = useSolarStore((state) => state.setSelectedPlanet);
+  const viewMode = useSolarStore((state) => state.viewMode);
+  const setViewMode = useSolarStore((state) => state.setViewMode);
+  const travelTarget = useSolarStore((state) => state.travelTarget);
+  const travelTargetRadius = useSolarStore((state) => state.travelTargetRadius);
+  const setTravelTarget = useSolarStore((state) => state.setTravelTarget);
 
   const planetsToRender = (() => {
     if (!ephemerisData || ephemerisData.length === 0) {
@@ -148,8 +128,6 @@ function SceneContent({
 
   // Handle planet click - lookup by bodyId for reliable matching
   const handlePlanetClick = (bodyId: string) => {
-    if (!onPlanetClick) return;
-
     // Find the planet by bodyId (more reliable than name)
     const planet = planetsToRender.find(p => p?.bodyId === bodyId);
 
@@ -168,14 +146,12 @@ function SceneContent({
         distanceFromSun: planet.distanceFromSun,
       };
       console.log('[SceneManager] Planet clicked:', selected.englishName);
-      onPlanetClick(selected);
+      setSelectedPlanet(selected);
     }
   };
 
   // Handle planet double-click - travel to planet
   const handlePlanetDoubleClick = (bodyId: string) => {
-    if (!onPlanetDoubleClick) return;
-
     const planet = planetsToRender.find(p => p?.bodyId === bodyId);
 
     if (planet) {
@@ -196,11 +172,15 @@ function SceneContent({
         distanceFromSun: planet.distanceFromSun,
       };
       console.log('[SceneManager] Planet double-clicked:', selected.englishName, 'realistic radius:', realisticRadius);
-      onPlanetDoubleClick(selected);
+      setSelectedPlanet(selected);
+      setViewMode('realistic');
+      setTravelTarget(selected.position, selected.radius);
     }
   };
 
-  const selectedPlanet = planetsToRender.find(p => p?.bodyId === selectedPlanetId);
+  const selectedPlanetData = selectedPlanet
+    ? planetsToRender.find(p => p?.bodyId === selectedPlanet.bodyId)
+    : null;
 
   return (
     <Canvas
@@ -213,9 +193,7 @@ function SceneContent({
       style={{ width: '100%', height: '100%' }}
       onPointerMissed={() => {
         // Click on empty space = deselect
-        if (onPlanetClick) {
-          onPlanetClick(null);
-        }
+        setSelectedPlanet(null);
       }}
     >
       <ambientLight intensity={0.25} color="#b0b0b0" />
@@ -302,10 +280,10 @@ function SceneContent({
       })}
 
       {/* Selection Ring */}
-      {selectedPlanet && (
+      {selectedPlanetData && (
         <SelectionRing
-          position={selectedPlanet.position}
-          radius={selectedPlanet.radius}
+          position={selectedPlanetData.position}
+          radius={selectedPlanetData.radius}
         />
       )}
 
@@ -322,12 +300,6 @@ function SceneContent({
 export function SceneManager({
   children,
   ephemerisData,
-  onPlanetClick,
-  onPlanetDoubleClick,
-  selectedPlanetId,
-  travelTarget,
-  travelTargetRadius,
-  viewMode = 'didactic'
 }: SceneManagerProps) {
   return (
     <QualityTierProvider>
@@ -337,12 +309,6 @@ export function SceneManager({
         <Suspense fallback={<LoadingScreen />}>
           <SceneContent
             ephemerisData={ephemerisData}
-            onPlanetClick={onPlanetClick}
-            onPlanetDoubleClick={onPlanetDoubleClick}
-            selectedPlanetId={selectedPlanetId}
-            travelTarget={travelTarget}
-            travelTargetRadius={travelTargetRadius}
-            viewMode={viewMode}
           >
             {children}
           </SceneContent>

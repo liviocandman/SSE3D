@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { Toaster, toast } from 'sonner';
 import { useEphemeris } from '@/hooks/useEphemeris';
@@ -11,8 +11,7 @@ import { ErrorOverlay } from '@/components/ui/ErrorOverlay';
 import { HUD } from '@/components/ui/HUD';
 import { BODY_IDS } from '@/lib/types';
 import type { AppError } from '@/components/ui/ErrorOverlay';
-import type { SelectedPlanet } from '@/components/three/SceneManager';
-import type { ViewMode } from '@/lib/scales';
+import { useSolarStore } from '@/store/solarStore';
 
 // Dynamically import SceneManager with SSR disabled
 // This prevents hydration mismatch errors with Three.js/R3F
@@ -22,10 +21,6 @@ const SceneManager = dynamic(
 );
 
 // --- Date Utilities ---
-
-function getTodayString(): string {
-  return new Date().toISOString().split('T')[0];
-}
 
 function isValidDate(dateString: string): boolean {
   const date = new Date(dateString);
@@ -41,8 +36,8 @@ function isValidDate(dateString: string): boolean {
 // --- Component ---
 
 export default function Home() {
-  // Current simulation date state
-  const [currentDate, setCurrentDate] = useState<string>(getTodayString());
+  const currentDate = useSolarStore((state) => state.currentDate);
+  const setCurrentDate = useSolarStore((state) => state.setCurrentDate);
 
   // Use the useEphemeris hook for data fetching with error handling
   const {
@@ -64,16 +59,6 @@ export default function Home() {
     isApiLoading: isLoading,
     hasApiData: ephemerisData.length > 0,
   });
-
-  // Selected planet state for HUD
-  const [selectedPlanet, setSelectedPlanet] = useState<SelectedPlanet | null>(null);
-
-  // View mode state: 'didactic' (inflated) or 'realistic' (true scale)
-  const [viewMode, setViewMode] = useState<ViewMode>('didactic');
-
-  // Travel target state - separate from selection (only set on double-click)
-  const [travelTarget, setTravelTarget] = useState<{ x: number; y: number; z: number } | null>(null);
-  const [travelTargetRadius, setTravelTargetRadius] = useState<number | undefined>(undefined);
 
   // Get Earth position for distance calculations
   const earthPosition = useMemo(() => {
@@ -109,8 +94,6 @@ export default function Home() {
     }
 
     setCurrentDate(newDate);
-    // Clear selection when date changes
-    setSelectedPlanet(null);
 
     console.log(`[Home] Date changed to: ${newDate}`);
   };
@@ -136,26 +119,6 @@ export default function Home() {
 
     console.log(`[Home] Ephemeris loaded - Source: ${source}, Bodies: ${ephemerisData.length}, Date: ${currentDate}`);
   }, [source, isLoading, ephemerisData.length, currentDate]);
-
-  // Handle planet selection (single click) - show info only, no travel
-  const handlePlanetClick = (planet: SelectedPlanet | null) => {
-    setSelectedPlanet(planet);
-
-    if (planet) {
-      console.log(`[Home] Planet selected: ${planet.englishName}`);
-    } else {
-      console.log('[Home] Planet deselected');
-    }
-  };
-
-  // Handle planet double-click - switch to realistic + travel
-  const handlePlanetDoubleClick = (planet: SelectedPlanet) => {
-    setSelectedPlanet(planet);
-    setViewMode('realistic'); // Always switch to realistic on double-click
-    setTravelTarget(planet.position); // This triggers camera travel
-    setTravelTargetRadius(planet.radius); // For adaptive zoom distance
-    console.log(`[Home] Traveling to: ${planet.englishName}, radius: ${planet.radius}`);
-  };
 
   // Show loading screen while loading
   const showLoadingScreen = loadingProgress.stage !== 'ready' && !showErrorOverlay;
@@ -195,26 +158,16 @@ export default function Home() {
       {isWebGLSupported && (
         <SceneManager
           ephemerisData={ephemerisData}
-          onPlanetClick={handlePlanetClick}
-          onPlanetDoubleClick={handlePlanetDoubleClick}
-          selectedPlanetId={selectedPlanet?.bodyId}
-          travelTarget={travelTarget}
-          travelTargetRadius={travelTargetRadius}
-          viewMode={viewMode}
         />
       )}
 
       {/* HUD - Responsive sidebar (desktop) / bottom sheet (mobile) */}
       {!showLoadingScreen && !showErrorOverlay && (
         <HUD
-          selectedPlanet={selectedPlanet}
           earthPosition={earthPosition}
-          currentDate={currentDate}
           onDateChange={handleDateChange}
           onRefresh={refresh}
           isFallback={isFallback}
-          viewMode={viewMode}
-          onToggleViewMode={() => setViewMode(m => m === 'didactic' ? 'realistic' : 'didactic')}
         />
       )}
     </>

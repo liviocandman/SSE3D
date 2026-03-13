@@ -7,20 +7,22 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "setup": "node scripts/setup-assets.js",
-    "setup:force": "rm -rf public/textures && node scripts/setup-assets.js"
+    "setup": "node scripts/setup-assets-tiered.js",
+    "setup:force": "node -e \"require('fs').rmSync('public/textures', { recursive: true, force: true })\" && node scripts/setup-assets-tiered.js"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "@react-three/postprocessing": "^3.0.4",
+    "@tanstack/react-query": "^5.56.2",
     "@types/three": "^0.182.0",
     "@upstash/redis": "^1.36.1",
     "next": "16.1.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "sonner": "^2.0.7",
-    "three": "^0.182.0"
+    "three": "^0.182.0",
+    "zustand": "^5.0.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
