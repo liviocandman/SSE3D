@@ -42,3 +42,15 @@ next-env.d.ts
 
 # docs
 /docs
+
+# python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.env
+.env.local
+.env.*
+! .env.example

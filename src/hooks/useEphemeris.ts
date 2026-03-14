@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { EphemerisData, EphemerisResponse, DataSource } from '@/lib/types';
+import { toast } from 'sonner';
 
 // --- Types ---
 
@@ -248,7 +249,28 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
     retry: (failureCount, error) => error.canRetry && failureCount < MAX_RETRIES,
     retryDelay: (attempt) => RETRY_DELAY_MS * attempt,
     staleTime: STALE_TIME_MS,
+    networkMode: 'always',
   });
+
+  const COLD_START_THRESHOLD_MS = 1000;
+
+  useEffect(() => {
+    if (!query.isFetching) return;
+
+    const timer = setTimeout(() => {
+      if (query.isFetching) {
+        toast.info('Conectando aos servidores espaciais...', {
+          id: 'cold-start-toast',
+          duration: 8000,
+        });
+      }
+    }, COLD_START_THRESHOLD_MS);
+
+    return () => {
+      clearTimeout(timer);
+      toast.dismiss('cold-start-toast');
+    };
+  }, [query.isFetching]);
 
   useEffect(() => {
     if (!query.data) return;
