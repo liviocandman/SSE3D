@@ -1,13 +1,13 @@
-'use client';
+"use client";
 
-import { useRef, useState } from 'react';
-import { useFrame, useThree, ThreeEvent } from '@react-three/fiber';
-import { useTexture, Text, Billboard } from '@react-three/drei';
-import type { Mesh } from 'three';
-import * as THREE from 'three';
-import '../../app/globals.css';
-import { PlanetMarker } from './PlanetMarker';
-import type { ViewMode } from '@/lib/scales';
+import { useRef, useState } from "react";
+import { useFrame, useThree, ThreeEvent } from "@react-three/fiber";
+import { useTexture, Text, Billboard } from "@react-three/drei";
+import type { Mesh } from "three";
+import * as THREE from "three";
+import "../../app/globals.css";
+import { PlanetMarker } from "./PlanetMarker";
+import type { ViewMode } from "@/lib/scales";
 
 // --- Types ---
 
@@ -27,7 +27,7 @@ interface CelestialBodyProps {
 // --- Constants ---
 
 const DEFAULT_ROTATION_SPEED = 0.002;
-const LABEL_COLOR = '#a3cffe';
+const LABEL_COLOR = "#a3cffe";
 const MIN_FONT_SIZE = 2;
 const MAX_FONT_SIZE = 100;
 const THROTTLE_FRAMES = 10;
@@ -39,7 +39,6 @@ const MARKER_FADE_END = 100;
 // --- Component ---
 
 export function CelestialBody({
-  name,
   englishName,
   bodyId,
   position,
@@ -48,7 +47,7 @@ export function CelestialBody({
   rotationSpeed = DEFAULT_ROTATION_SPEED,
   onClick,
   onDoubleClick,
-  viewMode = 'didactic',
+  viewMode = "didactic",
 }: CelestialBodyProps) {
   const meshRef = useRef<Mesh>(null);
   const texture = useTexture(textureUrl);
@@ -90,7 +89,7 @@ export function CelestialBody({
     }
 
     // --- Marker Opacity (realistic mode only) ---
-    if (viewMode === 'realistic') {
+    if (viewMode === "realistic") {
       // Hide marker when camera is close (absolute distance check)
       // This ensures marker disappears when zoomed in on planets
       if (distance < 1.0) {
@@ -107,7 +106,9 @@ export function CelestialBody({
         } else if (relativeDistance < MARKER_FADE_END) {
           newOpacity = 0;
         } else {
-          newOpacity = (relativeDistance - MARKER_FADE_END) / (MARKER_FADE_START - MARKER_FADE_END);
+          newOpacity =
+            (relativeDistance - MARKER_FADE_END) /
+            (MARKER_FADE_START - MARKER_FADE_END);
         }
 
         if (Math.abs(newOpacity - markerOpacity) > 0.02) {
@@ -132,19 +133,20 @@ export function CelestialBody({
   };
 
   // In realistic mode, planets are very small - use a minimum hitbox size for interaction
-  const hitboxRadius = viewMode === 'realistic'
-    ? Math.max(5, radius * 500) // At least 2 units, or 100x the tiny radius
-    : radius * 1.2; // Slightly larger than visual in didactic
+  const hitboxRadius =
+    viewMode === "realistic"
+      ? Math.max(5, radius * 500) // At least 2 units, or 100x the tiny radius
+      : radius * 1.2; // Slightly larger than visual in didactic
 
   // Ring size scales with radius
   const ringInnerRadius = radius * 1.15;
   const ringOuterRadius = radius * 1.25;
 
   // Label color changes on hover
-  const labelColor = isHovered ? '#ffffff' : LABEL_COLOR;
+  const labelColor = isHovered ? "#ffffff" : LABEL_COLOR;
   // Label position: above planet when hovered, below otherwise
   const labelYPosition = isHovered ? radius * 1.5 : -radius * 1.5;
-  const labelAnchorY = isHovered ? 'bottom' : 'top';
+  const labelAnchorY = isHovered ? "bottom" : "top";
 
   return (
     <group position={position}>
@@ -184,7 +186,7 @@ export function CelestialBody({
       )}
 
       {/* LOD Marker - visible in realistic mode when far */}
-      {viewMode === 'realistic' && markerOpacity > 0 && (
+      {viewMode === "realistic" && markerOpacity > 0 && (
         <PlanetMarker opacity={markerOpacity} />
       )}
 
@@ -195,7 +197,7 @@ export function CelestialBody({
           fontSize={fontSize}
           color={labelColor}
           anchorX="center"
-          anchorY={labelAnchorY as 'top' | 'bottom'}
+          anchorY={labelAnchorY as "top" | "bottom"}
           outlineWidth={fontSize * 0.04}
           outlineColor="#000000"
           onClick={handleClick}
