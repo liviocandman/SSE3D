@@ -29,7 +29,7 @@ async def get_bulk_cached(
         for bid in body_ids:
             raw = await redis.get(_cache_key(bid, date))
             if raw:
-                cached.append(EphemerisData(**json.loads(raw)))
+                cached.append(EphemerisData.model_validate(json.loads(raw)))
             else:
                 missing.append(bid)
         return cached, missing

@@ -16,7 +16,7 @@ def load_fallback(body_id: str) -> Optional[EphemerisData]:
         items = json_data.get("data", [])
         for item in items:
             if item.get("bodyId") == body_id:
-                return EphemerisData(**item)
+                return EphemerisData.model_validate(item)
     except Exception as e:
         print(f"[Fallback] Error loading data for {body_id}: {e}")
     return None

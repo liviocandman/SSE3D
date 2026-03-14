@@ -35,26 +35,24 @@ def _parse_horizons_text(result: str, body_id: str, target_date: str) -> Optiona
         return None
 
     x_au, y_au, z_au = (float(n) for n in nums[:3])
-    position = Position(
-        x=x_au * AU_TO_KM,
-        y=z_au * AU_TO_KM,
-        z=y_au * AU_TO_KM,
-    )
-
-    velocity = None
+    velocity_data = None
     if vel_line:
         vnums = re.findall(r"V[XYZ]\s*=\s*([-+]?\d+\.?\d*E?[+-]?\d*)", vel_line, re.I)
         if len(vnums) >= 3:
             vx, vy, vz = (float(n) * AU_PER_DAY_TO_KM_PER_SEC for n in vnums[:3])
-            velocity = Position(x=vx, y=vz, z=vy)
+            velocity_data = {"x": vx, "y": vz, "z": vy}
 
-    return EphemerisData(
-        body_id=body_id,
-        name=BODY_NAMES.get(body_id, f"Body {body_id}"),
-        position=position,
-        velocity=velocity,
-        timestamp=target_date,
-    )
+    return EphemerisData.model_validate({
+        "bodyId": body_id,
+        "name": BODY_NAMES.get(body_id, f"Body {body_id}"),
+        "position": {
+            "x": x_au * AU_TO_KM,
+            "y": z_au * AU_TO_KM,
+            "z": y_au * AU_TO_KM,
+        },
+        "velocity": velocity_data,
+        "timestamp": target_date,
+    })
 
 
 async def _fetch_single(
@@ -63,11 +61,12 @@ async def _fetch_single(
     target_date: str,
 ) -> Optional[EphemerisData]:
     if body_id == "10":
-        return EphemerisData(
-            bodyId="10", name="Sun",
-            position=Position(x=0, y=0, z=0),
-            timestamp=target_date,
-        )
+        return EphemerisData.model_validate({
+            "bodyId": "10",
+            "name": "Sun",
+            "position": {"x": 0, "y": 0, "z": 0},
+            "timestamp": target_date,
+        })
 
     try:
         stop = (date.fromisoformat(target_date) + timedelta(days=1)).isoformat()

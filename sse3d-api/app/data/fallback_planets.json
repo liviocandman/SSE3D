@@ -1,0 +1,144 @@
+{
+  "meta": {
+    "source": "FALLBACK_DATASET",
+    "timestamp": "2024-01-01T00:00:00Z",
+    "cached": false
+  },
+  "data": [
+    {
+      "bodyId": "10",
+      "name": "Sol",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "velocity": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "timestamp": "2024-01-01T00:00:00Z"
+    },
+    {
+      "bodyId": "199",
+      "name": "Mercúrio",
+      "position": {
+        "x": 57900000,
+        "y": 0,
+        "z": 0
+      },
+      "velocity": {
+        "x": 0,
+        "y": 47.36,
+        "z": 0
+      },
+      "timestamp": "2024-01-01T00:00:00Z"
+    },
+    {
+      "bodyId": "299",
+      "name": "Vênus",
+      "position": {
+        "x": 108200000,
+        "y": 0,
+        "z": 0
+      },
+      "velocity": {
+        "x": 0,
+        "y": 35.02,
+        "z": 0
+      },
+      "timestamp": "2024-01-01T00:00:00Z"
+    },
+    {
+      "bodyId": "399",
+      "name": "Terra",
+      "position": {
+        "x": 149600000,
+        "y": 0,
+        "z": 0
+      },
+      "velocity": {
+        "x": 0,
+        "y": 29.78,
+        "z": 0
+      },
+      "timestamp": "2024-01-01T00:00:00Z"
+    },
+    {
+      "bodyId": "499",
+      "name": "Marte",
+      "position": {
+        "x": 227900000,
+        "y": 0,
+        "z": 0
+      },
+      "velocity": {
+        "x": 0,
+        "y": 24.07,
+        "z": 0
+      },
+      "timestamp": "2024-01-01T00:00:00Z"
+    },
+    {
+      "bodyId": "599",
+      "name": "Júpiter",
+      "position": {
+        "x": 778600000,
+        "y": 0,
+        "z": 0
+      },
+      "velocity": {
+        "x": 0,
+        "y": 13.07,
+        "z": 0
+      },
+      "timestamp": "2024-01-01T00:00:00Z"
+    },
+    {
+      "bodyId": "699",
+      "name": "Saturno",
+      "position": {
+        "x": 1433500000,
+        "y": 0,
+        "z": 0
+      },
+      "velocity": {
+        "x": 0,
+        "y": 9.68,
+        "z": 0
+      },
+      "timestamp": "2024-01-01T00:00:00Z"
+    },
+    {
+      "bodyId": "799",
+      "name": "Urano",
+      "position": {
+        "x": 2872500000,
+        "y": 0,
+        "z": 0
+      },
+      "velocity": {
+        "x": 0,
+        "y": 6.81,
+        "z": 0
+      },
+      "timestamp": "2024-01-01T00:00:00Z"
+    },
+    {
+      "bodyId": "899",
+      "name": "Netuno",
+      "position": {
+        "x": 4495100000,
+        "y": 0,
+        "z": 0
+      },
+      "velocity": {
+        "x": 0,
+        "y": 5.43,
+        "z": 0
+      },
+      "timestamp": "2024-01-01T00:00:00Z"
+    }
+  ]
+}

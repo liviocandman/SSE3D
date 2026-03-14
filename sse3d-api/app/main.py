@@ -52,6 +52,13 @@ async def request_error_handler(request: Request, exc: httpx.RequestError):
 app.include_router(ephemeris.router, prefix="/api")
 app.include_router(astronomer.router, prefix="/api")
 
+@app.on_event("startup")
+async def startup_event():
+    from app.core.database import init_db
+    await init_db()
+    print(f"[Startup] API iniciada. Banco: {'Configurado' if settings.database_url else 'NÃO configurado'}")
+    print(f"[Startup] Redis: {'Configurado' if settings.upstash_redis_rest_url else 'NÃO configurado'}")
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}

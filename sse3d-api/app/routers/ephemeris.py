@@ -9,7 +9,7 @@ router = APIRouter(prefix="/ephemeris", tags=["Ephemeris"])
 
 ALL_BODY_IDS = ["10", "199", "299", "399", "499", "599", "699", "799", "899"]
 
-@router.get("", response_model=EphemerisResponse)
+@router.get("", response_model=EphemerisResponse, response_model_by_alias=True)
 async def get_ephemeris(
     target_date: date = Query(default=None, alias="date"),
     ids: str = Query(default=None),
@@ -29,9 +29,9 @@ async def get_ephemeris(
             meta=EphemerisMeta(
                 source="CACHE_HIT",
                 timestamp=date.today().isoformat(),
-                requestedDate=date_str,
-                cacheHits=len(cached),
-                cacheMisses=0,
+                requested_date=date_str,
+                cache_hits=len(cached),
+                cache_misses=0,
             ),
         )
 
@@ -51,8 +51,8 @@ async def get_ephemeris(
         meta=EphemerisMeta(
             source="NASA_LIVE",
             timestamp=date.today().isoformat(),
-            requestedDate=date_str,
-            cacheHits=len(cached),
-            cacheMisses=len(missing),
+            requested_date=date_str,
+            cache_hits=len(cached),
+            cache_misses=len(missing),
         ),
     )

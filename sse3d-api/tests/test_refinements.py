@@ -17,9 +17,12 @@ async def test_cache_failure_fail_open(client):
         timestamp="2024-01-01"
     )
 
+    # Correct way to patch: the module where it is USED
     with patch("app.services.cache_service.AsyncRedis") as mock_redis_class:
+        mock_redis = AsyncMock()
+        mock_redis_class.return_value = mock_redis
+        
         # Simulate connection error
-        mock_redis = mock_redis_class.return_value
         mock_redis.get.side_effect = Exception("Redis Down")
         mock_redis.set.side_effect = Exception("Redis Down")
 

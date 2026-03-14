@@ -53,6 +53,12 @@ async def save_favorite(
     session_id: str,
     session: AsyncSession = Depends(get_session),
 ):
+    if session is None:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "DATABASE_UNAVAILABLE", "message": "Banco de dados não configurado."}
+        )
+        
     fav = FavoriteQuestion(
         session_id=session_id,
         body_id=body_id,
@@ -69,6 +75,9 @@ async def get_favorites(
     session_id: str,
     session: AsyncSession = Depends(get_session),
 ):
+    if session is None:
+        return []
+        
     result = await session.execute(
         select(FavoriteQuestion)
         .where(FavoriteQuestion.session_id == session_id)
