@@ -16,6 +16,7 @@ interface PlanetData {
 interface PlanetInfoProps {
   planet: PlanetData | null;
   earthPosition?: { x: number; y: number; z: number };
+  onAskAstronomer?: () => void;
 }
 
 // --- Helper Functions ---
@@ -65,7 +66,7 @@ const PLANET_ICONS: Record<string, string> = {
 
 // --- Component ---
 
-export function PlanetInfo({ planet, earthPosition }: PlanetInfoProps) {
+export function PlanetInfo({ planet, earthPosition, onAskAstronomer }: PlanetInfoProps) {
   if (!planet) {
     return (
       <div className="text-center py-8 px-4 text-white/50 animate-in fade-in duration-700">
@@ -131,6 +132,31 @@ export function PlanetInfo({ planet, earthPosition }: PlanetInfoProps) {
           </span>
         </div>
       </div>
+
+      {/* AI Assistant Hero Card */}
+      {onAskAstronomer && (
+        <button
+          onClick={onAskAstronomer}
+          className="relative overflow-hidden w-full group rounded-2xl border border-blue-500/30 bg-gradient-to-r from-blue-900/20 to-indigo-900/20 p-4 text-left transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:border-blue-400/50"
+        >
+          {/* Animated background glow */}
+          <div className="absolute inset-0 bg-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+
+          <div className="relative flex items-center gap-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-500/20 border border-blue-500/30 text-lg shadow-[0_0_15px_rgba(59,130,246,0.4)] group-hover:bg-blue-500/30 transition-colors">
+              ✨
+            </div>
+            <div className="flex flex-col">
+              <span className="text-sm font-bold text-blue-100 tracking-wide uppercase">
+                Virtual Astronomer
+              </span>
+              <span className="text-[11px] text-blue-200/60 mt-0.5">
+                Get your questions answered with our Astronomy EncyclopedIA.
+              </span>
+            </div>
+          </div>
+        </button>
+      )}
 
       {/* Stats Grid - Original 2x2 layout */}
       <div className="grid grid-cols-2 gap-3">
