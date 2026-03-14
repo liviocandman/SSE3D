@@ -115,7 +115,7 @@ export function AstronomerModal({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+        <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col space-y-3">
           {messages.length === 0 && (
             <div className="text-white/40 text-sm">
               Faça uma pergunta sobre o planeta selecionado. Ex: “Qual a gravidade na superfície?”

@@ -53,10 +53,12 @@ export async function checkRateLimit(
     }
 
     const remaining = Math.max(0, limit - count);
+    const ttl = await redis.ttl(key);
+
     return {
       allowed: count <= limit,
       remaining,
-      resetSeconds: windowSeconds,
+      resetSeconds: ttl > 0 ? ttl : windowSeconds,
       limit,
     };
   } catch (error) {
