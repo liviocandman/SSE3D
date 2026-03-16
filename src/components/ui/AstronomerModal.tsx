@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useAstronomer, AstronomerError } from '@/hooks/useAstronomer';
 import type { SelectedPlanet } from '@/lib/types';
+import { FavoriteButton } from './FavoriteButton';
+import { getSessionItem, setSessionItem, removeSessionItem } from '@/lib/sessionStorage';
+import { Trash2 } from 'lucide-react';
 
 interface AstronomerModalProps {
   isOpen: boolean;
@@ -33,16 +36,39 @@ export function AstronomerModal({
   const inputRef = useRef<HTMLInputElement>(null);
   const { mutateAsync, isPending } = useAstronomer();
 
+  const storageKey = planet ? `sse3d:astronomer:${planet.bodyId}` : null;
+
   useEffect(() => {
     if (isOpen) {
       inputRef.current?.focus();
+      if (storageKey) {
+        const history = getSessionItem<ChatMessage[]>(storageKey, []);
+        setMessages(history);
+      }
     } else {
       setTimeout(() => {
         setInputValue('');
-        setMessages([]);
+        // We no longer clear messages here so history survives tab navigation.
+        // It will be re-populated from sessionStorage upon reopening anyway.
       }, 300); // clear after close animation
     }
-  }, [isOpen]);
+  }, [isOpen, storageKey]);
+
+  useEffect(() => {
+    // Only save if the modal is open and we actually have messages to save,
+    // or if we explicitly cleared them (length 0 is handled by handleClear).
+    if (isOpen && storageKey && messages.length > 0) {
+      const messagesToSave = messages.slice(-50); // Keep max 50
+      setSessionItem(storageKey, messagesToSave);
+    }
+  }, [messages, storageKey, isOpen]);
+
+  const handleClear = () => {
+    if (storageKey) {
+      removeSessionItem(storageKey);
+    }
+    setMessages([]);
+  };
 
   const handleSend = async () => {
     if (!planet) {
@@ -106,31 +132,58 @@ export function AstronomerModal({
               {planet ? `${planet.englishName} • ${currentDate}` : 'Selecione um planeta'}
             </span>
           </div>
-          <button
-            onClick={onClose}
-            className="text-white/60 hover:text-white transition-colors text-sm"
-            aria-label="Fechar"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-4">
+            {messages.length > 0 && (
+              <button
+                onClick={handleClear}
+                className="text-white/40 hover:text-red-400 transition-colors flex items-center gap-1"
+                title="Limpar Chat"
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="text-white/60 hover:text-white transition-colors text-sm"
+              aria-label="Fechar"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col space-y-3">
           {messages.length === 0 && (
-            <div className="text-white/40 text-sm">
-              Faça uma pergunta sobre o planeta selecionado. Ex: “Qual a gravidade na superfície?”
+            <div className="flex flex-col space-y-2 text-center mt-4">
+              <div className="text-white/60 text-sm">
+                Faça uma pergunta sobre o planeta selecionado. Ex: “Qual a gravidade na superfície?”
+              </div>
+              <div className="text-white/40 text-xs">
+                Histórico temporário (apenas nesta aba). Use a estrela para favoritar e salvar respostas.
+              </div>
             </div>
           )}
 
           {messages.map((message) => (
             <div
               key={message.id}
-              className={`rounded-xl px-4 py-3 text-sm leading-relaxed ${message.role === 'user'
+              className={`relative rounded-xl px-4 py-3 text-sm leading-relaxed ${message.role === 'user'
                   ? 'bg-blue-500/20 text-blue-100 border border-blue-500/20 self-end'
-                  : 'bg-white/5 text-white/80 border border-white/10'
+                  : 'bg-white/5 text-white/80 border border-white/10 group'
                 }`}
             >
               {message.content}
+              
+              {message.role === 'assistant' && planet && (
+                <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <FavoriteButton 
+                    bodyId={planet.bodyId}
+                    bodyName={planet.englishName}
+                    question={messages.find((m, idx) => messages[idx+1]?.id === message.id)?.content || ''}
+                    answer={message.content}
+                  />
+                </div>
+              )}
             </div>
           ))}
 
