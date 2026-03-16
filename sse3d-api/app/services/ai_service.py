@@ -1,4 +1,5 @@
 import google.generativeai as genai
+from loguru import logger
 from app.core.config import settings
 
 genai.configure(api_key=settings.gemini_api_key)
@@ -11,6 +12,25 @@ PLANET_LABELS = {
     "899": ("Neptune", "Netuno"),
 }
 
+def _ensure_complete_sentence(text: str) -> str:
+    """
+    If the response was truncated, try to cut it back to the last complete sentence.
+    """
+    text = text.strip()
+    if not text:
+        return ""
+    
+    # Check if ends with terminal punctuation
+    if text[-1] in ".!?":
+        return text
+    
+    # Find last occurrence of punctuation
+    last_dot = max(text.rfind("."), text.rfind("!"), text.rfind("?"))
+    if last_dot != -1:
+        return text[:last_dot + 1]
+    
+    return text
+
 async def ask_astronomer(body_id: str, target_date: str, question: str) -> str:
     en_name, pt_name = PLANET_LABELS.get(body_id, ("Unknown", "Desconhecido"))
 
@@ -22,7 +42,6 @@ async def ask_astronomer(body_id: str, target_date: str, question: str) -> str:
         f"IMPORTANTE: Nunca deixe uma frase incompleta. Termine sua explicação de forma clara."
     )
 
-    # Configurando segurança como BLOCK_NONE para teste de debug (evitar truncamento falso positivo)
     safety_settings = [
         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -35,29 +54,43 @@ async def ask_astronomer(body_id: str, target_date: str, question: str) -> str:
         system_instruction=system_prompt,
     )
 
-    response = await model.generate_content_async(
-        question,
-        generation_config=genai.GenerationConfig(
-            max_output_tokens=1024,
-            temperature=0.7,
-        ),
-        safety_settings=safety_settings
-    )
-
-    print(f"[AI Service] Finish reason: {response.candidates[0].finish_reason}")
-    
-    # Coletando todas as partes de texto explicitamente
     try:
-        text = response.text.strip()
-    except Exception:
-        # Fallback se .text falhar (ex: por filtro de segurança)
-        parts = []
-        if response.candidates and response.candidates[0].content.parts:
-            for part in response.candidates[0].content.parts:
-                if hasattr(part, 'text'):
-                    parts.append(part.text)
-        text = "".join(parts).strip()
+        response = await model.generate_content_async(
+            question,
+            generation_config=genai.GenerationConfig(
+                max_output_tokens=1024, # Increased to avoid truncating valid answers
+                temperature=0.7,
+            ),
+            safety_settings=safety_settings
+        )
 
-    print(f"[AI Service] Question: {question}")
-    print(f"[AI Service] Response length: {len(text)}")
-    return text if text else "O astrônomo não conseguiu completar o raciocínio. Tente perguntar de outra forma."
+        finish_reason = response.candidates[0].finish_reason
+        logger.info(f"AI Finish reason: {finish_reason}")
+        
+        # Coletando texto
+        try:
+            text = response.text.strip()
+        except Exception:
+            parts = []
+            if response.candidates and response.candidates[0].content.parts:
+                for part in response.candidates[0].content.parts:
+                    if hasattr(part, 'text'):
+                        parts.append(part.text)
+            text = "".join(parts).strip()
+
+        # Pos-processing to ensure complete sentences
+        # 2 corresponds to FinishReason.MAX_TOKENS. Only truncate if we hit the token limit.
+        if finish_reason == 2:
+            final_text = _ensure_complete_sentence(text)
+        else:
+            final_text = text
+        
+        logger.debug(f"Question: {question[:50]}...")
+        logger.debug(f"Response length: {len(final_text)}")
+        
+        return final_text if final_text else "O astrônomo não conseguiu completar o raciocínio. Tente perguntar de outra forma."
+
+    except Exception as e:
+        logger.error(f"Gemini API error: {e}")
+        return "Desculpe, o rádio espacial está com interferência. Tente novamente em instantes."
+
