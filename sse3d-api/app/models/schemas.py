@@ -37,6 +37,7 @@ class AstronomerRequest(BaseModel):
     body_id: str = Field(alias="bodyId")
     date: date
     question: str = Field(min_length=3, max_length=500)
+    session_id: Optional[str] = Field(default=None, alias="sessionId", max_length=64)
 
     @field_validator("body_id")
     @classmethod

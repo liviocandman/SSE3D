@@ -1,11 +1,13 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
+import { useUserStore } from '@/store/userStore';
 
 export interface AstronomerRequest {
   bodyId: string;
   date: string;
   question: string;
+  sessionId?: string;
 }
 
 export interface AstronomerResponse {
@@ -36,6 +38,8 @@ async function requestAstronomer(payload: AstronomerRequest): Promise<Astronomer
         errorMessage = data.detail;
       } else if (typeof data?.error === 'string') {
         errorMessage = data.error;
+      } else if (typeof data?.message === 'string') {
+        errorMessage = data.message;
       }
     } catch {
       // ignore JSON parse errors
@@ -47,7 +51,9 @@ async function requestAstronomer(payload: AstronomerRequest): Promise<Astronomer
 }
 
 export function useAstronomer() {
+  const sessionId = useUserStore((state) => state.sessionId);
   return useMutation({
-    mutationFn: requestAstronomer,
+    mutationFn: (data: Omit<AstronomerRequest, 'sessionId'>) => 
+      requestAstronomer({ ...data, sessionId }),
   });
 }

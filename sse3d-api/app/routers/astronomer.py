@@ -18,13 +18,16 @@ from typing import List, Optional
 
 router = APIRouter(prefix="/ai", tags=["Astronomer"])
 
-def _get_rate_limit_identifier(request: Request, user: Optional[User]) -> str:
+def _get_rate_limit_identifier(request: Request, user: Optional[User], session_id: Optional[str]) -> str:
     """
-    Priority: User ID (if authenticated) > Client IP.
+    Priority: User ID (if authenticated) > Session ID > Client IP.
     This rewards logged-in users and handles NAT scenarios better.
     """
     if user:
         return f"user:{user.id}"
+        
+    if session_id:
+        return f"session:{session_id}"
     
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
@@ -43,7 +46,7 @@ async def post_ask_astronomer(
     request: Request,
     user: Optional[User] = Depends(get_optional_user)
 ):
-    identifier = _get_rate_limit_identifier(request, user)
+    identifier = _get_rate_limit_identifier(request, user, payload.session_id)
     rate = await check_rate_limit(identifier)
 
     if not rate["allowed"]:
