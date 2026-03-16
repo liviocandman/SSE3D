@@ -12,6 +12,15 @@ class Settings(BaseSettings):
     allowed_origins: Union[list[str], str] = ["http://localhost:3000"]
     rate_limit_requests: int = 5
     rate_limit_window_seconds: int = 3600
+    nextauth_secret: str = ""
+    bff_jwt_secret: str = ""
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def clean_database_url(cls, v: str) -> str:
+        if "postgresql+asyncpg" in v and "sslmode=require" in v:
+            return v.replace("?sslmode=require", "").replace("&sslmode=require", "")
+        return v
 
     @field_validator("allowed_origins", mode="before")
     @classmethod

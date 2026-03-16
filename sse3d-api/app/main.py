@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import httpx
 from app.core.config import settings
-from app.routers import ephemeris, astronomer
+from app.routers import ephemeris, astronomer, users
 
 app = FastAPI(
     title="Solar Explorer 3D API",
@@ -15,7 +15,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -51,6 +51,7 @@ async def request_error_handler(request: Request, exc: httpx.RequestError):
 
 app.include_router(ephemeris.router, prefix="/api")
 app.include_router(astronomer.router, prefix="/api")
+app.include_router(users.router, prefix="/api")
 
 @app.on_event("startup")
 async def startup_event():

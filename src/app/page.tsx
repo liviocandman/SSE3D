@@ -9,6 +9,7 @@ import { useWebGLError } from '@/hooks/useWebGLError';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { ErrorOverlay } from '@/components/ui/ErrorOverlay';
 import { HUD } from '@/components/ui/HUD';
+import { useSessionMerge } from '@/hooks/useSessionMerge';
 import { BODY_IDS } from '@/lib/types';
 import type { AppError } from '@/components/ui/ErrorOverlay';
 import { useSolarStore } from '@/store/solarStore';
@@ -39,6 +40,9 @@ export default function Home() {
   const currentDate = useSolarStore((state) => state.currentDate);
   const setCurrentDate = useSolarStore((state) => state.setCurrentDate);
 
+  // Trigger data merge if user just logged in
+  useSessionMerge();
+
   // Use the useEphemeris hook for data fetching with error handling
   const {
     data: ephemerisData,
@@ -52,7 +56,11 @@ export default function Home() {
   } = useEphemeris({ date: currentDate });
 
   // WebGL error detection
-  const { error: webglError, isSupported: isWebGLSupported } = useWebGLError();
+  const {
+    error: webglError,
+    isSupported: isWebGLSupported,
+    isContextLost: isWebGLContextLost,
+  } = useWebGLError();
 
   // Track loading progress
   const loadingProgress = useLoadingProgress({
@@ -82,7 +90,9 @@ export default function Home() {
   } : null);
 
   // Only show error overlay for critical errors (not when fallback is working)
-  const showErrorOverlay = activeError && (!isFallback || !isWebGLSupported);
+  const isWebGLError = activeError?.type === 'WEBGL_NOT_SUPPORTED'
+    || activeError?.type === 'WEBGL_CONTEXT_LOST';
+  const showErrorOverlay = !!activeError && (isWebGLError || !isFallback);
 
   // Handle date change with validation
   const handleDateChange = (newDate: string) => {
@@ -155,7 +165,7 @@ export default function Home() {
       )}
 
       {/* Scene (renders behind loading screen during load) */}
-      {isWebGLSupported && (
+      {isWebGLSupported && !isWebGLContextLost && !isWebGLError && (
         <SceneManager
           ephemerisData={ephemerisData}
         />

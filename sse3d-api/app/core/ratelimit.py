@@ -1,4 +1,5 @@
 from upstash_redis import AsyncRedis
+from loguru import logger
 from app.core.config import settings
 
 KEY_PREFIX = "ratelimit:astronomer"
@@ -27,5 +28,6 @@ async def check_rate_limit(identifier: str) -> dict:
             "limit": limit,
         }
     except Exception as e:
-        print(f"[RateLimit] Redis error, failing open: {e}")
+        logger.error(f"Redis error in rate limit, failing open: {e}")
         return {"allowed": True, "remaining": limit, "reset_seconds": window, "limit": limit}
+

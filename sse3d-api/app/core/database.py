@@ -9,7 +9,15 @@ engine = None
 AsyncSessionLocal = None
 
 if settings.database_url:
-    engine = create_async_engine(settings.database_url, echo=False)
+    
+    db_url = settings.database_url
+    connect_args = {}
+    
+    if "sslmode=" in db_url:
+        db_url = db_url.replace("sslmode=require", "ssl=require")
+        db_url = db_url.replace("sslmode=verify-full", "ssl=verify-full")
+        
+    engine = create_async_engine(db_url, echo=False, connect_args=connect_args)
     AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 async def init_db():

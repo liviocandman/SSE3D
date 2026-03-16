@@ -1,8 +1,7 @@
 from pydantic import BaseModel, Field, field_validator, ConfigDict
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
-# IDs válidos
 KNOWN_BODY_IDS = {"10", "199", "299", "399", "499", "599", "699", "799", "899"}
 
 class Position(BaseModel):
@@ -53,3 +52,22 @@ class AstronomerRequest(BaseModel):
 
 class AstronomerResponse(BaseModel):
     answer: str
+
+class SaveFavoriteRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
+    body_id: str = Field(alias="bodyId", max_length=10)
+    body_name: str = Field(alias="bodyName", max_length=50)
+    question: str = Field(max_length=500)
+    answer: str
+    session_id: Optional[str] = Field(default=None, alias="sessionId", max_length=64)
+
+class FavoriteResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+    
+    id: int
+    body_id: str = Field(alias="bodyId")
+    body_name: str = Field(alias="bodyName")
+    question: str
+    answer: str
+    created_at: datetime

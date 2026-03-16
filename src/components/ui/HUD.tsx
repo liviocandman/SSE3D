@@ -4,7 +4,12 @@ import { useState, useEffect } from "react";
 import { PlanetInfo } from "./PlanetInfo";
 import { DateSelector } from "./DateSelector";
 import { AstronomerModal } from "./AstronomerModal";
+import { AuthModal } from "./AuthModal";
+import { FavoritesModal } from "./FavoritesModal";
 import { useSolarStore } from "@/store/solarStore";
+import { useUIStore } from "@/store/uiStore";
+import { Heart } from "lucide-react";
+import { useFavorites } from "@/hooks/useFavorites";
 
 // --- Types ---
 
@@ -64,6 +69,8 @@ export function HUD({
   const currentDate = useSolarStore((state) => state.currentDate);
   const viewMode = useSolarStore((state) => state.viewMode);
   const toggleViewMode = useSolarStore((state) => state.toggleViewMode);
+  const openFavorites = useUIStore((state) => state.openFavorites);
+  const { data: favorites = [] } = useFavorites();
   const [isAstronomerOpen, setIsAstronomerOpen] = useState(false);
   // Start expanded if planet is already selected, otherwise collapsed
   const [isExpanded, setIsExpanded] = useState(() => !!selectedPlanet);
@@ -117,20 +124,34 @@ export function HUD({
             {/* expandedContentStyle */}
             <div className="space-y-6 pt-2">
               <div className="flex items-center justify-between">
-                <button
-                  onClick={toggleViewMode}
-                  className="inline-flex items-center gap-1 px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-md text-[10px] font-bold text-blue-400 uppercase transition-colors"
-                  title={
-                    viewMode === "didactic"
-                      ? "Switch to realistic scale"
-                      : "Switch to didactic scale"
-                  }
-                >
-                  <span>{viewMode === "didactic" ? "📐" : "🔭"}</span>
-                  <span>
-                    {viewMode === "didactic" ? "Didactic" : "Realistic"}
-                  </span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={openFavorites}
+                    className="relative p-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-md transition-colors group"
+                    title="Favoritos"
+                  >
+                    <Heart className={`h-4 w-4 ${favorites.length > 0 ? 'text-red-500 fill-red-500' : 'text-zinc-400'}`} />
+                    {favorites.length > 0 && (
+                      <span className="absolute -top-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white">
+                        {favorites.length}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={toggleViewMode}
+                    className="inline-flex items-center gap-1 px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-md text-[10px] font-bold text-blue-400 uppercase transition-colors"
+                    title={
+                      viewMode === "didactic"
+                        ? "Switch to realistic scale"
+                        : "Switch to didactic scale"
+                    }
+                  >
+                    <span>{viewMode === "didactic" ? "📐" : "🔭"}</span>
+                    <span>
+                      {viewMode === "didactic" ? "Didactic" : "Realistic"}
+                    </span>
+                  </button>
+                </div>
                 {isFallback && (
                   <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded-md text-[10px] font-bold text-yellow-500 uppercase">
                     <span>⚠️</span>
@@ -163,6 +184,8 @@ export function HUD({
           planet={selectedPlanet}
           currentDate={currentDate}
         />
+        <AuthModal />
+        <FavoritesModal />
       </>
     );
   }
@@ -179,7 +202,20 @@ export function HUD({
           <h1 className="text-sm font-bold text-white/70 tracking-[0.15em] uppercase">
             Solar Explorer
           </h1>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            {/* Favorites Toggle */}
+            <button
+              onClick={openFavorites}
+              className="relative p-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-md transition-colors group"
+              title="Favoritos"
+            >
+              <Heart className={`h-3.5 w-3.5 ${favorites.length > 0 ? 'text-red-500 fill-red-500' : 'text-zinc-400'}`} />
+              {favorites.length > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white animate-in zoom-in-50 duration-300">
+                  {favorites.length}
+                </span>
+              )}
+            </button>
             {/* Scale Toggle Button */}
             <button
               onClick={toggleViewMode}
@@ -233,6 +269,8 @@ export function HUD({
         planet={selectedPlanet}
         currentDate={currentDate}
       />
+      <AuthModal />
+      <FavoritesModal />
     </>
   );
 }
