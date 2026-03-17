@@ -8,6 +8,7 @@ import { AuthModal } from "./AuthModal";
 import { FavoritesModal } from "./FavoritesModal";
 import { useSolarStore } from "@/store/solarStore";
 import { useUIStore } from "@/store/uiStore";
+import { useShallow } from "zustand/react/shallow";
 import { Heart } from "lucide-react";
 import { useFavorites } from "@/hooks/useFavorites";
 
@@ -65,10 +66,16 @@ export function HUD({
   isFallback = false,
 }: HUDProps) {
   const isMobile = useIsMobile();
-  const selectedPlanet = useSolarStore((state) => state.selectedPlanet);
-  const currentDate = useSolarStore((state) => state.currentDate);
-  const viewMode = useSolarStore((state) => state.viewMode);
-  const toggleViewMode = useSolarStore((state) => state.toggleViewMode);
+  
+  const { selectedPlanet, currentDate, viewMode, toggleViewMode } = useSolarStore(
+    useShallow((state) => ({
+      selectedPlanet: state.selectedPlanet,
+      currentDate: state.currentDate,
+      viewMode: state.viewMode,
+      toggleViewMode: state.toggleViewMode,
+    }))
+  );
+
   const openFavorites = useUIStore((state) => state.openFavorites);
   const { data: favorites = [] } = useFavorites();
   const [isAstronomerOpen, setIsAstronomerOpen] = useState(false);

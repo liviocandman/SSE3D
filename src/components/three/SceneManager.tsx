@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, ReactNode, useRef } from 'react';
+import { Suspense, ReactNode, useRef, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Stars } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
@@ -15,6 +15,7 @@ import { CameraController } from '@/hooks/useCameraAnimation';
 import { OrbitLine, getOrbitOpacity } from './OrbitLine';
 import * as THREE from 'three';
 import { useSolarStore } from '@/store/solarStore';
+import { useShallow } from 'zustand/react/shallow';
 
 // --- Types ---
 
@@ -69,6 +70,12 @@ const CAMERA_CONFIG = {
 
 const SUN_BODY_ID = '10';
 
+const SEGMENTS_BY_TIER: Record<string, number> = {
+  high: 64,
+  mid: 48,
+  low: 24,
+};
+
 /**
  * Calculates real distance from Sun in million km
  * Since 1 unit = 1M km, this is just the magnitude of the position vector
@@ -84,19 +91,34 @@ function SceneContent({
   children,
   ephemerisData,
 }: SceneContentProps) {
-  const { settings, tier } = useQualityTier();
-  const selectedPlanet = useSolarStore((state) => state.selectedPlanet);
-  const setSelectedPlanet = useSolarStore((state) => state.setSelectedPlanet);
-  const viewMode = useSolarStore((state) => state.viewMode);
-  const setViewMode = useSolarStore((state) => state.setViewMode);
-  const travelTarget = useSolarStore((state) => state.travelTarget);
-  const travelTargetRadius = useSolarStore((state) => state.travelTargetRadius);
-  const setTravelTarget = useSolarStore((state) => state.setTravelTarget);
+  const { tier, settings } = useQualityTier();
+  
+  const {
+    selectedPlanet,
+    setSelectedPlanet,
+    viewMode,
+    setViewMode,
+    travelTarget,
+    travelTargetRadius,
+    setTravelTarget,
+  } = useSolarStore(
+    useShallow((state) => ({
+      selectedPlanet: state.selectedPlanet,
+      setSelectedPlanet: state.setSelectedPlanet,
+      viewMode: state.viewMode,
+      setViewMode: state.setViewMode,
+      travelTarget: state.travelTarget,
+      travelTargetRadius: state.travelTargetRadius,
+      setTravelTarget: state.setTravelTarget,
+    }))
+  );
 
-  const planetsToRender = (() => {
+  const planetsToRender = useMemo(() => {
     if (!ephemerisData || ephemerisData.length === 0) {
       return [];
     }
+
+    const segments = SEGMENTS_BY_TIER[tier] ?? 48;
 
     return ephemerisData
       .filter(body => body.bodyId !== SUN_BODY_ID)
@@ -121,10 +143,11 @@ function SceneContent({
           rotationSpeed: config.rotationSpeed,
           distanceFromSun: calculateMillionKmFromSun(position),
           bodyClass: config.bodyClass,
+          segments,
         };
       })
-      .filter(Boolean);
-  })();
+      .filter((p): p is NonNullable<typeof p> => p !== null);
+  }, [ephemerisData, tier, viewMode]);
 
   // Handle planet click - lookup by bodyId for reliable matching
   const handlePlanetClick = (bodyId: string) => {
@@ -272,6 +295,7 @@ function SceneContent({
             radius={planet.radius}
             textureUrl={planet.texturePath}
             rotationSpeed={planet.rotationSpeed}
+            segments={planet.segments}
             onClick={handlePlanetClick}
             onDoubleClick={handlePlanetDoubleClick}
             viewMode={viewMode}
@@ -317,5 +341,3 @@ export function SceneManager({
     </QualityTierProvider>
   );
 }
-
-

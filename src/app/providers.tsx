@@ -11,6 +11,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
         defaultOptions: {
           queries: {
             refetchOnWindowFocus: false,
+            staleTime: 60 * 1000,   // 1 minute
+            gcTime: 10 * 60 * 1000, // 10 minutes - keeps ephemeris data in memory longer but allows cleanup
           },
         },
       })

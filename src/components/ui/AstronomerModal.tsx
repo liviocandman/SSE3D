@@ -21,6 +21,10 @@ interface ChatMessage {
   content: string;
 }
 
+// Optimization Constants
+const MAX_MESSAGES_PER_PLANET = 20;
+const MAX_CACHED_PLANETS = 3;
+
 function createMessageId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
@@ -48,18 +52,31 @@ export function AstronomerModal({
     } else {
       setTimeout(() => {
         setInputValue('');
-        // We no longer clear messages here so history survives tab navigation.
-        // It will be re-populated from sessionStorage upon reopening anyway.
       }, 300); // clear after close animation
     }
   }, [isOpen, storageKey]);
 
   useEffect(() => {
-    // Only save if the modal is open and we actually have messages to save,
-    // or if we explicitly cleared them (length 0 is handled by handleClear).
-    if (isOpen && storageKey && messages.length > 0) {
-      const messagesToSave = messages.slice(-50); // Keep max 50
-      setSessionItem(storageKey, messagesToSave);
+    if (!isOpen || !storageKey || messages.length === 0) return;
+
+    // Salvar apenas as N mensagens mais recentes (reduzido de 50 para 20)
+    // Benefício: JSON.parse mais rápido ao abrir o modal
+    const messagesToSave = messages.slice(-MAX_MESSAGES_PER_PLANET);
+    setSessionItem(storageKey, messagesToSave);
+
+    // Limpar planetas mais antigos se houver muitas chaves no sessionStorage
+    // Isso evita o crescimento ilimitado do uso de memória da aba
+    if (typeof window !== 'undefined') {
+      const allKeys = Object.keys(sessionStorage)
+        .filter(k => k.startsWith('sse3d:astronomer:'));
+
+      if (allKeys.length > MAX_CACHED_PLANETS) {
+        const keysToRemove = allKeys
+          .filter(k => k !== storageKey)
+          .slice(0, allKeys.length - MAX_CACHED_PLANETS);
+
+        keysToRemove.forEach(key => removeSessionItem(key));
+      }
     }
   }, [messages, storageKey, isOpen]);
 

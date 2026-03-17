@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { useFrame, useThree, ThreeEvent } from "@react-three/fiber";
-import { useTexture, Text, Billboard } from "@react-three/drei";
+import { useEffect, useRef, useState } from "react";
+import { useFrame, useThree, ThreeEvent, useLoader } from "@react-three/fiber";
+import { Text, Billboard } from "@react-three/drei";
+import { TextureLoader } from "three";
 import type { Mesh } from "three";
 import * as THREE from "three";
 import "../../app/globals.css";
@@ -19,6 +20,7 @@ interface CelestialBodyProps {
   radius: number;
   textureUrl: string;
   rotationSpeed?: number;
+  segments?: number;
   onClick?: (bodyId: string) => void;
   onDoubleClick?: (bodyId: string) => void;
   viewMode?: ViewMode;
@@ -45,12 +47,17 @@ export function CelestialBody({
   radius,
   textureUrl,
   rotationSpeed = DEFAULT_ROTATION_SPEED,
+  segments = 64,
   onClick,
   onDoubleClick,
   viewMode = "didactic",
 }: CelestialBodyProps) {
   const meshRef = useRef<Mesh>(null);
-  const texture = useTexture(textureUrl);
+  
+  // Use useLoader directly to have access to useLoader.clear() for global cache cleanup
+  // Note: clearing cache on unmount during Suspense can cause infinite loops.
+  const texture = useLoader(TextureLoader, textureUrl);
+  
   const [fontSize, setFontSize] = useState(5);
   const [markerOpacity, setMarkerOpacity] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
@@ -58,6 +65,23 @@ export function CelestialBody({
 
   const tempVec = useRef(new THREE.Vector3());
   const frameCountRef = useRef(0);
+
+  // Dispose of geometry and material on unmount to free GPU memory
+  useEffect(() => {
+    const mesh = meshRef.current;
+    return () => {
+      if (mesh) {
+        mesh.geometry.dispose();
+        if (mesh.material) {
+          if (Array.isArray(mesh.material)) {
+            mesh.material.forEach(m => m.dispose());
+          } else {
+            (mesh.material as THREE.Material).dispose();
+          }
+        }
+      }
+    };
+  }, []);
 
   // Animation loop
   useFrame(() => {
@@ -68,11 +92,20 @@ export function CelestialBody({
 
     // Throttled calculations
     frameCountRef.current++;
-    if (frameCountRef.current % THROTTLE_FRAMES !== 0) return;
-
-    // Calculate distance from camera to planet
+    
+    // Calculate squared distance (no sqrt, faster) for adaptive throttling
     tempVec.current.set(position[0], position[1], position[2]);
-    const distance = camera.position.distanceTo(tempVec.current);
+    const distanceSq = camera.position.distanceToSquared(tempVec.current);
+
+    // Adaptive throttling: planets further away update labels/markers less frequently
+    const throttleInterval = frameCountRef.current < 100
+      ? THROTTLE_FRAMES
+      : Math.min(30, THROTTLE_FRAMES + Math.floor(distanceSq / 40000));
+
+    if (frameCountRef.current % throttleInterval !== 0) return;
+
+    // Real distance needed for label size and marker opacity (calculated only when throttled)
+    const distance = Math.sqrt(distanceSq);
 
     // --- Adaptive Label Font Size ---
     let newFontSize: number;
@@ -91,7 +124,6 @@ export function CelestialBody({
     // --- Marker Opacity (realistic mode only) ---
     if (viewMode === "realistic") {
       // Hide marker when camera is close (absolute distance check)
-      // This ensures marker disappears when zoomed in on planets
       if (distance < 1.0) {
         if (markerOpacity !== 0) {
           setMarkerOpacity(0);
@@ -164,7 +196,7 @@ export function CelestialBody({
 
       {/* Visible planet mesh */}
       <mesh ref={meshRef}>
-        <sphereGeometry args={[radius, 64, 64]} />
+        <sphereGeometry args={[radius, segments, segments]} />
         <meshStandardMaterial
           map={texture}
           emissive={0x333333}

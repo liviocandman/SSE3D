@@ -73,7 +73,7 @@ export function useWebGLError(): UseWebGLErrorReturn {
       setContextLostError({
         type: 'WEBGL_CONTEXT_LOST',
         message: 'WebGL context was lost',
-        technicalDetails: 'The GPU context was lost, possibly due to memory issues or driver problems. Reloading the page should fix this.',
+        technicalDetails: 'The GPU context was lost, possibly due to memory issues or driver problems.',
         canRetry: false,
       });
     };
@@ -84,22 +84,54 @@ export function useWebGLError(): UseWebGLErrorReturn {
       setContextLostError(null);
     };
 
-    // Find the Three.js canvas
-    const findCanvas = () => {
-      const canvas = document.querySelector('canvas');
-      if (canvas && canvas !== canvasRef.current) {
-        canvasRef.current = canvas;
-        canvas.addEventListener('webglcontextlost', handleContextLost);
-        canvas.addEventListener('webglcontextrestored', handleContextRestored);
+    const attachToCanvas = (canvas: HTMLCanvasElement) => {
+      // Avoid duplicate listeners on same canvas
+      if (canvasRef.current === canvas) return;
+
+      // Clean up previous canvas if it changed
+      if (canvasRef.current) {
+        canvasRef.current.removeEventListener('webglcontextlost', handleContextLost);
+        canvasRef.current.removeEventListener('webglcontextrestored', handleContextRestored);
       }
+
+      canvasRef.current = canvas;
+      canvas.addEventListener('webglcontextlost', handleContextLost);
+      canvas.addEventListener('webglcontextrestored', handleContextRestored);
     };
 
-    // Initial check and periodic check for canvas
-    findCanvas();
-    const interval = setInterval(findCanvas, 1000);
+    // Initial check for existing canvas
+    const existingCanvas = document.querySelector('canvas');
+    if (existingCanvas) {
+      attachToCanvas(existingCanvas);
+    }
+
+    // MutationObserver reacts to DOM changes without continuous polling
+    // Only triggers when nodes are added/removed - zero cost when nothing changes
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (node instanceof HTMLCanvasElement) {
+            attachToCanvas(node);
+            return;
+          }
+          if (node instanceof Element) {
+            const canvas = node.querySelector('canvas');
+            if (canvas) {
+              attachToCanvas(canvas);
+              return;
+            }
+          }
+        }
+      }
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
 
     return () => {
-      clearInterval(interval);
+      observer.disconnect();
       if (canvasRef.current) {
         canvasRef.current.removeEventListener('webglcontextlost', handleContextLost);
         canvasRef.current.removeEventListener('webglcontextrestored', handleContextRestored);
