@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/prints/Captura de tela 2026-03-20 061423.png" alt="Solar Explorer 3D — Didactic View" width="100%"/>
+  <img src="public/prints/Captura de tela 2026-03-20 061423.png" alt="Solar Explorer 3D — Didactic View" width="100%"/>
 </p>
 
 <h1 align="center">🪐 Solar Explorer 3D</h1>
@@ -274,7 +274,7 @@ This section guides you through the complete user experience of Solar Explorer 3
 
 When you first open the application, you see the entire Solar System from a bird's-eye perspective. In **Didactic** mode, planet sizes are inflated so that every body — from tiny Mercury to giant Jupiter — is clearly visible.
 
-![Solar System in Didactic Scale — planets are enlarged for visibility](docs/prints/Captura%20de%20tela%202026-03-20%20061423.png)
+![Solar System in Didactic Scale — planets are enlarged for visibility](public/prints/Captura%20de%20tela%202026-03-20%20061423.png)
 
 **What you see:**
 - The **Sun** at the center with a radiating glow
@@ -290,7 +290,7 @@ When you first open the application, you see the entire Solar System from a bird
 
 Click the **"Realistic"** toggle in the top-right corner to switch to proportional scale. In this mode, distances and sizes reflect real astronomical proportions.
 
-![Solar System in Realistic Scale — true proportional distances](docs/prints/Captura%20de%20tela%202026-03-20%20061624.png)
+![Solar System in Realistic Scale — true proportional distances](public/prints/Captura%20de%20tela%202026-03-20%20061624.png)
 
 **Key differences from Didactic mode:**
 - Inner planets (Mercury, Venus, Earth, Mars) cluster tightly around the Sun
@@ -303,7 +303,7 @@ Click the **"Realistic"** toggle in the top-right corner to switch to proportion
 
 Click on any planet to smoothly fly to a close-up view. The camera will orbit the selected celestial body while the information panel updates with its data.
 
-![Earth close-up focus view with orbit ring](docs/prints/Captura%20de%20tela%202026-03-20%20061832.png)
+![Earth close-up focus view with orbit ring](public/prints/Captura%20de%20tela%202026-03-20%20061832.png)
 
 **Information panel sections:**
 - **Distance from Sun** and **Distance from Earth** (in millions of km)
@@ -318,7 +318,7 @@ Click on any planet to smoothly fly to a close-up view. The camera will orbit th
 
 Navigate between planets by clicking their labels or 3D models. Each planet features unique high-resolution textures and distinctive data.
 
-![Venus close-up with detailed physical properties](docs/prints/Captura%20de%20tela%202026-03-20%20062155.png)
+![Venus close-up with detailed physical properties](public/prints/Captura%20de%20tela%202026-03-20%20062155.png)
 
 **Example — Venus data shown:**
 - Temperature: +464 °C (hottest planet)
@@ -332,7 +332,7 @@ Navigate between planets by clicking their labels or 3D models. Each planet feat
 
 Click the **"Virtual Astronomer"** button on the information panel to open the AI chat modal. The astronomer is context-aware — it knows which planet you're viewing and the current simulation date.
 
-![Virtual Astronomer modal — empty state with prompt](docs/prints/Captura%20de%20tela%202026-03-20%20062203.png)
+![Virtual Astronomer modal — empty state with prompt](public/prints/Captura%20de%20tela%202026-03-20%20062203.png)
 
 **The modal shows:**
 - Header with "ASTRÔNOMO VIRTUAL" (Virtual Astronomer), planet name, and date
@@ -346,7 +346,7 @@ Click the **"Virtual Astronomer"** button on the information panel to open the A
 
 Type any astronomy question about the selected planet. The AI can answer questions about composition, atmosphere, history, size comparisons, and more.
 
-![Typing a question about Venus's atmosphere](docs/prints/Captura%20de%20tela%202026-03-20%20062429.png)
+![Typing a question about Venus's atmosphere](public/prints/Captura%20de%20tela%202026-03-20%20062429.png)
 
 ---
 
@@ -354,7 +354,7 @@ Type any astronomy question about the selected planet. The AI can answer questio
 
 The AI generates a response in real time. A loading indicator ("Gerando resposta...") appears while the answer is being generated.
 
-![AI generating response — loading state](docs/prints/Captura%20de%20tela%202026-03-20%20062438.png)
+![AI generating response — loading state](public/prints/Captura%20de%20tela%202026-03-20%20062438.png)
 
 ---
 
@@ -362,7 +362,7 @@ The AI generates a response in real time. A loading indicator ("Gerando resposta
 
 The astronomer delivers a rich, educational response. Each answer appears in a styled message bubble.
 
-![Full AI response about Venus's atmosphere composition](docs/prints/Captura%20de%20tela%202026-03-20%20062444.png)
+![Full AI response about Venus's atmosphere composition](public/prints/Captura%20de%20tela%202026-03-20%20062444.png)
 
 **Response features:**
 - Detailed, scientific yet accessible explanation
@@ -375,7 +375,7 @@ The astronomer delivers a rich, educational response. Each answer appears in a s
 
 Click the **star icon (⭐)** on any AI response to save it to your favorites. A success toast notification appears confirming the save.
 
-![Response saved to favorites with success notification](docs/prints/Captura%20de%20tela%202026-03-20%20062534.png)
+![Response saved to favorites with success notification](public/prints/Captura%20de%20tela%202026-03-20%20062534.png)
 
 ---
 
@@ -383,7 +383,7 @@ Click the **star icon (⭐)** on any AI response to save it to your favorites. A
 
 Click the **heart icon (♥)** in the header to view all saved favorites. The "Suas Descobertas" (Your Discoveries) modal lists all saved Q&A pairs with planet and date tags.
 
-![Favorites modal — "Suas Descobertas" with saved questions](docs/prints/Captura%20de%20tela%202026-03-20%20062604.png)
+![Favorites modal — "Suas Descobertas" with saved questions](public/prints/Captura%20de%20tela%202026-03-20%20062604.png)
 
 ---
 
@@ -391,7 +391,7 @@ Click the **heart icon (♥)** in the header to view all saved favorites. The "S
 
 Continue asking questions in the same session. Anonymous users have a limit of **2 favorites per planet**. When the limit is reached, a tooltip indicates login is required for more.
 
-![Multiple chat messages with favorite limit tooltip](docs/prints/Captura%20de%20tela%202026-03-20%20063151.png)
+![Multiple chat messages with favorite limit tooltip](public/prints/Captura%20de%20tela%202026-03-20%20063151.png)
 
 ---
 
@@ -399,7 +399,7 @@ Continue asking questions in the same session. Anonymous users have a limit of *
 
 When you reach the anonymous favorite limit, a login modal appears offering **Google** and **GitHub** authentication options. Logging in unlocks unlimited favorites and migrates all anonymous data.
 
-![OAuth login modal with Google and GitHub options](docs/prints/Captura%20de%20tela%202026-03-20%20063212.png)
+![OAuth login modal with Google and GitHub options](public/prints/Captura%20de%20tela%202026-03-20%20063212.png)
 
 ---
 
@@ -407,7 +407,7 @@ When you reach the anonymous favorite limit, a login modal appears offering **Go
 
 After saving multiple questions, the favorites modal shows your complete collection with all Q&A pairs, tagged by planet and date.
 
-![Full favorites collection with multiple saved entries](docs/prints/Captura%20de%20tela%202026-03-20%20063230.png)
+![Full favorites collection with multiple saved entries](public/prints/Captura%20de%20tela%202026-03-20%20063230.png)
 
 ---
 
@@ -415,7 +415,7 @@ After saving multiple questions, the favorites modal shows your complete collect
 
 Navigate to outer planets like Jupiter to see the vast scale of the Solar System. The Realistic view particularly highlights the enormous distances between outer planets.
 
-![Jupiter selected in Realistic view showing outer Solar System](docs/prints/Captura%20de%20tela%202026-03-20%20063259.png)
+![Jupiter selected in Realistic view showing outer Solar System](public/prints/Captura%20de%20tela%202026-03-20%20063259.png)
 
 ---
 
