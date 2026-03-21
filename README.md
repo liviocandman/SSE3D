@@ -245,7 +245,7 @@ cp .env.example .env
 Edit `.env` with your credentials:
 ```env
 GEMINI_API_KEY=your_gemini_api_key
-GEMINI_MODEL=gemini-2.0-flash
+GEMINI_MODEL=gemini-2.5-flash
 UPSTASH_REDIS_REST_URL=https://your-instance.upstash.io
 UPSTASH_REDIS_REST_TOKEN=your_token
 DATABASE_URL=postgresql+asyncpg://user:pass@host/dbname

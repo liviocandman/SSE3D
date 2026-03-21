@@ -1,9 +1,9 @@
 'use client';
 
 import { useRef } from 'react';
-import { useFrame, useThree } from '@react-three/fiber';
-import { useTexture } from '@react-three/drei';
+import { useFrame, useThree, useLoader } from '@react-three/fiber';
 import * as THREE from 'three';
+import { TextureLoader } from 'three';
 import { getRadius, ViewMode } from '@/lib/scales';
 import { getTexturePath, TextureTier } from '@/lib/textureConfig';
 import { useQualityTier } from '@/contexts/QualityTierContext';
@@ -26,7 +26,9 @@ export function Sun({
 
   // Carregar Textura do Sol
   const texturePath = getTexturePath(SUN_BODY_ID, tier as TextureTier);
-  const sunTexture = useTexture(texturePath);
+  const sunTexture = useLoader(TextureLoader, texturePath, (loader) => {
+    loader.setCrossOrigin("anonymous");
+  });
 
   // Tamanhos de referência
   const didacticRadius = getRadius(SUN_BODY_ID, 'STAR', 'didactic'); // ~35u

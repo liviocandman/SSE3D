@@ -13,9 +13,13 @@ if settings.database_url:
     db_url = settings.database_url
     connect_args = {}
     
-    if "sslmode=" in db_url:
-        db_url = db_url.replace("sslmode=require", "ssl=require")
-        db_url = db_url.replace("sslmode=verify-full", "ssl=verify-full")
+    # asyncpg uses 'ssl' instead of 'sslmode'
+    if "sslmode=disable" in db_url:
+        db_url = db_url.replace("?sslmode=disable", "").replace("&sslmode=disable", "")
+        connect_args["ssl"] = False
+    elif "sslmode=require" in db_url:
+        db_url = db_url.replace("?sslmode=require", "").replace("&sslmode=require", "")
+        connect_args["ssl"] = "require"
         
     engine = create_async_engine(db_url, echo=False, connect_args=connect_args)
     AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

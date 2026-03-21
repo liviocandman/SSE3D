@@ -4,7 +4,12 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import AsyncEngine
 from alembic import context
 import asyncio
+import os
+import sys
 from sqlmodel import SQLModel
+
+# Add the current directory to sys.path so 'app' module can be found
+sys.path.append(os.getcwd())
 
 # Import all models to register them with SQLModel.metadata
 from app.models.database import User, FavoriteQuestion
@@ -61,12 +66,24 @@ async def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+    db_url = settings.database_url
+    connect_args = {}
+    
+    # Handle sslmode for asyncpg
+    if "sslmode=disable" in db_url:
+        db_url = db_url.replace("?sslmode=disable", "").replace("&sslmode=disable", "")
+        connect_args["ssl"] = False
+    elif "sslmode=require" in db_url:
+        db_url = db_url.replace("?sslmode=require", "").replace("&sslmode=require", "")
+        connect_args["ssl"] = "require"
+
     connectable = AsyncEngine(
         engine_from_config(
             config.get_section(config.config_ini_section),
             prefix="sqlalchemy.",
             poolclass=pool.NullPool,
-            url=settings.database_url,
+            url=db_url,
+            connect_args=connect_args,
         )
     )
 

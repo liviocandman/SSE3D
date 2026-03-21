@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "setup": "node scripts/setup-assets-tiered.js",
-    "setup:force": "node -e \"require('fs').rmSync('public/textures', { recursive: true, force: true })\" && node scripts/setup-assets-tiered.js"
+    "setup:force": "node -e \"require('fs').rmSync('public/textures', { recursive: true, force: true })\" && node scripts/setup-assets-tiered.js",
+    "upload:textures": "node --env-file=.env.local scripts/upload-textures-s3.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
@@ -31,6 +32,8 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@aws-sdk/client-cloudfront": "^3.1014.0",
+    "@aws-sdk/client-s3": "^3.1014.0",
     "@tailwindcss/postcss": "^4",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20",

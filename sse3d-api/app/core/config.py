@@ -5,7 +5,7 @@ import json
 
 class Settings(BaseSettings):
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.0-flash"
+    gemini_model: str = "gemini-2.5-flash"
     upstash_redis_rest_url: str = ""
     upstash_redis_rest_token: str = ""
     database_url: str = ""

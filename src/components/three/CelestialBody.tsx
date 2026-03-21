@@ -56,7 +56,9 @@ export function CelestialBody({
   
   // Use useLoader directly to have access to useLoader.clear() for global cache cleanup
   // Note: clearing cache on unmount during Suspense can cause infinite loops.
-  const texture = useLoader(TextureLoader, textureUrl);
+  const texture = useLoader(TextureLoader, textureUrl, (loader) => {
+    loader.setCrossOrigin("anonymous");
+  });
   
   const [fontSize, setFontSize] = useState(5);
   const [markerOpacity, setMarkerOpacity] = useState(0);

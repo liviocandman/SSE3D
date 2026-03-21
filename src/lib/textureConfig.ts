@@ -37,11 +37,15 @@ export interface PlanetConfig {
 }
 
 // Helper to generate tiered texture paths
+const CDN_BASE = (
+  process.env.NEXT_PUBLIC_TEXTURE_CDN_URL ?? "/textures"
+).replace(/\/$/, "");
+
 function getTexturePaths(name: string): TexturePaths {
   return {
-    low: `/textures/${name}_low.webp`,
-    mid: `/textures/${name}_mid.webp`,
-    high: `/textures/${name}_high.webp`,
+    low: `${CDN_BASE}/${name}_low.webp`,
+    mid: `${CDN_BASE}/${name}_mid.webp`,
+    high: `${CDN_BASE}/${name}_high.webp`,
   };
 }
 

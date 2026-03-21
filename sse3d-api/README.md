@@ -97,7 +97,7 @@ All configuration is managed through environment variables, loaded via Pydantic 
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `GEMINI_API_KEY` | ✅ | — | Google Gemini API key |
-| `GEMINI_MODEL` | ❌ | `gemini-2.0-flash` | Gemini model to use |
+| `GEMINI_MODEL` | ❌ | `gemini-2.5-flash` | Gemini model to use |
 | `UPSTASH_REDIS_REST_URL` | ✅ | — | Upstash Redis REST endpoint |
 | `UPSTASH_REDIS_REST_TOKEN` | ✅ | — | Upstash Redis auth token |
 | `DATABASE_URL` | ❌ | — | PostgreSQL connection string (asyncpg) |
@@ -112,7 +112,7 @@ All configuration is managed through environment variables, loaded via Pydantic 
 ```env
 # AI
 GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-2.0-flash
+GEMINI_MODEL=gemini-2.5-flash
 
 # Cache (Upstash Redis)
 UPSTASH_REDIS_REST_URL=https://your-instance.upstash.io
@@ -399,7 +399,7 @@ Powers the Virtual Astronomer chatbot.
 
 | Detail | Value |
 |---|---|
-| **Model** | `gemini-2.0-flash` (configurable) |
+| **Model** | `gemini-2.5-flash` (configurable) |
 | **Max output tokens** | 1,024 |
 | **Temperature** | 0.7 |
 | **Safety settings** | All categories set to `BLOCK_NONE` |
