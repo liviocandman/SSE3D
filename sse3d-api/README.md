@@ -118,11 +118,12 @@ GEMINI_MODEL=gemini-2.5-flash
 UPSTASH_REDIS_REST_URL=https://your-instance.upstash.io
 UPSTASH_REDIS_REST_TOKEN=your_token_here
 
-# Database (PostgreSQL/Neon)
-DATABASE_URL=postgresql+asyncpg://user:pass@ep-xxx.neon.tech/sse3d?sslmode=require
+# Database (PostgreSQL/Neon/Fly)
+# Note: On Fly.io, use ?sslmode=disable if using .internal addresses
+DATABASE_URL=postgresql+asyncpg://user:pass@host/dbname?sslmode=disable
 
 # CORS
-ALLOWED_ORIGINS=http://localhost:3000,https://your-frontend.vercel.app
+ALLOWED_ORIGINS=http://localhost:3000,https://solar-explorer.vercel.app
 
 # Rate Limit
 RATE_LIMIT_REQUESTS=10
@@ -651,7 +652,7 @@ The API is containerized with a multi-stage Dockerfile:
 FROM python:3.12-slim
 # Installs system deps (gcc, python3-dev for asyncpg)
 # Installs Python deps from requirements.txt
-# Runs: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8080
+# Runs: uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
 ```bash
@@ -664,29 +665,26 @@ docker run -p 8080:8080 --env-file .env sse3d-api
 
 ### Fly.io
 
-Configured for the **`gru` (São Paulo, Brazil)** region with health checks:
+Configured for the **`gru` (São Paulo, Brazil)** region with automated migrations:
 
 | Config | Value |
 |---|---|
 | **Region** | `gru` (São Paulo) |
 | **Memory** | 256 MB |
 | **CPU** | 1 shared |
-| **Internal port** | 8000 |
+| **Internal port** | 8080 |
 | **Health check** | `GET /health` every 15s |
-| **HTTPS** | Enforced |
+| **Release Command** | `alembic upgrade head` |
 
 ```bash
-# Deploy
+# Deploy (from sse3d-api folder)
 fly deploy
 
 # Set secrets
-fly secrets set GEMINI_API_KEY=... DATABASE_URL=... UPSTASH_REDIS_REST_URL=...
+fly secrets set GEMINI_API_KEY=... DATABASE_URL=... UPSTASH_REDIS_REST_URL=... NEXTAUTH_SECRET=...
 
 # View logs
 fly logs
-
-# SSH into container
-fly ssh console
 ```
 
 ---

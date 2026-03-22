@@ -114,15 +114,15 @@ The application features a **heliocentric coordinate system** based on real ephe
 │  ┌────┴────────────────────────────────┐                │
 │  │         Upstash Redis (Cache)        │                │
 │  └─────────────────────────────────────┘                │
-└──────────────────────────────────────────────────────────┘
+└─────────────────────┬────────────────────────────────────┘
                       │
-         ┌────────────┼────────────┐
-         ▼            ▼            ▼
-   ┌──────────┐ ┌──────────┐ ┌──────────┐
-   │  NASA    │ │  Google  │ │  Neon    │
-   │  JPL     │ │  Gemini  │ │  Postgres│
-   │  Horizons│ │  API     │ │  DB      │
-   └──────────┘ └──────────┘ └──────────┘
+         ┌────────────┼────────────┬────────────┐
+         ▼            ▼            ▼            ▼
+   ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────────┐
+   │  NASA    │ │  Google  │ │  Postgres│ │ AWS S3 +      │
+   │  JPL     │ │  Gemini  │ │  DB      │ │ CloudFront    │
+   │  Horizons│ │  API     │ │ (Fly/Neon)│ │ (Textures)    │
+   └──────────┘ └──────────┘ └──────────┘ └───────────────┘
 ```
 
 ### Data Flow
@@ -130,6 +130,7 @@ The application features a **heliocentric coordinate system** based on real ephe
 1. **Ephemeris data**: Frontend requests planet positions → Next.js BFF → FastAPI → Redis cache check → NASA JPL Horizons API (if cache miss) → fallback JSON data (if NASA is unavailable)
 2. **AI questions**: User sends question → Next.js BFF → FastAPI (rate limit check) → Google Gemini API → response with sentence completion post-processing
 3. **Authentication**: NextAuth (Google/GitHub) → JWT session → BFF signs server-to-server JWT → FastAPI validates and performs identity linking
+4. **Textures**: Client loads WebP textures from **AWS CloudFront CDN** (cached at edge) with fallback to local public directory.
 
 ---
 
@@ -170,8 +171,9 @@ The application features a **heliocentric coordinate system** based on real ephe
 |---|---|
 | **Vercel** | Frontend hosting (Next.js) |
 | **Fly.io** | Backend API hosting (Docker) |
-| **Neon** | Serverless PostgreSQL database |
+| **PostgreSQL (Fly/Neon)** | Serverless/Managed PostgreSQL database |
 | **Upstash** | Serverless Redis (caching + rate limiting) |
+| **AWS S3 + CloudFront** | High-performance CDN for 3D textures |
 
 ---
 
@@ -179,10 +181,11 @@ The application features a **heliocentric coordinate system** based on real ephe
 
 ### Prerequisites
 
-- **Node.js** ≥ 18.x
+- **Node.js** ≥ 20.x
 - **Python** ≥ 3.12
 - **npm** or **yarn**
-- API keys for: Google Gemini, Upstash Redis, (optional) PostgreSQL
+- **Flyctl** (for backend management)
+- API keys for: Google Gemini, Upstash Redis, AWS (for texture upload)
 
 ### 1. Clone the repository
 
@@ -191,14 +194,18 @@ git clone https://github.com/your-username/solar-explore-3d.git
 cd solar-explore-3d
 ```
 
-### 2. Frontend Setup
+### 2. Frontend & Assets Setup
 
 ```bash
 # Install dependencies
 npm install
 
-# Set up planet textures (downloads from NASA/solar texture sources)
+# Set up tiered planet textures (generates low/mid/high tiers)
 npm run setup
+
+# (Optional) Upload textures to S3/CloudFront
+# Ensure AWS credentials are in .env.local
+npm run upload:textures
 
 # Create environment variables
 cp .env.local.example .env.local
@@ -208,6 +215,7 @@ Edit `.env.local` with your credentials:
 ```env
 # NextAuth
 AUTH_SECRET=your_nextauth_secret
+NEXTAUTH_URL=http://localhost:3000
 AUTH_GOOGLE_ID=your_google_client_id
 AUTH_GOOGLE_SECRET=your_google_client_secret
 AUTH_GITHUB_ID=your_github_client_id
@@ -215,7 +223,11 @@ AUTH_GITHUB_SECRET=your_github_client_secret
 
 # Backend API
 NEXT_PUBLIC_API_URL=http://localhost:8000
+PYTHON_API_URL=http://localhost:8000
 BFF_JWT_SECRET=shared_secret_between_bff_and_api
+
+# Textures (CDN)
+NEXT_PUBLIC_TEXTURE_CDN_URL=https://your-id.cloudfront.net
 ```
 
 ```bash
@@ -532,22 +544,29 @@ solar-explore-3d/
 
 ## 🌐 Deployment
 
-### Frontend (Vercel)
+### Assets (S3 + CloudFront)
+Textures are served via AWS CloudFront for low latency. Use the provided script to upload:
+```bash
+# Set AWS credentials in .env.local first
+npm run upload:textures
+```
 
+### Frontend (Vercel)
 The Next.js frontend is deployed to **Vercel** with automatic deployments on push to `main`.
 
 Required environment variables on Vercel:
-- `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`
+- `AUTH_SECRET`, `NEXTAUTH_URL`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`
 - `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET`
-- `NEXT_PUBLIC_API_URL` (points to Fly.io backend)
+- `NEXT_PUBLIC_API_URL`, `PYTHON_API_URL` (points to Fly.io backend)
 - `BFF_JWT_SECRET`
+- `NEXT_PUBLIC_TEXTURE_CDN_URL`
 
 ### Backend (Fly.io)
-
 The FastAPI backend is containerized with Docker and deployed to **Fly.io** in the `gru` (São Paulo) region.
 
 ```bash
 # Deploy
+cd sse3d-api
 fly deploy
 
 # View logs
@@ -555,8 +574,8 @@ fly logs
 ```
 
 Required secrets on Fly.io:
-- `GEMINI_API_KEY`, `DATABASE_URL`, `UPSTASH_REDIS_REST_URL`
-- `UPSTASH_REDIS_REST_TOKEN`, `ALLOWED_ORIGINS`, `BFF_JWT_SECRET`
+- `GEMINI_API_KEY`, `DATABASE_URL` (postgresql+asyncpg), `UPSTASH_REDIS_REST_URL`
+- `UPSTASH_REDIS_REST_TOKEN`, `ALLOWED_ORIGINS`, `BFF_JWT_SECRET`, `NEXTAUTH_SECRET`
 
 ---
 
