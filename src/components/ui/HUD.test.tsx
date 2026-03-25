@@ -1,0 +1,75 @@
+import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { HUD } from './HUD';
+
+// Mock framer-motion to bypass animation delays in tests
+vi.mock('framer-motion', () => ({
+  motion: {
+    div: ({ children, className, 'data-testid': dataTestId, ...props }: any) => (
+      <div className={className} data-testid={dataTestId} {...props}>
+        {children}
+      </div>
+    ),
+  },
+}));
+
+// Mock hooks and stores
+vi.mock('@/store/solarStore', () => ({
+  useSolarStore: () => ({
+    selectedPlanet: { bodyId: '399', englishName: 'Earth' },
+  }),
+}));
+
+vi.mock('@/store/uiStore', () => ({
+  useUIStore: () => ({
+    isMobile: false,
+  }),
+}));
+
+vi.mock('@/hooks/useFavorites', () => ({
+  useFavorites: () => ({
+    favorites: [],
+    addFavorite: vi.fn(),
+    removeFavorite: vi.fn(),
+    isFavorite: () => false,
+  }),
+}));
+
+// Mock sub-components
+vi.mock('./PlanetInfo', () => ({ PlanetInfo: () => <div data-testid="planet-info" /> }));
+vi.mock('./DateSelector', () => ({ DateSelector: () => <div data-testid="date-selector" /> }));
+vi.mock('./AstronomerModal', () => ({ AstronomerModal: () => <div data-testid="astronomer-modal" /> }));
+vi.mock('./AuthModal', () => ({ AuthModal: () => <div data-testid="auth-modal" /> }));
+vi.mock('./FavoritesModal', () => ({ FavoritesModal: () => <div data-testid="favorites-modal" /> }));
+
+// Mock icons
+vi.mock('lucide-react', () => ({
+  ChevronLeft: () => <div data-testid="chevron-left" />,
+  ChevronRight: () => <div data-testid="chevron-right" />,
+  Heart: () => <div data-testid="heart" />,
+  Telescope: () => <div data-testid="telescope" />,
+  Calendar: () => <div data-testid="calendar" />,
+  Menu: () => <div data-testid="menu" />,
+  LogOut: () => <div data-testid="logout" />,
+  User: () => <div data-testid="user" />,
+}));
+
+describe('HUD', () => {
+  it('toggles minimize state when clicking the control tab', () => {
+    render(<HUD ephemerisData={[]} />);
+
+    // In a non-minimized state (default on desktop with a selected planet), we should see ChevronRight
+    const toggleButton = screen.getByTitle('Hide panel');
+    expect(toggleButton).toBeInTheDocument();
+    
+    // It should initially render with x: 0 (from our mocked framer-motion, we can't easily check the inline style if we strip it, but we can check the icon change)
+    expect(screen.getByTestId('chevron-right')).toBeInTheDocument();
+
+    // Click to minimize
+    fireEvent.click(toggleButton);
+
+    // After clicking, title should change and ChevronLeft should appear
+    expect(screen.getByTitle('Show panel')).toBeInTheDocument();
+    expect(screen.getByTestId('chevron-left')).toBeInTheDocument();
+  });
+});
