@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useRef, useState, Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useLoader, useFrame, ThreeEvent } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
@@ -222,13 +222,43 @@ export function MoonSystem({
     staleTime: 60_000,
   });
 
-  if (!hasMoons || !data?.data) return null;
+  if (!hasMoons) return null;
 
   const textureTier = resolveTextureTier(tier);
 
   return (
     <group position={parentPosition}>
-      {data.data.map((moon: EphemerisData) => {
+      {/* 1. Static Orbit Lines - Rendered immediately from local config */}
+      {moonIds.map((moonId) => {
+        const config = getPlanetConfig(moonId);
+        if (!config) return null;
+
+        const orbitScale = getMoonOrbitScale(
+          parentId,
+          parentClass,
+          config.meanDistanceAU * AU_TO_KM,
+          viewMode
+        );
+
+        const semiMajorAxis = config.meanDistanceAU * AU_TO_UNIT * orbitScale;
+
+        return (
+          <OrbitLine
+            key={`orbit-${moonId}`}
+            semiMajorAxis={semiMajorAxis}
+            eccentricity={config.eccentricity}
+            inclination={config.orbitalInclination}
+            longAscNode={config.longAscNode}
+            longPerihelion={config.longPerihelion}
+            opacity={0.12}
+            color="#88aaff"
+            viewMode={viewMode}
+          />
+        );
+      })}
+
+      {/* 2. Moon Meshes - Rendered when ephemeris data arrives */}
+      {data?.data?.map((moon: EphemerisData) => {
         const config = getPlanetConfig(moon.bodyId);
         if (!config) return null;
 
@@ -251,7 +281,6 @@ export function MoonSystem({
           moonPos[2] * orbitScale,
         ];
 
-        const semiMajorAxis = config.meanDistanceAU * AU_TO_UNIT * orbitScale;
         const moonRadius = getRadius(moon.bodyId, 'MOON', viewMode);
 
         // Live distance to parent: magnitude of JPL position vector (km, relative to parent)
@@ -291,17 +320,7 @@ export function MoonSystem({
         };
 
         return (
-          <group key={moon.bodyId}>
-            <OrbitLine
-              semiMajorAxis={semiMajorAxis}
-              eccentricity={config.eccentricity}
-              inclination={config.orbitalInclination}
-              longAscNode={config.longAscNode}
-              longPerihelion={config.longPerihelion}
-              opacity={0.12}
-              color="#88aaff"
-              viewMode={viewMode}
-            />
+          <Suspense key={`moon-mesh-${moon.bodyId}`} fallback={null}>
             <MoonMesh
               name={config.englishName}
               position={scaledMoonPos}
@@ -313,7 +332,7 @@ export function MoonSystem({
               onClick={handleMoonClick}
               onDoubleClick={handleMoonDoubleClick}
             />
-          </group>
+          </Suspense>
         );
       })}
     </group>
