@@ -13,13 +13,14 @@ ALL_BODY_IDS = ["10", "199", "299", "399", "499", "599", "699", "799", "899"]
 async def get_ephemeris(
     target_date: date = Query(default=None, alias="date"),
     ids: str = Query(default=None),
+    center_body: str = Query(default="10"),
     force: bool = Query(default=False),
 ):
     date_str = target_date.isoformat() if target_date else date.today().isoformat()
     body_ids = [i.strip() for i in ids.split(",")] if ids else ALL_BODY_IDS
 
     if not force:
-        cached, missing = await get_bulk_cached(body_ids, date_str)
+        cached, missing = await get_bulk_cached(body_ids, date_str, center=center_body)
     else:
         cached, missing = [], body_ids
 
@@ -35,7 +36,7 @@ async def get_ephemeris(
             ),
         )
 
-    fresh = await fetch_all_parallel(missing, date_str)
+    fresh = await fetch_all_parallel(missing, date_str, center_body=center_body)
 
     fetched_ids = {item.body_id for item in fresh}
     for bid in missing:
@@ -44,7 +45,7 @@ async def get_ephemeris(
             if fallback_item:
                 fresh.append(fallback_item)
 
-    await set_bulk_cached(date_str, fresh)
+    await set_bulk_cached(date_str, fresh, center=center_body)
 
     return EphemerisResponse(
         data=cached + fresh,

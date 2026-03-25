@@ -36,3 +36,21 @@ async def test_ephemeris_cache_hit(client):
     assert response.status_code == 200
     mock_fetch.assert_not_called()
     assert response.json()["meta"]["source"] == "CACHE_HIT"
+
+@pytest.mark.asyncio
+async def test_ephemeris_with_center_body(client):
+    with patch("app.routers.ephemeris.get_bulk_cached",
+               return_value=([], ["501"])) as mock_cache_get:
+        with patch("app.routers.ephemeris.fetch_all_parallel",
+                   new_callable=AsyncMock,
+                   return_value=[_mock_planet("501")]) as mock_fetch:
+            with patch("app.routers.ephemeris.set_bulk_cached",
+                       new_callable=AsyncMock) as mock_cache_set:
+                response = await client.get(
+                    "/api/ephemeris?date=2024-01-01&ids=501&center_body=599"
+                )
+
+    assert response.status_code == 200
+    mock_cache_get.assert_called_once_with(["501"], "2024-01-01", center="599")
+    mock_fetch.assert_called_once_with(["501"], "2024-01-01", center_body="599")
+    mock_cache_set.assert_called_once()
