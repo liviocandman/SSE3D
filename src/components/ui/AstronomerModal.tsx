@@ -146,7 +146,11 @@ export function AstronomerModal({
           <div className="flex flex-col">
             <span className="text-[10px] uppercase tracking-[0.2em] text-white/40">Astrônomo Virtual</span>
             <span className="text-sm text-white/80">
-              {planet ? `${planet.englishName} • ${currentDate}` : 'Selecione um planeta'}
+              {planet
+                ? planet.parentName
+                  ? `${planet.englishName} • Satélite de ${planet.parentName} • ${currentDate}`
+                  : `${planet.englishName} • ${currentDate}`
+                : 'Selecione um planeta'}
             </span>
           </div>
           <div className="flex items-center gap-4">

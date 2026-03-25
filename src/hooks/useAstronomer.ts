@@ -8,6 +8,8 @@ export interface AstronomerRequest {
   date: string;
   question: string;
   sessionId?: string;
+  bodyType?: 'PLANET' | 'MOON' | 'STAR' | 'DWARF_PLANET';
+  parentName?: string;
 }
 
 export interface AstronomerResponse {

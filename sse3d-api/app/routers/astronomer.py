@@ -64,6 +64,8 @@ async def post_ask_astronomer(
         body_id=payload.body_id,
         target_date=str(payload.date),
         question=payload.question,
+        body_type=payload.body_type,
+        parent_name=payload.parent_name,
     )
 
     return AstronomerResponse(answer=answer)
