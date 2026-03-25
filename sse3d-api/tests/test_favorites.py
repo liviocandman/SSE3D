@@ -1,9 +1,5 @@
 import pytest
-from httpx import AsyncClient
-from unittest.mock import patch, MagicMock
-from app.main import app
-from app.models.database import FavoriteQuestion, User
-from app.core.database import get_session
+from unittest.mock import patch
 import jwt
 from uuid import uuid4
 
@@ -12,7 +8,17 @@ MOCK_SECRET = "test-secret"
 
 @pytest.fixture
 def mock_token():
-    return jwt.encode({"sub": "user_123", "email": "test@example.com", "name": "Test User"}, MOCK_SECRET, algorithm="HS256")
+    return jwt.encode(
+        {
+            "sub": "user_123",
+            "email": "test@example.com",
+            "name": "Test User",
+            "provider": "github",
+            "provider_account_id": "github_user_123",
+        },
+        MOCK_SECRET,
+        algorithm="HS256",
+    )
 
 @pytest.mark.asyncio
 async def test_save_favorite_anonymous_allowed(client):
@@ -75,7 +81,7 @@ async def test_save_favorite_anonymous_limit_reached(client):
 async def test_save_favorite_authenticated_no_limit(client, mock_token):
     """Verify authenticated users have no favorites limits."""
     # We patch the secret to match our mock token
-    with patch("app.core.config.settings.nextauth_secret", MOCK_SECRET):
+    with patch("app.core.config.settings.bff_jwt_secret", MOCK_SECRET):
         # Should be able to save more than 2
         for i in range(3):
             resp = await client.post("/api/ai/favorites", json={
@@ -90,7 +96,7 @@ async def test_save_favorite_authenticated_no_limit(client, mock_token):
 async def test_merge_anonymous_favorites(client, mock_token):
     """Verify merging anonymous favorites into a user account."""
     session_id = f"session-{uuid4()}"
-    with patch("app.core.config.settings.nextauth_secret", MOCK_SECRET):
+    with patch("app.core.config.settings.bff_jwt_secret", MOCK_SECRET):
         # 1. Create anonymous favorites
         await client.post("/api/ai/favorites", json={
             "bodyId": "499",
@@ -124,4 +130,3 @@ async def test_delete_favorite_anonymous_owned(client):
 
     delete_resp = await client.delete(f"/api/ai/favorites/{fav_id}?session_id={session_id}")
     assert delete_resp.status_code == 204
-

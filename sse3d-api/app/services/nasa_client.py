@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from typing import Optional
 import httpx
 from loguru import logger
-from app.models.schemas import EphemerisData, Position
+from app.models.schemas import EphemerisData
 
 HORIZONS_URL = "https://ssd.jpl.nasa.gov/api/horizons.api"
 AU_TO_KM = 149_597_870.7

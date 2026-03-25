@@ -12,7 +12,6 @@ from sqlmodel import SQLModel
 sys.path.append(os.getcwd())
 
 # Import all models to register them with SQLModel.metadata
-from app.models.database import User, FavoriteQuestion
 from app.core.config import settings
 
 # this is the Alembic Config object, which provides

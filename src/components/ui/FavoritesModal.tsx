@@ -89,7 +89,7 @@ export function FavoritesModal() {
                   
                   <div className="space-y-3">
                     <p className="text-sky-300 font-semibold text-base leading-snug">
-                      "{fav.question}"
+                      &ldquo;{fav.question}&rdquo;
                     </p>
                     <p className="text-zinc-400 text-sm leading-relaxed border-l-2 border-white/10 pl-4 py-1 italic">
                       {fav.answer}
