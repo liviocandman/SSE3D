@@ -33,10 +33,6 @@ const MIN_FONT_SIZE = 2;
 const MAX_FONT_SIZE = 100;
 const THROTTLE_FRAMES = 10;
 
-// Marker fade constants
-const MARKER_FADE_START = 500;
-const MARKER_FADE_END = 100;
-
 // --- Component ---
 
 export function CelestialBody({
@@ -60,7 +56,6 @@ export function CelestialBody({
   });
 
   const [fontSize, setFontSize] = useState(5);
-  const [markerOpacity, setMarkerOpacity] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
   const { camera } = useThree();
 

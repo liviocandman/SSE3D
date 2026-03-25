@@ -39,7 +39,6 @@ interface MoonSystemProps {
 }
 
 interface MoonMeshProps {
-  bodyId: string;
   name: string;
   position: [number, number, number];
   radius: number;
@@ -74,7 +73,6 @@ function resolveTextureTier(tier: string): TextureTier {
  * - DblClick → travel to moon (realistic mode).
  */
 function MoonMesh({
-  bodyId,
   name,
   position,
   radius,
@@ -194,8 +192,8 @@ export function MoonSystem({
   viewMode,
   tier,
 }: MoonSystemProps) {
-  const moonIds = PLANET_MOONS[parentId];
-  if (!moonIds || moonIds.length === 0) return null;
+  const moonIds = PLANET_MOONS[parentId] ?? [];
+  const hasMoons = moonIds.length > 0;
 
   const { setSelectedPlanet, setViewMode, setTravelTarget } = useSolarStore(
     useShallow((s) => ({
@@ -208,6 +206,7 @@ export function MoonSystem({
 
   const { data } = useQuery<EphemerisResponse>({
     queryKey: ['moon-ephemeris', parentId, date],
+    enabled: hasMoons,
     queryFn: async () => {
       const params = new URLSearchParams({
         date,
@@ -223,7 +222,7 @@ export function MoonSystem({
     staleTime: 60_000,
   });
 
-  if (!data?.data) return null;
+  if (!hasMoons || !data?.data) return null;
 
   const textureTier = resolveTextureTier(tier);
 
@@ -304,7 +303,6 @@ export function MoonSystem({
               viewMode={viewMode}
             />
             <MoonMesh
-              bodyId={moon.bodyId}
               name={config.englishName}
               position={scaledMoonPos}
               radius={moonRadius}

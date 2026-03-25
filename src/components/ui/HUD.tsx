@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { motion } from "framer-motion";
 import { PlanetInfo } from "./PlanetInfo";
 import { DateSelector } from "./DateSelector";
 import { AstronomerModal } from "./AstronomerModal";
@@ -9,7 +10,7 @@ import { FavoritesModal } from "./FavoritesModal";
 import { useSolarStore } from "@/store/solarStore";
 import { useUIStore } from "@/store/uiStore";
 import { useShallow } from "zustand/react/shallow";
-import { Heart } from "lucide-react";
+import { ChevronLeft, ChevronRight, Heart } from "lucide-react";
 import { useFavorites } from "@/hooks/useFavorites";
 
 // --- Types ---
@@ -81,10 +82,18 @@ export function HUD({
   const [isAstronomerOpen, setIsAstronomerOpen] = useState(false);
   // Start expanded if planet is already selected, otherwise collapsed
   const [isExpanded, setIsExpanded] = useState(() => !!selectedPlanet);
+  const [isMinimized, setIsMinimized] = useState(false);
 
   const toggleExpand = () => {
     setIsExpanded(!isExpanded);
   };
+
+  // Always reopen the desktop drawer when a different planet is selected.
+  useEffect(() => {
+    if (!isMobile && selectedPlanet?.bodyId) {
+      setIsMinimized(false);
+    }
+  }, [isMobile, selectedPlanet?.bodyId]);
 
   const accentClass = selectedPlanet
     ? getPlanetAccentClass(selectedPlanet.bodyId)
@@ -200,10 +209,25 @@ export function HUD({
   // Desktop sidebar
   return (
     <>
-      <div
-        className={`fixed top-4 right-4 bottom-4 w-80 glass-panel rounded-2xl z-100 flex flex-col overflow-hidden transition-all duration-700 hardware-accel border-l-2 ${accentClass} ${selectedPlanet ? "translate-x-0 opacity-100" : "translate-x-12 opacity-90"}`}
+      <motion.div
+        initial={false}
+        animate={{
+          x: isMinimized ? "calc(100% - 48px)" : 0,
+          opacity: selectedPlanet ? 1 : 0.95,
+        }}
+        transition={{ type: "spring", stiffness: 320, damping: 34 }}
+        className={`fixed top-4 right-0 bottom-4 w-80 glass-panel rounded-l-2xl z-100 flex flex-col overflow-hidden hardware-accel border-l-2 ${accentClass}`}
       >
-        {/* sidebarStyle */}
+        {/* Left control tab for the desktop drawer */}
+        <button
+          onClick={() => setIsMinimized((prev) => !prev)}
+          className="absolute left-0 top-1/2 z-[110] -translate-y-1/2 flex h-12 w-9 items-center justify-center rounded-r-xl border border-white/20 border-l-0 bg-black/55 backdrop-blur-xl text-white/80 transition-colors hover:bg-black/70 hover:text-white"
+          title={isMinimized ? "Show panel" : "Hide panel"}
+          aria-label={isMinimized ? "Show panel" : "Hide panel"}
+        >
+          {isMinimized ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+        </button>
+
         {/* Header */}
         <div className="p-6 pb-4 border-b border-white/10 flex items-center justify-between">
           <h1 className="text-sm font-bold text-white/70 tracking-[0.15em] uppercase">
@@ -269,7 +293,7 @@ export function HUD({
 
         {/* Decorative footer element */}
         <div className="h-1 w-full bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-50" />
-      </div>
+      </motion.div>
       <AstronomerModal
         isOpen={isAstronomerOpen}
         onClose={() => setIsAstronomerOpen(false)}

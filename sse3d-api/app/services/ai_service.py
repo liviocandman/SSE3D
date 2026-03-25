@@ -79,7 +79,7 @@ def _ensure_complete_sentence(text: str) -> str:
     return text
 
 async def ask_astronomer(body_id: str, target_date: str, question: str) -> str:
-    en_name, pt_name = PLANET_LABELS.get(body_id, ("Unknown", "Desconhecido"))
+    en_name, pt_name = BODY_LABELS.get(body_id, ("Unknown", "Desconhecido"))
 
     system_prompt = (
         f"Você é o Astrônomo Virtual do Solar Explorer 3D. "

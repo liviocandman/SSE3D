@@ -1,4 +1,3 @@
-import pytest
 from app.services.ai_service import generate_system_prompt
 
 def test_moon_prompt_mentions_moon_and_parent():
