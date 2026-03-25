@@ -11,6 +11,7 @@ import { ErrorOverlay } from '@/components/ui/ErrorOverlay';
 import { HUD } from '@/components/ui/HUD';
 import { useSessionMerge } from '@/hooks/useSessionMerge';
 import { BODY_IDS } from '@/lib/types';
+import { scalePositionFromKm } from '@/lib/scales';
 import type { AppError } from '@/components/ui/ErrorOverlay';
 import { useSolarStore } from '@/store/solarStore';
 
@@ -72,10 +73,11 @@ export default function Home() {
   const earthPosition = useMemo(() => {
     const earth = ephemerisData.find(body => body.bodyId === BODY_IDS.EARTH);
     if (earth) {
+      const scaledEarth = scalePositionFromKm(earth.position.x, earth.position.y, earth.position.z);
       return {
-        x: earth.position.x,
-        y: earth.position.y,
-        z: earth.position.z,
+        x: scaledEarth[0],
+        y: scaledEarth[1],
+        z: scaledEarth[2],
       };
     }
     return undefined;

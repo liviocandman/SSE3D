@@ -59,6 +59,10 @@ function calculateVelocityMagnitude(velocity: { x: number; y: number; z: number 
   return Math.sqrt(velocity.x ** 2 + velocity.y ** 2 + velocity.z ** 2);
 }
 
+function formatBodyClass(cls: string): string {
+  return cls.split('_').map(w => w.charAt(0) + w.slice(1).toLowerCase()).join(' ');
+}
+
 // --- Planet Type Icons ---
 
 const PLANET_ICONS: Record<string, string> = {
@@ -83,18 +87,27 @@ export function PlanetInfo({ planet, earthPosition, onAskAstronomer }: PlanetInf
   const config = PLANET_CONFIG[planet.bodyId];
   const planetType = config?.type || 'PLANET';
   const isMoon = planetType === 'MOON';
+  const isStar = planetType === 'STAR';
   const orbitalPeriod = config?.orbitalPeriod || 0;
   const realRadiusKm = REAL_RADII_KM[planet.bodyId] || 0;
   const diameterKm = realRadiusKm * 2;
 
   // Orbital velocity from NASA API velocity vector
-  const orbitalVelocity = planet.velocity
+  const orbitalVelocity = (planet.velocity && !isMoon && !isStar)
     ? calculateVelocityMagnitude(planet.velocity)
     : null;
 
   const fallbackVelocity = (() => {
     if (orbitalVelocity !== null) return null;
-    const orbitalRadius = planet.distanceFromSun * 1e6;
+    if (isStar) return null;
+    
+    let orbitalRadius: number;
+    if (isMoon && planet.distanceToParentKm != null) {
+      orbitalRadius = planet.distanceToParentKm;
+    } else {
+      orbitalRadius = planet.distanceFromSun * 1e6;
+    }
+    
     const orbitalPeriodSeconds = orbitalPeriod * 24 * 60 * 60;
     return orbitalPeriodSeconds > 0
       ? (2 * Math.PI * orbitalRadius) / orbitalPeriodSeconds
@@ -163,7 +176,31 @@ export function PlanetInfo({ planet, earthPosition, onAskAstronomer }: PlanetInf
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-3">
-        {isMoon ? (
+        {isStar ? (
+          /* Star stats */
+          <>
+            <StatCard
+              label="Distance from Earth"
+              value={distanceFromEarth !== null ? formatNumber(distanceFromEarth) : '—'}
+              unit="M km"
+            />
+            <StatCard
+              label="Equatorial Radius"
+              value={realRadiusKm > 0 ? formatNumber(realRadiusKm, 0) : '—'}
+              unit="km"
+            />
+            <StatCard
+              label="Stellar Age"
+              value="4.6"
+              unit="Billion Yrs"
+            />
+            <StatCard
+              label="Spectral Type"
+              value="G2V"
+              unit=""
+            />
+          </>
+        ) : isMoon ? (
           /* Moon-specific top stats */
           <>
             <StatCard
@@ -220,7 +257,7 @@ export function PlanetInfo({ planet, earthPosition, onAskAstronomer }: PlanetInf
       {config && (
         <>
           <h3 className="text-xs text-white/40 uppercase tracking-widest font-semibold mt-2">
-            🌍 Physical Properties
+            Physical Properties
           </h3>
           <div className="grid grid-cols-2 gap-3">
             <StatCard
@@ -265,10 +302,10 @@ export function PlanetInfo({ planet, earthPosition, onAskAstronomer }: PlanetInf
       )}
 
       {/* Orbital Data Section */}
-      {config && (
+      {config && !isStar && (
         <>
           <h3 className="text-xs text-white/40 uppercase tracking-widest font-semibold mt-2">
-            🛸 Orbital Data
+            Orbital Data
           </h3>
           <div className="grid grid-cols-2 gap-3">
             {/* Semi-Major Axis */}
@@ -295,7 +332,7 @@ export function PlanetInfo({ planet, earthPosition, onAskAstronomer }: PlanetInf
             {/* Body Type */}
             <StatCard
               label="Body Type"
-              value={config.bodyClass === 'GAS_GIANT' ? 'Gas Giant' : 'Rocky'}
+              value={formatBodyClass(config.bodyClass)}
               unit=""
             />
           </div>
