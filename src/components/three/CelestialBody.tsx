@@ -7,7 +7,6 @@ import { TextureLoader } from "three";
 import type { Mesh } from "three";
 import * as THREE from "three";
 import "../../app/globals.css";
-import { PlanetMarker } from "./PlanetMarker";
 import type { ViewMode } from "@/lib/scales";
 
 // --- Types ---
@@ -53,13 +52,13 @@ export function CelestialBody({
   viewMode = "didactic",
 }: CelestialBodyProps) {
   const meshRef = useRef<Mesh>(null);
-  
+
   // Use useLoader directly to have access to useLoader.clear() for global cache cleanup
   // Note: clearing cache on unmount during Suspense can cause infinite loops.
   const texture = useLoader(TextureLoader, textureUrl, (loader) => {
     loader.setCrossOrigin("anonymous");
   });
-  
+
   const [fontSize, setFontSize] = useState(5);
   const [markerOpacity, setMarkerOpacity] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
@@ -94,7 +93,7 @@ export function CelestialBody({
 
     // Throttled calculations
     frameCountRef.current++;
-    
+
     // Calculate squared distance (no sqrt, faster) for adaptive throttling
     tempVec.current.set(position[0], position[1], position[2]);
     const distanceSq = camera.position.distanceToSquared(tempVec.current);
@@ -121,36 +120,6 @@ export function CelestialBody({
     newFontSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, newFontSize));
     if (Math.abs(newFontSize - fontSize) > 0.5) {
       setFontSize(newFontSize);
-    }
-
-    // --- Marker Opacity (realistic mode only) ---
-    if (viewMode === "realistic") {
-      // Hide marker when camera is close (absolute distance check)
-      if (distance < 1.0) {
-        if (markerOpacity !== 0) {
-          setMarkerOpacity(0);
-        }
-      } else {
-        // Calculate relative distance for fade
-        const relativeDistance = distance / radius;
-
-        let newOpacity: number;
-        if (relativeDistance > MARKER_FADE_START) {
-          newOpacity = 1;
-        } else if (relativeDistance < MARKER_FADE_END) {
-          newOpacity = 0;
-        } else {
-          newOpacity =
-            (relativeDistance - MARKER_FADE_END) /
-            (MARKER_FADE_START - MARKER_FADE_END);
-        }
-
-        if (Math.abs(newOpacity - markerOpacity) > 0.02) {
-          setMarkerOpacity(newOpacity);
-        }
-      }
-    } else if (markerOpacity > 0) {
-      setMarkerOpacity(0);
     }
   });
 
@@ -185,19 +154,27 @@ export function CelestialBody({
   return (
     <group position={position}>
       {/* Invisible hitbox for interaction - always large enough to click */}
+      {/* NOTE: visible={false} disables raycasting in Three.js — we use colorWrite={false}
+           + depthWrite={false} instead to keep it invisible but still raycastable. */}
       <mesh
-        visible={false}
+        onClick={handleClick}
+        onDoubleClick={handleDoubleClick}
+        onPointerEnter={() => setIsHovered(true)}
+        onPointerLeave={() => setIsHovered(false)}
+        renderOrder={-1}
+      >
+        <sphereGeometry args={[hitboxRadius, 16, 16]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+
+      {/* Visible planet mesh — also wires events so clicking the texture itself works */}
+      <mesh
+        ref={meshRef}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
         onPointerEnter={() => setIsHovered(true)}
         onPointerLeave={() => setIsHovered(false)}
       >
-        <sphereGeometry args={[hitboxRadius, 16, 16]} />
-        <meshBasicMaterial transparent opacity={0} />
-      </mesh>
-
-      {/* Visible planet mesh */}
-      <mesh ref={meshRef}>
         <sphereGeometry args={[radius, segments, segments]} />
         <meshStandardMaterial
           map={texture}
@@ -219,10 +196,6 @@ export function CelestialBody({
         </mesh>
       )}
 
-      {/* LOD Marker - visible in realistic mode when far */}
-      {viewMode === "realistic" && markerOpacity > 0 && (
-        <PlanetMarker opacity={markerOpacity} />
-      )}
 
       {/* 3D Text Label - white and above planet on hover */}
       <Billboard follow lockX={false} lockY={false} lockZ={false}>

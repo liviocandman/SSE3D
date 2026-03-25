@@ -8,8 +8,14 @@ import { QualityTierProvider, useQualityTier } from '@/contexts/QualityTierConte
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { Sun } from './Sun';
 import { CelestialBody } from './CelestialBody';
+import { MoonSystem } from './MoonSystem';
 import type { EphemerisData, SelectedPlanet } from '@/lib/types';
-import { getPlanetConfig, getTexturePath, TextureTier } from '@/lib/textureConfig';
+import {
+  getPlanetConfig,
+  getTexturePath,
+  PLANET_MOONS,
+  TextureTier,
+} from '@/lib/textureConfig';
 import { getRadius, scalePositionFromKm, AU_TO_UNIT } from '@/lib/scales';
 import { CameraController } from '@/hooks/useCameraAnimation';
 import { OrbitLine, getOrbitOpacity } from './OrbitLine';
@@ -94,6 +100,7 @@ function SceneContent({
   const { tier, settings } = useQualityTier();
   
   const {
+    currentDate,
     selectedPlanet,
     setSelectedPlanet,
     viewMode,
@@ -103,6 +110,7 @@ function SceneContent({
     setTravelTarget,
   } = useSolarStore(
     useShallow((state) => ({
+      currentDate: state.currentDate,
       selectedPlanet: state.selectedPlanet,
       setSelectedPlanet: state.setSelectedPlanet,
       viewMode: state.viewMode,
@@ -180,6 +188,8 @@ function SceneContent({
     if (planet) {
       // Always use realistic radius for camera zoom since we switch to realistic mode
       const realisticRadius = getRadius(planet.bodyId, planet.bodyClass, 'realistic');
+      const moonSystemMultiplier = PLANET_MOONS[planet.bodyId] ? 5 : 1;
+      const cameraRadius = realisticRadius * moonSystemMultiplier;
 
       const selected: SelectedPlanet = {
         bodyId: planet.bodyId,
@@ -191,10 +201,10 @@ function SceneContent({
           z: planet.position[2],
         },
         velocity: planet.velocity,
-        radius: realisticRadius, // Use realistic radius for camera zoom
+        radius: cameraRadius, // Include moon system framing offset where applicable
         distanceFromSun: planet.distanceFromSun,
       };
-      console.log('[SceneManager] Planet double-clicked:', selected.englishName, 'realistic radius:', realisticRadius);
+      console.log('[SceneManager] Planet double-clicked:', selected.englishName, 'camera radius:', cameraRadius);
       setSelectedPlanet(selected);
       setViewMode('realistic');
       setTravelTarget(selected.position, selected.radius);
@@ -286,20 +296,33 @@ function SceneContent({
       {planetsToRender.map((planet) => {
         if (!planet) return null;
         return (
-          <CelestialBody
-            key={planet.bodyId}
-            bodyId={planet.bodyId}
-            name={planet.name}
-            englishName={planet.englishName}
-            position={planet.position}
-            radius={planet.radius}
-            textureUrl={planet.texturePath}
-            rotationSpeed={planet.rotationSpeed}
-            segments={planet.segments}
-            onClick={handlePlanetClick}
-            onDoubleClick={handlePlanetDoubleClick}
-            viewMode={viewMode}
-          />
+          <group key={planet.bodyId}>
+            <CelestialBody
+              bodyId={planet.bodyId}
+              name={planet.name}
+              englishName={planet.englishName}
+              position={planet.position}
+              radius={planet.radius}
+              textureUrl={planet.texturePath}
+              rotationSpeed={planet.rotationSpeed}
+              segments={planet.segments}
+              onClick={handlePlanetClick}
+              onDoubleClick={handlePlanetDoubleClick}
+              viewMode={viewMode}
+            />
+            {PLANET_MOONS[planet.bodyId] &&
+              (selectedPlanet?.bodyId === planet.bodyId ||
+               selectedPlanet?.parentId === planet.bodyId) && (
+              <MoonSystem
+                parentId={planet.bodyId}
+                parentClass={planet.bodyClass}
+                parentPosition={planet.position}
+                date={currentDate}
+                viewMode={viewMode}
+                tier={tier}
+              />
+            )}
+          </group>
         );
       })}
 
