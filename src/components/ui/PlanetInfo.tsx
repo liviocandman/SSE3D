@@ -11,6 +11,9 @@ interface PlanetData {
   position: { x: number; y: number; z: number };
   velocity?: { x: number; y: number; z: number }; // km/s from NASA API
   distanceFromSun: number; // million km
+  // Moon-specific fields
+  parentName?: string;
+  distanceToParentKm?: number;
 }
 
 interface PlanetInfoProps {
@@ -62,6 +65,7 @@ const PLANET_ICONS: Record<string, string> = {
   STAR: '☀️',
   PLANET: '🪐',
   DWARF_PLANET: '🌑',
+  MOON: '🌕',
 };
 
 // --- Component ---
@@ -78,16 +82,16 @@ export function PlanetInfo({ planet, earthPosition, onAskAstronomer }: PlanetInf
 
   const config = PLANET_CONFIG[planet.bodyId];
   const planetType = config?.type || 'PLANET';
+  const isMoon = planetType === 'MOON';
   const orbitalPeriod = config?.orbitalPeriod || 0;
   const realRadiusKm = REAL_RADII_KM[planet.bodyId] || 0;
   const diameterKm = realRadiusKm * 2;
 
-  // Calculate orbital velocity from NASA API velocity vector
+  // Orbital velocity from NASA API velocity vector
   const orbitalVelocity = planet.velocity
     ? calculateVelocityMagnitude(planet.velocity)
     : null;
 
-  // Fallback: calculate using v = 2πr/T if no API velocity
   const fallbackVelocity = (() => {
     if (orbitalVelocity !== null) return null;
     const orbitalRadius = planet.distanceFromSun * 1e6;
@@ -99,15 +103,12 @@ export function PlanetInfo({ planet, earthPosition, onAskAstronomer }: PlanetInf
 
   const displayVelocity = orbitalVelocity ?? fallbackVelocity;
 
-  // Calculate distance from Earth
   const distanceFromEarth = earthPosition
     ? calculateMillionKmDistance(planet.position, earthPosition)
     : null;
 
   const planetIcon = PLANET_ICONS[planetType] || '🪐';
   const fallbackColor = config?.fallbackColor || '#666';
-
-  // Gravity relative to Earth
   const gravityG = config ? (config.surfaceGravity / 9.81).toFixed(2) : null;
 
   return (
@@ -128,7 +129,9 @@ export function PlanetInfo({ planet, earthPosition, onAskAstronomer }: PlanetInf
             {planet.englishName}
           </h2>
           <span className="text-sm text-white/50 uppercase tracking-widest">
-            {planetType.replace('_', ' ')}
+            {isMoon && planet.parentName
+              ? `Natural Satellite of ${planet.parentName}`
+              : planetType.replace('_', ' ')}
           </span>
         </div>
       </div>
@@ -158,35 +161,59 @@ export function PlanetInfo({ planet, earthPosition, onAskAstronomer }: PlanetInf
         </button>
       )}
 
-      {/* Stats Grid - Original 2x2 layout */}
+      {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-3">
-        {/* Distance from Sun */}
-        <StatCard
-          label="Distance from Sun"
-          value={formatNumber(planet.distanceFromSun)}
-          unit="M km"
-        />
-
-        {/* Distance from Earth */}
-        <StatCard
-          label="Distance from Earth"
-          value={distanceFromEarth !== null ? formatNumber(distanceFromEarth) : '—'}
-          unit="M km"
-        />
-
-        {/* Orbital Velocity */}
-        <StatCard
-          label="Orbital Velocity"
-          value={displayVelocity !== null ? formatNumber(displayVelocity) : '—'}
-          unit="km/s"
-        />
-
-        {/* Orbital Period */}
-        <StatCard
-          label="Orbital Period"
-          value={orbitalPeriod > 0 ? formatNumber(orbitalPeriod, 0) : '—'}
-          unit="days"
-        />
+        {isMoon ? (
+          /* Moon-specific top stats */
+          <>
+            <StatCard
+              label={`Distance to ${planet.parentName ?? 'Parent'}`}
+              value={planet.distanceToParentKm != null
+                ? formatNumber(planet.distanceToParentKm, 0)
+                : '—'}
+              unit="km"
+            />
+            <StatCard
+              label="Orbital Velocity"
+              value={displayVelocity !== null ? formatNumber(displayVelocity) : '—'}
+              unit="km/s"
+            />
+            <StatCard
+              label="Orbital Period"
+              value={orbitalPeriod > 0 ? formatNumber(orbitalPeriod, 2) : '—'}
+              unit="Earth days"
+            />
+            <StatCard
+              label="Equatorial Radius"
+              value={realRadiusKm > 0 ? formatNumber(realRadiusKm, 0) : '—'}
+              unit="km"
+            />
+          </>
+        ) : (
+          /* Planet stats */
+          <>
+            <StatCard
+              label="Distance from Sun"
+              value={formatNumber(planet.distanceFromSun)}
+              unit="M km"
+            />
+            <StatCard
+              label="Distance from Earth"
+              value={distanceFromEarth !== null ? formatNumber(distanceFromEarth) : '—'}
+              unit="M km"
+            />
+            <StatCard
+              label="Orbital Velocity"
+              value={displayVelocity !== null ? formatNumber(displayVelocity) : '—'}
+              unit="km/s"
+            />
+            <StatCard
+              label="Orbital Period"
+              value={orbitalPeriod > 0 ? formatNumber(orbitalPeriod, 0) : '—'}
+              unit="days"
+            />
+          </>
+        )}
       </div>
 
       {/* Physical Properties Section */}
@@ -196,34 +223,44 @@ export function PlanetInfo({ planet, earthPosition, onAskAstronomer }: PlanetInf
             🌍 Physical Properties
           </h3>
           <div className="grid grid-cols-2 gap-3">
-            {/* Surface Gravity */}
             <StatCard
               label="Surface Gravity"
               value={`${config.surfaceGravity.toFixed(2)}`}
               unit={`m/s² (${gravityG}g)`}
             />
-
-            {/* Day Length */}
             <StatCard
               label="Day Length"
               value={formatDayLength(config.dayLength)}
               unit=""
             />
-
-            {/* Mean Temperature */}
             <StatCard
               label="Temperature"
               value={`${config.meanTemperature > 0 ? '+' : ''}${config.meanTemperature}`}
               unit="°C"
             />
-
-            {/* Diameter */}
             <StatCard
               label="Diameter"
               value={formatNumber(diameterKm, 0)}
               unit="km"
             />
           </div>
+          {/* Moon-specific metadata: surface type and discoverer */}
+          {isMoon && (config.surfaceType || config.discoverer) && (
+            <div className="grid grid-cols-1 gap-2 mt-1">
+              {config.surfaceType && (
+                <div className="bg-white/5 rounded-lg p-3 border border-white/10 flex flex-col min-w-0">
+                  <span className="text-[10px] text-white/50 mb-1 uppercase tracking-wider">Surface / Composition</span>
+                  <span className="text-sm font-semibold text-white">{config.surfaceType}</span>
+                </div>
+              )}
+              {config.discoverer && (
+                <div className="bg-white/5 rounded-lg p-3 border border-white/10 flex flex-col min-w-0">
+                  <span className="text-[10px] text-white/50 mb-1 uppercase tracking-wider">🔭 Discovered by</span>
+                  <span className="text-sm font-semibold text-white">{config.discoverer}</span>
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
 
