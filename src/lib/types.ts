@@ -15,6 +15,7 @@ export interface EphemerisData {
   position: EphemerisPosition;
   velocity?: EphemerisPosition; // km/s from NASA API
   timestamp: string;
+  parentId?: string;
 }
 
 export interface SelectedPlanet {
@@ -25,6 +26,10 @@ export interface SelectedPlanet {
   velocity?: EphemerisPosition; // km/s from NASA API
   radius: number;
   distanceFromSun: number;
+  // Moon-specific fields (only set when body is a moon)
+  parentId?: string;           // NASA ID of parent planet
+  parentName?: string;         // Human-readable parent planet name (e.g. 'Jupiter')
+  distanceToParentKm?: number; // Live distance to parent computed from API position vector
 }
 
 export type DataSource = 'NASA_LIVE' | 'CACHE_HIT' | 'FALLBACK_DATASET';
@@ -51,4 +56,26 @@ export const BODY_IDS = {
   SATURN: '699',
   URANUS: '799',
   NEPTUNE: '899',
+  PLUTO: '999',
+  MOON: '301',
+  PHOBOS: '401',
+  DEIMOS: '402',
+  IO: '501',
+  EUROPA: '502',
+  GANYMEDE: '503',
+  CALLISTO: '504',
+  MIMAS: '601',
+  ENCELADUS: '602',
+  TETHYS: '603',
+  DIONE: '604',
+  RHEA: '605',
+  TITAN: '606',
+  IAPETUS: '608',
+  ARIEL: '701',
+  UMBRIEL: '702',
+  TITANIA: '703',
+  OBERON: '704',
+  MIRANDA: '705',
+  TRITON: '801',
+  CHARON: '901',
 } as const;

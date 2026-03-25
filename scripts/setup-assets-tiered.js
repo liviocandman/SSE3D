@@ -108,10 +108,42 @@ const TEXTURE_SOURCES = {
   moon: {
     // NASA LRO (Lunar Reconnaissance Orbiter)
     urls: [
-      'https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_poles_2048x1024.jpg',
-      'https://www.solarsystemscope.com/textures/download/2k_moon.jpg'
+      'https://www.solarsystemscope.com/textures/download/8k_moon.jpg',
+      'https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_poles_2048x1024.jpg'
     ],
     fallback: 'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/moon_1024.jpg'
+  },
+  io: {
+    urls: ['https://upload.wikimedia.org/wikipedia/commons/7/7b/Io_highest_resolution_true_color.jpg'],
+    fallback: 'https://www.solarsystemscope.com/textures/download/2k_moon.jpg'
+  },
+  europa: {
+    urls: ['https://upload.wikimedia.org/wikipedia/commons/e/e4/Europa-map-voyager-galileo.jpg'],
+    fallback: 'https://www.solarsystemscope.com/textures/download/2k_moon.jpg'
+  },
+  ganymede: {
+    urls: ['https://upload.wikimedia.org/wikipedia/commons/c/c2/Ganymede_map.jpg'],
+    fallback: 'https://www.solarsystemscope.com/textures/download/2k_moon.jpg'
+  },
+  callisto: {
+    urls: ['https://upload.wikimedia.org/wikipedia/commons/2/20/Callisto_map.jpg'],
+    fallback: 'https://www.solarsystemscope.com/textures/download/2k_moon.jpg'
+  },
+  titan: {
+    urls: ['https://upload.wikimedia.org/wikipedia/commons/0/01/Titan_map.jpg'],
+    fallback: 'https://www.solarsystemscope.com/textures/download/2k_moon.jpg'
+  },
+  enceladus: {
+    urls: ['https://upload.wikimedia.org/wikipedia/commons/a/ad/Enceladus_map.jpg'],
+    fallback: 'https://www.solarsystemscope.com/textures/download/2k_moon.jpg'
+  },
+  triton: {
+    urls: ['https://upload.wikimedia.org/wikipedia/commons/a/a6/Triton_color_map.jpg'],
+    fallback: 'https://www.solarsystemscope.com/textures/download/2k_moon.jpg'
+  },
+  generic_moon: {
+    urls: ['https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Rhea_map.jpg/1024px-Rhea_map.jpg'],
+    fallback: 'https://www.solarsystemscope.com/textures/download/2k_moon.jpg'
   },
   saturn_ring: {
     urls: [

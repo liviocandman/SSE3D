@@ -2,7 +2,26 @@ from pydantic import BaseModel, Field, field_validator, ConfigDict
 from datetime import date, datetime
 from typing import Optional
 
-KNOWN_BODY_IDS = {"10", "199", "299", "399", "499", "599", "699", "799", "899"}
+KNOWN_BODY_IDS = {
+    "10",
+    "199",
+    "299",
+    "399",
+    "499",
+    "599",
+    "699",
+    "799",
+    "899",
+    "999",  # Pluto
+    # Moons
+    "301",
+    "401", "402",  # Mars moons
+    "501", "502", "503", "504",
+    "601", "602", "603", "604", "605", "606", "608",  # Saturn moons
+    "701", "702", "703", "704", "705",  # Uranus moons
+    "801",  # Neptune moon
+    "901",  # Pluto moon
+}
 
 class Position(BaseModel):
     x: float
@@ -17,6 +36,7 @@ class EphemerisData(BaseModel):
     position: Position
     velocity: Optional[Position] = None
     timestamp: str
+    parent_id: Optional[str] = Field(default=None, alias="parentId")
 
 class EphemerisMeta(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
