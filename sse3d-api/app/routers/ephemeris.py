@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query
 from datetime import date
-from app.models.schemas import EphemerisResponse, EphemerisMeta, EphemerisData
+from app.models.schemas import EphemerisResponse, EphemerisMeta
 from app.services.nasa_client import fetch_all_parallel
 from app.services.cache_service import get_bulk_cached, set_bulk_cached
 from app.data.fallback import load_fallback

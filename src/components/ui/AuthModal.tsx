@@ -2,7 +2,7 @@
 
 import { useUIStore } from '@/store/uiStore';
 import { signIn } from 'next-auth/react';
-import { X, Github, Cloud } from 'lucide-react';
+import { X, Github } from 'lucide-react';
 import { Button } from './Button';
 
 export function AuthModal() {

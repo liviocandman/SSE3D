@@ -37,7 +37,7 @@ async def merge_anonymous(
     anon_result = await session.execute(
         select(FavoriteQuestion)
         .where(FavoriteQuestion.session_id == payload.session_id)
-        .where(FavoriteQuestion.user_id == None)
+        .where(FavoriteQuestion.user_id.is_(None))
     )
     anon_favs = anon_result.scalars().all()
 
@@ -82,4 +82,3 @@ async def merge_anonymous(
         "user_id": current_user.id,
         "message": f"{migrated_count} favorito(s) migrado(s) com sucesso.",
     }
-

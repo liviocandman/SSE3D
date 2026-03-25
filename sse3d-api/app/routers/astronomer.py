@@ -7,7 +7,7 @@ from app.models.schemas import (
     SaveFavoriteRequest,
     FavoriteResponse,
 )
-from app.services.ai_service import ask_astronomer, PLANET_LABELS
+from app.services.ai_service import ask_astronomer
 from app.core.ratelimit import check_rate_limit
 from app.core.auth import get_optional_user
 from sqlalchemy.ext.asyncio import AsyncSession

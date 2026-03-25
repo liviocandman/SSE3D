@@ -222,7 +222,7 @@ async function tryDownload(urls, outputPath, fallback) {
     try {
       await downloadFile(url, outputPath);
       return { success: true, source: 'primary' };
-    } catch (error) {
+    } catch {
       // Continue to next URL
     }
   }
@@ -317,8 +317,6 @@ async function main() {
 
   for (const [name, config] of Object.entries(TEXTURE_SOURCES)) {
     const tempPath = path.join(TARGET_DIR, `${name}_master.tmp`);
-    const highPath = path.join(TARGET_DIR, `${name}_high.webp`);
-
     // Check if all tiers already exist
     const allExist = TIERS.every(t =>
       fs.existsSync(path.join(TARGET_DIR, `${name}_${t.name}.webp`))
@@ -349,6 +347,12 @@ async function main() {
       // Generate tiers
       process.stdout.write(`Generating tiers... `);
       const generated = await generateTiers(tempPath, name, sharp, config.isRing);
+      if (generated.length === 0) {
+        console.log(`${colors.red}FAILED (no tiers generated)${colors.reset}`);
+        stats.failed++;
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        continue;
+      }
 
       // Get file sizes
       const sizes = TIERS.map(t => {
