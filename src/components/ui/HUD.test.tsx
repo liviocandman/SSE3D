@@ -56,7 +56,7 @@ vi.mock('lucide-react', () => ({
 
 describe('HUD', () => {
   it('toggles minimize state when clicking the control tab', () => {
-    render(<HUD ephemerisData={[]} />);
+    render(<HUD onDateChange={vi.fn()} />);
 
     // In a non-minimized state (default on desktop with a selected planet), we should see ChevronRight
     const toggleButton = screen.getByTitle('Hide panel');

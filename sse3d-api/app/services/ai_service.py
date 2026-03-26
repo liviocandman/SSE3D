@@ -78,16 +78,14 @@ def _ensure_complete_sentence(text: str) -> str:
     
     return text
 
-async def ask_astronomer(body_id: str, target_date: str, question: str) -> str:
-    en_name, pt_name = BODY_LABELS.get(body_id, ("Unknown", "Desconhecido"))
-
-    system_prompt = (
-        f"Você é o Astrônomo Virtual do Solar Explorer 3D. "
-        f"O usuário está visualizando {en_name} ({pt_name}) na data simulada {target_date}. "
-        f"Responda sobre astronomia e {en_name} de forma didática e envolvente. "
-        f"Use no máximo 2 parágrafos curtos. "
-        f"IMPORTANTE: Nunca deixe uma frase incompleta. Termine sua explicação de forma clara."
-    )
+async def ask_astronomer(
+    body_id: str,
+    target_date: str,
+    question: str,
+    body_type: str | None = None,
+    parent_name: str | None = None,
+) -> str:
+    system_prompt = generate_system_prompt(body_id, target_date, body_type, parent_name)
 
     safety_settings = [
         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},

@@ -175,7 +175,9 @@ export function CameraController({
     // Check if target changed
     const targetChanged =
       targetPosition !== prevTargetRef.current &&
-      JSON.stringify(targetPosition) !== JSON.stringify(prevTargetRef.current);
+      (targetPosition?.x !== prevTargetRef.current?.x ||
+       targetPosition?.y !== prevTargetRef.current?.y ||
+       targetPosition?.z !== prevTargetRef.current?.z);
 
     if (targetChanged) {
       if (targetPosition) {
