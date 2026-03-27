@@ -26,10 +26,16 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const MERGE_GAP_MS = 36 * 60 * 60 * 1000; // 36h merges overlap/adjacent blocks
 
 function parseTimeMs(timestamp: string): number {
-  return new Date(timestamp).getTime();
+  if (!timestamp) return 0;
+  // NASA timestamps (e.g., "2026-Mar-26 00:00:00") do not have a UTC suffix.
+  // Appending 'Z' ensures consistent parsing across all local timezones.
+  const utcString = timestamp.includes('Z') ? timestamp : `${timestamp}Z`;
+  return new Date(utcString).getTime();
 }
 
 function toDateStringUTC(ms: number): string {
+  // Return early if invalid
+  if (isNaN(ms) || ms === 0) return '';
   return new Date(ms).toISOString().split('T')[0];
 }
 

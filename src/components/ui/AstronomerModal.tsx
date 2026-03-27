@@ -107,6 +107,8 @@ export function AstronomerModal({
         bodyId: planet.bodyId,
         date: currentDate,
         question,
+        parentName: planet.parentName,
+        bodyType: planet.parentId ? 'MOON' : 'PLANET',
       });
 
       setMessages((prev) => [

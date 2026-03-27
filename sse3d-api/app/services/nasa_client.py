@@ -33,7 +33,7 @@ MOON_PARENTS = {
     "901": "999",  # Pluto
 }
 
-def get_step_size(body_id: str, span_days: int) -> str:
+def get_step_size(body_id: str, span_days: int = 1) -> str:
     fast = {"501", "601", "602", "701", "705", "401", "402"}
     medium = {"502", "503", "603", "604", "605", "702", "703", "704", "801", "901"}
     slow = {"199", "299", "301", "504", "606", "608"}
