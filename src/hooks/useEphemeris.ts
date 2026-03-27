@@ -36,12 +36,14 @@ export type EphemerisErrorType =
 
 interface UseEphemerisOptions {
   date?: string; // YYYY-MM-DD format
+  spanDays?: number;
   autoFetch?: boolean;
   timeoutMs?: number;
 }
 
 interface FetchEphemerisParams {
   date: string;
+  spanDays: number;
   timeoutMs: number;
   force?: boolean;
   signal?: AbortSignal;
@@ -117,6 +119,7 @@ function toEphemerisError(error: EphemerisFetchError): EphemerisError {
 
 async function fetchEphemeris({
   date,
+  spanDays,
   timeoutMs,
   force = false,
   signal,
@@ -140,8 +143,8 @@ async function fetchEphemeris({
 
   try {
     const url = force
-      ? `/api/ephemeris?date=${date}&force=true`
-      : `/api/ephemeris?date=${date}`;
+      ? `/api/ephemeris?date=${date}&spanDays=${spanDays}&force=true`
+      : `/api/ephemeris?date=${date}&spanDays=${spanDays}`;
 
     const response = await fetch(url, {
       signal: abortController.signal,
@@ -231,6 +234,7 @@ async function fetchEphemeris({
 export function useEphemeris(options: UseEphemerisOptions = {}) {
   const {
     date = new Date().toISOString().split('T')[0],
+    spanDays = 30,
     autoFetch = true,
     timeoutMs = DEFAULT_TIMEOUT_MS,
   } = options;
@@ -243,8 +247,8 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
   const [isFallbackLoading, setIsFallbackLoading] = useState(false);
 
   const query = useQuery<EphemerisResponse, EphemerisFetchError>({
-    queryKey: ['ephemeris', date],
-    queryFn: ({ signal }) => fetchEphemeris({ date, timeoutMs, signal }),
+    queryKey: ['ephemeris', date, spanDays],
+    queryFn: ({ signal }) => fetchEphemeris({ date, spanDays, timeoutMs, signal }),
     enabled: autoFetch,
     retry: (failureCount, error) => error.canRetry && failureCount < MAX_RETRIES,
     retryDelay: (attempt) => RETRY_DELAY_MS * attempt,
@@ -323,8 +327,8 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
 
     try {
       await queryClient.fetchQuery({
-        queryKey: ['ephemeris', date],
-        queryFn: ({ signal }) => fetchEphemeris({ date, timeoutMs, force: true, signal }),
+        queryKey: ['ephemeris', date, spanDays],
+        queryFn: ({ signal }) => fetchEphemeris({ date, spanDays, timeoutMs, force: true, signal }),
       });
     } catch (error) {
       if (error instanceof EphemerisFetchError && error.isAbort) return;

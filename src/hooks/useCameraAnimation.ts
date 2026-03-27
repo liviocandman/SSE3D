@@ -3,11 +3,11 @@
  * Provides smooth camera animation to focus on celestial bodies
  */
 
-'use client';
+"use client";
 
-import { useRef, useEffect } from 'react';
-import { useThree, useFrame } from '@react-three/fiber';
-import * as THREE from 'three';
+import { useRef, useEffect } from "react";
+import { useThree, useFrame } from "@react-three/fiber";
+import * as THREE from "three";
 
 // --- Types ---
 
@@ -27,7 +27,11 @@ interface UseCameraAnimationOptions {
 
 interface UseCameraAnimationReturn {
   /** Animate camera to look at a position */
-  focusOn: (targetPosition: { x: number; y: number; z: number }, radius?: number) => void;
+  focusOn: (
+    targetPosition: { x: number; y: number; z: number },
+    radius?: number,
+    targetName?: string,
+  ) => void;
   /** Reset camera to default position */
   resetCamera: () => void;
 }
@@ -35,7 +39,7 @@ interface UseCameraAnimationReturn {
 // --- Constants ---
 
 const DEFAULT_DURATION = 1.5; // seconds
-const DEFAULT_OFFSET_DISTANCE = 80; // units from target (increased to avoid zooming inside planets)
+const DEFAULT_OFFSET_DISTANCE = 80; // units from target
 const DEFAULT_CAMERA_POSITION = new THREE.Vector3(0, 50, 150);
 const DEFAULT_LOOK_AT = new THREE.Vector3(0, 0, 0);
 
@@ -45,7 +49,7 @@ const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
 // --- Hook ---
 
 export function useCameraAnimation(
-  options: UseCameraAnimationOptions = {}
+  options: UseCameraAnimationOptions = {},
 ): UseCameraAnimationReturn {
   const {
     duration = DEFAULT_DURATION,
@@ -53,7 +57,7 @@ export function useCameraAnimation(
     offsetDistance = DEFAULT_OFFSET_DISTANCE,
   } = options;
 
-  const { camera, controls } = useThree();
+  const { camera, controls, scene } = useThree();
 
   const isAnimatingRef = useRef(false);
   const animationProgressRef = useRef(0);
@@ -61,68 +65,111 @@ export function useCameraAnimation(
   const startLookAtRef = useRef(new THREE.Vector3(0, 0, 0)); // Track starting lookAt
   const targetRef = useRef<CameraTarget | null>(null);
 
+  // Tracking
+  const targetObjectNameRef = useRef<string | null>(null);
+  const lastTargetPosRef = useRef(new THREE.Vector3());
+
   // Animation frame loop
   useFrame((_, delta) => {
-    if (!isAnimatingRef.current || !targetRef.current) return;
+    const movementDelta = new THREE.Vector3(0, 0, 0);
 
-    // Update progress
-    animationProgressRef.current += delta / duration;
+    // If tracking a moving object, calculate its movement delta
+    if (targetObjectNameRef.current) {
+      const obj = scene.getObjectByName(targetObjectNameRef.current);
+      if (obj) {
+        const currentWorldPos = new THREE.Vector3();
+        obj.getWorldPosition(currentWorldPos);
 
-    if (animationProgressRef.current >= 1) {
-      // Animation complete
-      animationProgressRef.current = 1;
-      isAnimatingRef.current = false;
+        movementDelta.subVectors(currentWorldPos, lastTargetPosRef.current);
+        lastTargetPosRef.current.copy(currentWorldPos);
+
+        // Shift destination target continuously
+        if (targetRef.current && isAnimatingRef.current) {
+          targetRef.current.lookAt.copy(currentWorldPos);
+          targetRef.current.position.add(movementDelta);
+        }
+      }
     }
 
-    const t = easing(animationProgressRef.current);
+    if (isAnimatingRef.current && targetRef.current) {
+      // Update progress
+      animationProgressRef.current += delta / duration;
 
-    // Interpolate camera position
-    camera.position.lerpVectors(
-      startPositionRef.current,
-      targetRef.current.position,
-      t
-    );
+      if (animationProgressRef.current >= 1) {
+        // Animation complete
+        animationProgressRef.current = 1;
+        isAnimatingRef.current = false;
+      }
 
-    // Interpolate the lookAt target (from Sun to planet)
-    const currentLookAt = new THREE.Vector3().lerpVectors(
-      startLookAtRef.current,
-      targetRef.current.lookAt,
-      t
-    );
+      const t = easing(animationProgressRef.current);
 
-    // Update OrbitControls target (this is the key fix!)
-    if (controls && 'target' in controls) {
-      (controls.target as THREE.Vector3).copy(currentLookAt);
-      (controls as unknown as { update: () => void }).update();
+      // Interpolate camera position
+      camera.position.lerpVectors(
+        startPositionRef.current,
+        targetRef.current.position,
+        t,
+      );
+
+      // Interpolate the lookAt target (from Sun to planet)
+      const currentLookAt = new THREE.Vector3().lerpVectors(
+        startLookAtRef.current,
+        targetRef.current.lookAt,
+        t,
+      );
+
+      // Update OrbitControls target
+      if (controls && "target" in controls) {
+        (controls.target as THREE.Vector3).copy(currentLookAt);
+        (controls as unknown as { update: () => void }).update();
+      }
+
+      camera.lookAt(currentLookAt);
+    } else if (!isAnimatingRef.current && movementDelta.lengthSq() > 0) {
+      // Animation finished, just lock exactly onto the moving target!
+      // Apply movement delta to camera to follow the planet while allowing OrbitControls to work
+      camera.position.add(movementDelta);
+
+      if (controls && "target" in controls) {
+        (controls.target as THREE.Vector3).add(movementDelta);
+        (controls as unknown as { update: () => void }).update();
+      }
     }
-
-    camera.lookAt(currentLookAt);
   });
 
-  const focusOn = (targetPosition: { x: number; y: number; z: number }, radius?: number) => {
-    const target = new THREE.Vector3(targetPosition.x, targetPosition.y, targetPosition.z);
+  const focusOn = (
+    targetPosition: { x: number; y: number; z: number },
+    radius?: number,
+    targetName?: string,
+  ) => {
+    const target = new THREE.Vector3(
+      targetPosition.x,
+      targetPosition.y,
+      targetPosition.z,
+    );
+
+    // If tracking by name, always prefer the exact current world position over the passed static coordinates
+    if (targetName) {
+      const obj = scene.getObjectByName(targetName);
+      if (obj) {
+        obj.getWorldPosition(target);
+      }
+    }
 
     // Calculate offset distance based on planet radius
-    // Use 3x radius for nice framing, minimum 0.03 units for tiny rocky planets
     const dynamicOffset = radius ? Math.max(0.03, radius * 3) : offsetDistance;
 
-    console.log(`[CameraAnimation] Received radius: ${radius}, calculated offset: ${dynamicOffset}`);
-
-    // Calculate camera position: place camera at a distance from the planet
-    // looking at the planet from the current camera direction
+    // Calculate camera position
     const currentCameraDir = camera.position.clone().normalize();
-
-    // Position camera offset from the target planet
     const offset = currentCameraDir.multiplyScalar(dynamicOffset);
-    offset.y = Math.max(offset.y, dynamicOffset * 0.3); // Ensure some height above
+    offset.y = Math.max(offset.y, dynamicOffset * 0.3);
 
     const cameraTargetPosition = target.clone().add(offset);
 
     // Store animation state
     startPositionRef.current.copy(camera.position);
 
-    // Capture current lookAt target (from OrbitControls or default origin)
-    if (controls && 'target' in controls) {
+    // Capture current lookAt target
+    if (controls && "target" in controls) {
       startLookAtRef.current.copy(controls.target as THREE.Vector3);
     } else {
       startLookAtRef.current.set(0, 0, 0);
@@ -130,12 +177,14 @@ export function useCameraAnimation(
 
     targetRef.current = {
       position: cameraTargetPosition,
-      lookAt: target, // Camera looks AT the planet, not the Sun
+      lookAt: target,
     };
+
+    targetObjectNameRef.current = targetName || null;
+    lastTargetPosRef.current.copy(target);
+
     animationProgressRef.current = 0;
     isAnimatingRef.current = true;
-
-    console.log(`[CameraAnimation] Focusing on:`, targetPosition, 'Camera will go to:', cameraTargetPosition.toArray());
   };
 
   const resetCamera = () => {
@@ -144,10 +193,9 @@ export function useCameraAnimation(
       position: DEFAULT_CAMERA_POSITION.clone(),
       lookAt: DEFAULT_LOOK_AT.clone(),
     };
+    targetObjectNameRef.current = null;
     animationProgressRef.current = 0;
     isAnimatingRef.current = true;
-
-    console.log('[CameraAnimation] Resetting to default position');
   };
 
   return {
@@ -157,37 +205,40 @@ export function useCameraAnimation(
 }
 
 // --- Standalone Component for Scene Integration ---
-// This component should be placed inside the Canvas to access R3F context
 
 interface CameraControllerProps {
   targetPosition?: { x: number; y: number; z: number } | null;
   targetRadius?: number;
+  targetName?: string;
 }
 
 export function CameraController({
   targetPosition,
   targetRadius,
+  targetName,
 }: CameraControllerProps) {
   const { focusOn, resetCamera } = useCameraAnimation();
-  const prevTargetRef = useRef<{ x: number; y: number; z: number } | null>(null);
+  const prevTargetRef = useRef<{ x: number; y: number; z: number } | null>(
+    null,
+  );
 
   useEffect(() => {
     // Check if target changed
     const targetChanged =
       targetPosition !== prevTargetRef.current &&
       (targetPosition?.x !== prevTargetRef.current?.x ||
-       targetPosition?.y !== prevTargetRef.current?.y ||
-       targetPosition?.z !== prevTargetRef.current?.z);
+        targetPosition?.y !== prevTargetRef.current?.y ||
+        targetPosition?.z !== prevTargetRef.current?.z);
 
     if (targetChanged) {
       if (targetPosition) {
-        focusOn(targetPosition, targetRadius);
+        focusOn(targetPosition, targetRadius, targetName);
       } else {
         resetCamera();
       }
       prevTargetRef.current = targetPosition ?? null;
     }
-  }, [targetPosition, targetRadius, focusOn, resetCamera]);
+  }, [targetPosition, targetRadius, targetName, focusOn, resetCamera]);
 
-  return null; // This is a logic-only component
+  return null;
 }
