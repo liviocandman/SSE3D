@@ -54,8 +54,11 @@ function getRedisClient(): Redis | null {
 /**
  * Generate cache key for ephemeris data
  */
-function getCacheKey(bodyId: string, date: string): string {
-  return `${CACHE_PREFIX}:${bodyId}:${date}`;
+function getCacheKey(bodyId: string, date: string, centerBody = '10'): string {
+  if (centerBody === '10') {
+    return `${CACHE_PREFIX}:${bodyId}:${date}`;
+  }
+  return `${CACHE_PREFIX}:${bodyId}:center_${centerBody}:${date}`;
 }
 
 /**
@@ -79,13 +82,14 @@ function getTTL(bodyId: string): number {
  */
 export async function getCachedEphemeris(
   bodyId: string,
-  date: string
+  date: string,
+  centerBody = '10'
 ): Promise<EphemerisData | null> {
   const redis = getRedisClient();
   if (!redis) return null;
 
   try {
-    const key = getCacheKey(bodyId, date);
+    const key = getCacheKey(bodyId, date, centerBody);
     const cached = await redis.get<EphemerisData>(key);
     return cached;
   } catch (error) {
@@ -100,13 +104,14 @@ export async function getCachedEphemeris(
 export async function setCachedEphemeris(
   bodyId: string,
   date: string,
-  data: EphemerisData
+  data: EphemerisData,
+  centerBody = '10'
 ): Promise<boolean> {
   const redis = getRedisClient();
   if (!redis) return false;
 
   try {
-    const key = getCacheKey(bodyId, date);
+    const key = getCacheKey(bodyId, date, centerBody);
     const ttl = getTTL(bodyId);
     await redis.set(key, data, { ex: ttl });
     return true;
@@ -122,7 +127,8 @@ export async function setCachedEphemeris(
  */
 export async function getCachedBulkEphemeris(
   bodyIds: string[],
-  date: string
+  date: string,
+  centerBody = '10'
 ): Promise<{ cached: EphemerisData[]; missing: string[] }> {
   const redis = getRedisClient();
 
@@ -136,7 +142,7 @@ export async function getCachedBulkEphemeris(
   // Check cache for each body
   await Promise.all(
     bodyIds.map(async (bodyId) => {
-      const data = await getCachedEphemeris(bodyId, date);
+      const data = await getCachedEphemeris(bodyId, date, centerBody);
       if (data) {
         cached.push(data);
       } else {
@@ -153,10 +159,11 @@ export async function getCachedBulkEphemeris(
  */
 export async function setCachedBulkEphemeris(
   date: string,
-  dataArray: EphemerisData[]
+  dataArray: EphemerisData[],
+  centerBody = '10'
 ): Promise<void> {
   await Promise.all(
-    dataArray.map((data) => setCachedEphemeris(data.bodyId, date, data))
+    dataArray.map((data) => setCachedEphemeris(data.bodyId, date, data, centerBody))
   );
 }
 

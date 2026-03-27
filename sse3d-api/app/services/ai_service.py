@@ -4,13 +4,60 @@ from app.core.config import settings
 
 genai.configure(api_key=settings.gemini_api_key)
 
-PLANET_LABELS = {
+BODY_LABELS = {
     "10":  ("Sun", "Sol"),       "199": ("Mercury", "Mercúrio"),
     "299": ("Venus", "Vênus"),   "399": ("Earth", "Terra"),
     "499": ("Mars", "Marte"),    "599": ("Jupiter", "Júpiter"),
     "699": ("Saturn", "Saturno"),"799": ("Uranus", "Urano"),
-    "899": ("Neptune", "Netuno"),
+    "899": ("Neptune", "Netuno"),"999": ("Pluto", "Plutão"),
+    "301": ("Moon", "Lua"),
+    "401": ("Phobos", "Fobos"),  "402": ("Deimos", "Deimos"),
+    "501": ("Io", "Io"),         "502": ("Europa", "Europa"),
+    "503": ("Ganymede", "Ganimedes"), "504": ("Callisto", "Calisto"),
+    "601": ("Mimas", "Mimas"),   "602": ("Enceladus", "Encélado"),
+    "603": ("Tethys", "Tétis"),  "604": ("Dione", "Dione"),
+    "605": ("Rhea", "Reia"),     "606": ("Titan", "Titã"),
+    "608": ("Iapetus", "Jápeto"),
+    "701": ("Ariel", "Ariel"),   "702": ("Umbriel", "Umbriel"),
+    "703": ("Titania", "Titânia"),"704": ("Oberon", "Oberon"),
+    "705": ("Miranda", "Miranda"),
+    "801": ("Triton", "Tritão"), "901": ("Charon", "Caronte"),
 }
+
+def generate_system_prompt(
+    body_id: str,
+    target_date: str,
+    body_type: str | None,
+    parent_name: str | None,
+) -> str:
+    en_name, pt_name = BODY_LABELS.get(body_id, ("this body", "este corpo"))
+    base = "Você é o Astrônomo Virtual do Solar Explorer 3D. "
+    rules = (
+        "\nSeja conciso, científico e envolvente. "
+        "Use no máximo 2 parágrafos curtos. "
+        "IMPORTANTE: Nunca deixe uma frase incompleta."
+    )
+
+    if body_type == "MOON":
+        parent = parent_name or "seu planeta"
+        ctx = (
+            f"O utilizador viajou e está a visualizar de perto a lua {en_name} ({pt_name}), "
+            f"um satélite natural de {parent}, na data simulada {target_date}. "
+            f"Responda focando-se na geologia, astrofísica e curiosidades desta lua específica "
+            f"e da sua relação dinâmica com {parent}."
+        )
+    elif body_type == "STAR":
+        ctx = (
+            f"O utilizador está a observar o Sol ({en_name}) na data {target_date}. "
+            f"Foque-se em física solar, atividade magnética e impacto no sistema solar."
+        )
+    else:
+        ctx = (
+            f"O utilizador está a visualizar {en_name} ({pt_name}) na data simulada {target_date}. "
+            f"Responda sobre astronomia e {en_name} de forma didática e envolvente."
+        )
+
+    return base + ctx + rules
 
 def _ensure_complete_sentence(text: str) -> str:
     """
@@ -31,16 +78,14 @@ def _ensure_complete_sentence(text: str) -> str:
     
     return text
 
-async def ask_astronomer(body_id: str, target_date: str, question: str) -> str:
-    en_name, pt_name = PLANET_LABELS.get(body_id, ("Unknown", "Desconhecido"))
-
-    system_prompt = (
-        f"Você é o Astrônomo Virtual do Solar Explorer 3D. "
-        f"O usuário está visualizando {en_name} ({pt_name}) na data simulada {target_date}. "
-        f"Responda sobre astronomia e {en_name} de forma didática e envolvente. "
-        f"Use no máximo 2 parágrafos curtos. "
-        f"IMPORTANTE: Nunca deixe uma frase incompleta. Termine sua explicação de forma clara."
-    )
+async def ask_astronomer(
+    body_id: str,
+    target_date: str,
+    question: str,
+    body_type: str | None = None,
+    parent_name: str | None = None,
+) -> str:
+    system_prompt = generate_system_prompt(body_id, target_date, body_type, parent_name)
 
     safety_settings = [
         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},

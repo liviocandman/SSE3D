@@ -10,15 +10,17 @@ import { ViewMode, ORBIT_CONFIG } from '@/lib/scales';
 
 interface OrbitLineProps {
   /** Semi-major axis (a) in scene units (1u = 1M km) */
-  semiMajorAxis: number;
+  semiMajorAxis?: number;
   /** Orbital eccentricity (e) - 0=circle, closer to 1=more elliptical */
-  eccentricity: number;
+  eccentricity?: number;
   /** Orbital inclination in degrees (i) */
-  inclination: number;
+  inclination?: number;
   /** Longitude of ascending node in degrees (Ω) */
-  longAscNode: number;
+  longAscNode?: number;
   /** Longitude of perihelion in degrees (ϖ) */
-  longPerihelion: number;
+  longPerihelion?: number;
+  /** Exact trajectory points (Vector3 array) */
+  points?: THREE.Vector3[];
   /** Hex color for the orbit line */
   color?: string;
   /** Base opacity value (0-1) - will be modified by viewMode */
@@ -44,15 +46,17 @@ function degToRad(degrees: number): number {
 // --- Component ---
 
 /**
- * Renders a Keplerian elliptical orbit with the Sun at one FOCUS.
- * Supports viewMode for dimming in realistic mode.
+ * Renders an orbit line. 
+ * If 'points' are provided, it draws a direct line (vector-based).
+ * Otherwise, it uses Keplerian parameters to draw an ellipse.
  */
 export function OrbitLine({
-  semiMajorAxis,
-  eccentricity,
-  inclination,
-  longAscNode,
-  longPerihelion,
+  semiMajorAxis = 0,
+  eccentricity = 0,
+  inclination = 0,
+  longAscNode = 0,
+  longPerihelion = 0,
+  points: vectorPoints,
   color = DEFAULT_COLOR,
   opacity = DEFAULT_OPACITY,
   segments = DEFAULT_SEGMENTS,
@@ -83,7 +87,9 @@ export function OrbitLine({
   });
 
   // Generate ellipse points with focal shift
-  const points = useMemo(() => {
+  const keplerPoints = useMemo(() => {
+    if (vectorPoints) return null;
+
     // 1. Calculate Semi-minor axis (b = a × √(1 - e²))
     const semiMinor = semiMajorAxis * Math.sqrt(1 - eccentricity * eccentricity);
 
@@ -107,7 +113,19 @@ export function OrbitLine({
       0,
       p.y
     ));
-  }, [semiMajorAxis, eccentricity, segments]);
+  }, [semiMajorAxis, eccentricity, segments, vectorPoints]);
+
+  if (vectorPoints) {
+    return (
+      <Line
+        points={vectorPoints}
+        color={color}
+        lineWidth={lineWidth}
+        transparent
+        opacity={currentOpacity}
+      />
+    );
+  }
 
   // 5. Calculate rotation angles
   const Omega = degToRad(longAscNode);
@@ -119,7 +137,7 @@ export function OrbitLine({
       <group rotation={[i, 0, 0]}>
         <group rotation={[0, omega, 0]}>
           <Line
-            points={points}
+            points={keplerPoints!}
             color={color}
             lineWidth={lineWidth}
             transparent

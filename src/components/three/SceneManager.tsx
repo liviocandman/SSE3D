@@ -8,14 +8,21 @@ import { QualityTierProvider, useQualityTier } from '@/contexts/QualityTierConte
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { Sun } from './Sun';
 import { CelestialBody } from './CelestialBody';
+import { MoonSystem } from './MoonSystem';
 import type { EphemerisData, SelectedPlanet } from '@/lib/types';
-import { getPlanetConfig, getTexturePath, TextureTier } from '@/lib/textureConfig';
+import {
+  getPlanetConfig,
+  getTexturePath,
+  PLANET_MOONS,
+  TextureTier,
+} from '@/lib/textureConfig';
 import { getRadius, scalePositionFromKm, AU_TO_UNIT } from '@/lib/scales';
 import { CameraController } from '@/hooks/useCameraAnimation';
 import { OrbitLine, getOrbitOpacity } from './OrbitLine';
 import * as THREE from 'three';
 import { useSolarStore } from '@/store/solarStore';
 import { useShallow } from 'zustand/react/shallow';
+import { TrajectoryManager } from './TrajectoryManager';
 
 // --- Types ---
 
@@ -47,7 +54,6 @@ function SelectionRing({ position, radius }: { position: [number, number, number
 
   return (
     <mesh ref={meshRef} position={position} rotation={[Math.PI / 2, 0, 0]}>
-      {/* Parameters: radius, tube, radialSegments, tubularSegments */}
       <torusGeometry args={[radius * 1.5, 0.05 * (radius / 10), 16, 100]} />
       <meshBasicMaterial
         color="#ffffff"
@@ -59,12 +65,21 @@ function SelectionRing({ position, radius }: { position: [number, number, number
   );
 }
 
+function GlobalTimeController() {
+  const advanceTime = useSolarStore(state => state.advanceTime);
+  useFrame((_, delta) => {
+    // This is a transient update to the store state every frame
+    advanceTime(delta);
+  });
+  return null;
+}
+
 // --- Constants ---
 
 const CAMERA_CONFIG = {
   position: [0, 200, 500] as [number, number, number],
   fov: 45,
-  near: 0.01, // Small enough for close-ups but not too small (prevents z-fighting)
+  near: 0.01,
   far: 50000,
 };
 
@@ -76,10 +91,6 @@ const SEGMENTS_BY_TIER: Record<string, number> = {
   low: 24,
 };
 
-/**
- * Calculates real distance from Sun in million km
- * Since 1 unit = 1M km, this is just the magnitude of the position vector
- */
 function calculateMillionKmFromSun(position: [number, number, number]): number {
   const [x, y, z] = position;
   return Math.sqrt(x * x + y * y + z * z);
@@ -87,13 +98,14 @@ function calculateMillionKmFromSun(position: [number, number, number]): number {
 
 // --- Inner Scene Component ---
 
-function SceneContent({
+export function SceneContent({
   children,
   ephemerisData,
 }: SceneContentProps) {
   const { tier, settings } = useQualityTier();
   
   const {
+    currentDate,
     selectedPlanet,
     setSelectedPlanet,
     viewMode,
@@ -103,6 +115,7 @@ function SceneContent({
     setTravelTarget,
   } = useSolarStore(
     useShallow((state) => ({
+      currentDate: state.currentDate,
       selectedPlanet: state.selectedPlanet,
       setSelectedPlanet: state.setSelectedPlanet,
       viewMode: state.viewMode,
@@ -138,6 +151,7 @@ function SceneContent({
           englishName: config.englishName,
           position,
           velocity: body.velocity,
+          trajectory: body.trajectory,
           radius: getRadius(body.bodyId, config.bodyClass, viewMode),
           texturePath: getTexturePath(body.bodyId, tier as TextureTier),
           rotationSpeed: config.rotationSpeed,
@@ -149,9 +163,7 @@ function SceneContent({
       .filter((p): p is NonNullable<typeof p> => p !== null);
   }, [ephemerisData, tier, viewMode]);
 
-  // Handle planet click - lookup by bodyId for reliable matching
   const handlePlanetClick = (bodyId: string) => {
-    // Find the planet by bodyId (more reliable than name)
     const planet = planetsToRender.find(p => p?.bodyId === bodyId);
 
     if (planet) {
@@ -164,22 +176,22 @@ function SceneContent({
           y: planet.position[1],
           z: planet.position[2],
         },
-        velocity: planet.velocity, // km/s from NASA API
+        velocity: planet.velocity,
         radius: planet.radius,
         distanceFromSun: planet.distanceFromSun,
+        trajectory: planet.trajectory,
       };
-      console.log('[SceneManager] Planet clicked:', selected.englishName);
       setSelectedPlanet(selected);
     }
   };
 
-  // Handle planet double-click - travel to planet
   const handlePlanetDoubleClick = (bodyId: string) => {
     const planet = planetsToRender.find(p => p?.bodyId === bodyId);
 
     if (planet) {
-      // Always use realistic radius for camera zoom since we switch to realistic mode
       const realisticRadius = getRadius(planet.bodyId, planet.bodyClass, 'realistic');
+      const moonSystemMultiplier = PLANET_MOONS[planet.bodyId] ? 5 : 1;
+      const cameraRadius = realisticRadius * moonSystemMultiplier;
 
       const selected: SelectedPlanet = {
         bodyId: planet.bodyId,
@@ -191,10 +203,10 @@ function SceneContent({
           z: planet.position[2],
         },
         velocity: planet.velocity,
-        radius: realisticRadius, // Use realistic radius for camera zoom
+        radius: cameraRadius,
         distanceFromSun: planet.distanceFromSun,
+        trajectory: planet.trajectory,
       };
-      console.log('[SceneManager] Planet double-clicked:', selected.englishName, 'realistic radius:', realisticRadius);
       setSelectedPlanet(selected);
       setViewMode('realistic');
       setTravelTarget(selected.position, selected.radius);
@@ -215,13 +227,13 @@ function SceneContent({
       }}
       style={{ width: '100%', height: '100%' }}
       onPointerMissed={() => {
-        // Click on empty space = deselect
         setSelectedPlanet(null);
       }}
     >
       <ambientLight intensity={0.25} color="#b0b0b0" />
+      <GlobalTimeController />
+      <TrajectoryManager />
 
-      {/* Bloom postprocessing for Sun glow effect */}
       <EffectComposer>
         <Bloom
           intensity={2.5}
@@ -232,9 +244,8 @@ function SceneContent({
         />
       </EffectComposer>
 
-      {/* Stars background */}
       <Stars
-        radius={4000} // Expanded for larger scale
+        radius={4000}
         depth={300}
         count={tier === 'low' ? 2000 : 5000}
         factor={10}
@@ -242,7 +253,6 @@ function SceneContent({
         speed={0.5}
       />
 
-      {/* Orbit controls for navigation */}
       <OrbitControls
         makeDefault
         enableDamping
@@ -255,16 +265,12 @@ function SceneContent({
         zoomSpeed={5}
       />
 
-      {/* Sun at center */}
       <Sun viewMode={viewMode} />
 
-      {/* Keplerian orbital path lines - ellipses with Sun at focus */}
       {planetsToRender.map((planet) => {
         if (!planet) return null;
         const config = getPlanetConfig(planet.bodyId);
         if (!config) return null;
-
-        // Calculate semi-major axis from meanDistanceAU (1 AU = 149.6 scene units)
         const semiMajorAxis = config.meanDistanceAU * AU_TO_UNIT;
 
         return (
@@ -282,38 +288,50 @@ function SceneContent({
         );
       })}
 
-      {/* Dynamically render all planets from ephemeris data */}
       {planetsToRender.map((planet) => {
         if (!planet) return null;
         return (
-          <CelestialBody
-            key={planet.bodyId}
-            bodyId={planet.bodyId}
-            name={planet.name}
-            englishName={planet.englishName}
-            position={planet.position}
-            radius={planet.radius}
-            textureUrl={planet.texturePath}
-            rotationSpeed={planet.rotationSpeed}
-            segments={planet.segments}
-            onClick={handlePlanetClick}
-            onDoubleClick={handlePlanetDoubleClick}
-            viewMode={viewMode}
-          />
+          <group key={planet.bodyId}>
+            <CelestialBody
+              bodyId={planet.bodyId}
+              name={planet.name}
+              englishName={planet.englishName}
+              position={planet.position}
+              trajectory={planet.trajectory}
+              radius={planet.radius}
+              textureUrl={planet.texturePath}
+              rotationSpeed={planet.rotationSpeed}
+              segments={planet.segments}
+              onClick={handlePlanetClick}
+              onDoubleClick={handlePlanetDoubleClick}
+              viewMode={viewMode}
+            >
+              {PLANET_MOONS[planet.bodyId] &&
+                (selectedPlanet?.bodyId === planet.bodyId ||
+                 selectedPlanet?.parentId === planet.bodyId) && (
+                <MoonSystem
+                  parentId={planet.bodyId}
+                  parentClass={planet.bodyClass}
+                  parentPosition={[0, 0, 0]}
+                  worldParentPosition={planet.position}
+                  date={currentDate}
+                  viewMode={viewMode}
+                  tier={tier}
+                />
+              )}
+              {selectedPlanetData?.bodyId === planet.bodyId && (
+                <SelectionRing
+                  position={[0, 0, 0]}
+                  radius={selectedPlanetData.radius}
+                />
+              )}
+            </CelestialBody>
+          </group>
         );
       })}
 
-      {/* Selection Ring */}
-      {selectedPlanetData && (
-        <SelectionRing
-          position={selectedPlanetData.position}
-          radius={selectedPlanetData.radius}
-        />
-      )}
+      <CameraController targetPosition={travelTarget} targetRadius={travelTargetRadius} targetName={selectedPlanet?.englishName} />
 
-      <CameraController targetPosition={travelTarget} targetRadius={travelTargetRadius} />
-
-      {/* Additional scene content */}
       {children}
     </Canvas>
   );
@@ -327,13 +345,9 @@ export function SceneManager({
 }: SceneManagerProps) {
   return (
     <QualityTierProvider>
-      <div
-        className="fixed inset-0 overflow-hidden bg-[#000]"
-      >
+      <div className="fixed inset-0 overflow-hidden bg-[#000]">
         <Suspense fallback={<LoadingScreen />}>
-          <SceneContent
-            ephemerisData={ephemerisData}
-          >
+          <SceneContent ephemerisData={ephemerisData}>
             {children}
           </SceneContent>
         </Suspense>
