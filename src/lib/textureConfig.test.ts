@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PLANET_CONFIG, PLANET_MOONS, getPlanetConfig } from './textureConfig';
+import { PLANET_MOONS, getPlanetConfig } from './textureConfig';
 
 describe('textureConfig', () => {
   describe('PLANET_MOONS mapping', () => {

@@ -6,7 +6,8 @@ import React from 'react';
 
 // Mock Zustand store
 vi.mock('@/store/userStore', () => ({
-  useUserStore: (selector: any) => selector({ sessionId: 'test-session-id' }),
+  useUserStore: <T,>(selector: (state: { sessionId: string }) => T): T =>
+    selector({ sessionId: 'test-session-id' }),
 }));
 
 describe('useAstronomer', () => {

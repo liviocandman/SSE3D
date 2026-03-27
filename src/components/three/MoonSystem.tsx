@@ -211,7 +211,6 @@ export function MoonSystem({
   parentClass,
   parentPosition,
   worldParentPosition,
-  date: _date,
   viewMode,
   tier,
 }: MoonSystemProps) {
@@ -226,7 +225,7 @@ export function MoonSystem({
       masterTrajectory: s.masterTrajectory,
     }))
   );
-  
+
   const parentConfig = getPlanetConfig(parentId);
 
   if (!hasMoons) return null;
@@ -239,7 +238,7 @@ export function MoonSystem({
       {moonIds.map((moonId) => {
         const moonTrajectory = masterTrajectory[moonId];
         const config = getPlanetConfig(moonId);
-        
+
         if (!config || !moonTrajectory || moonTrajectory.length < 2) return null;
 
         const orbitScale = getMoonOrbitScale(
@@ -254,7 +253,7 @@ export function MoonSystem({
         // Unify the line into a single, smooth orbit tracking exactly 1 period
         const orbitalPeriodMs = (config.orbitalPeriod || 30) * 24 * 60 * 60 * 1000;
         const startTime = new Date(moonTrajectory[0].timestamp).getTime();
-        
+
         const rawPoints: THREE.Vector3[] = [];
         for (const t of moonTrajectory) {
           const tMs = new Date(t.timestamp).getTime();

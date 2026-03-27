@@ -62,8 +62,6 @@ function getPlanetAccentClass(bodyId: string): string {
 
 export function HUD({
   earthPosition,
-  onDateChange,
-  onRefresh,
   isFallback = false,
 }: HUDProps) {
   const isMobile = useIsMobile();

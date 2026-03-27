@@ -1,6 +1,12 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { HUD } from './HUD';
+import type { HTMLAttributes, ReactNode } from 'react';
+
+type MockMotionDivProps = HTMLAttributes<HTMLDivElement> & {
+  children?: ReactNode;
+  'data-testid'?: string;
+};
 
 // Mock framer-motion to bypass animation delays in tests
 vi.mock('framer-motion', () => ({
@@ -9,11 +15,8 @@ vi.mock('framer-motion', () => ({
       children,
       className,
       'data-testid': dataTestId,
-      initial,
-      animate,
-      transition,
       ...props
-    }: any) => (
+    }: MockMotionDivProps) => (
       <div className={className} data-testid={dataTestId} {...props}>
         {children}
       </div>

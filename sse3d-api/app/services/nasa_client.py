@@ -33,32 +33,48 @@ MOON_PARENTS = {
     "901": "999",  # Pluto
 }
 
-def get_step_size(body_id: str, span_days: int = 1) -> str:
+def get_step_size(body_id: str, span_days: int = 30) -> str:
     fast = {"501", "601", "602", "701", "705", "401", "402"}
     medium = {"502", "503", "603", "604", "605", "702", "703", "704", "801", "901"}
     slow = {"199", "299", "301", "504", "606", "608"}
     outer = {"399", "499", "599", "699", "799", "899", "999"}
 
     if span_days > 365:
-        if body_id in fast: return "6 h"
-        if body_id in medium: return "2 d"
-        if body_id in slow: return "4 d"
-        if body_id in outer: return "8 d"
+        if body_id in fast:
+            return "6 h"
+        if body_id in medium:
+            return "2 d"
+        if body_id in slow:
+            return "4 d"
+        if body_id in outer:
+            return "8 d"
     elif span_days > 90:
-        if body_id in fast: return "2 h"
-        if body_id in medium: return "1 d"
-        if body_id in slow: return "2 d"
-        if body_id in outer: return "4 d"
+        if body_id in fast:
+            return "2 h"
+        if body_id in medium:
+            return "1 d"
+        if body_id in slow:
+            return "2 d"
+        if body_id in outer:
+            return "4 d"
     elif span_days > 30:
-        if body_id in fast: return "2 h"
-        if body_id in medium: return "12 h"
-        if body_id in slow: return "1 d"
-        if body_id in outer: return "2 d"
+        if body_id in fast:
+            return "2 h"
+        if body_id in medium:
+            return "12 h"
+        if body_id in slow:
+            return "1 d"
+        if body_id in outer:
+            return "2 d"
 
-    if body_id in fast: return "1 h"
-    if body_id in medium: return "6 h"
-    if body_id in slow: return "12 h"
-    if body_id in outer: return "1 d"
+    if body_id in fast:
+        return "1 h"
+    if body_id in medium:
+        return "6 h"
+    if body_id in slow:
+        return "12 h"
+    if body_id in outer:
+        return "1 d"
     return "1 d"
 
 def _parse_horizons_csv(

@@ -1,6 +1,4 @@
-import pytest
 from app.services.nasa_client import get_step_size, _parse_horizons_csv
-from app.models.schemas import EphemerisData
 
 def test_get_step_size():
     # Fast bodies

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useSolarStore } from "@/store/solarStore";
 import { useShallow } from "zustand/react/shallow";
@@ -65,6 +65,52 @@ export function TrajectoryManager() {
   const loadingRef = useRef<Set<string>>(new Set());
   const frameCountRef = useRef(0);
 
+  const fetchBlock = useCallback(
+    async (date: string, spanDays: number, specificIds?: string[]) => {
+      const liveSelectedBodyId = useSolarStore.getState().selectedPlanet?.bodyId;
+      const ids =
+        specificIds && specificIds.length > 0
+          ? specificIds
+          : buildFetchBodyIds(liveSelectedBodyId);
+
+      // Fallback block key to prevent exact duplicate fetches within this function itself
+      const blockCacheKey = `block_${date}_${spanDays}_${ids.join(",")}`;
+      if (loadingRef.current.has(blockCacheKey)) {
+        return;
+      }
+
+      loadingRef.current.add(blockCacheKey);
+      console.log(
+        `[TrajectoryManager] Ghost Loading block starting at ${date} (span: ${spanDays}d) for ${ids.length} bodies...`,
+      );
+
+      try {
+        const params = new URLSearchParams({
+          date,
+          spanDays: spanDays.toString(),
+          ids: ids.join(","),
+        });
+
+        const response = await fetch(`/api/ephemeris?${params.toString()}`);
+        if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+
+        const payload = await response.json();
+        appendTrajectoryData(payload.data);
+        console.log(
+          `[TrajectoryManager] Block starting at ${date} appended successfully.`,
+        );
+      } catch (err) {
+        console.error(
+          `[TrajectoryManager] Failed to fetch block at ${date}:`,
+          err,
+        );
+      } finally {
+        setTimeout(() => loadingRef.current.delete(blockCacheKey), 5000);
+      }
+    },
+    [appendTrajectoryData],
+  );
+
   // 1. Initial / Jump Fetch
   useEffect(() => {
     const bodyIds = buildFetchBodyIds(selectedPlanet?.bodyId);
@@ -101,9 +147,10 @@ export function TrajectoryManager() {
   }, [
     currentDate,
     currentTime,
-    timeMultiplier,
     selectedPlanet?.bodyId,
     masterTrajectorySegments,
+    clearTrajectoryBuffer,
+    fetchBlock,
   ]);
 
   // 2. Background pagination driven by segment coverage
@@ -161,53 +208,6 @@ export function TrajectoryManager() {
       }
     }
   });
-
-  async function fetchBlock(
-    date: string,
-    spanDays: number,
-    specificIds?: string[],
-  ) {
-    const liveSelectedBodyId = useSolarStore.getState().selectedPlanet?.bodyId;
-    const ids =
-      specificIds && specificIds.length > 0
-        ? specificIds
-        : buildFetchBodyIds(liveSelectedBodyId);
-
-    // Fallback block key to prevent exact duplicate fetches within this function itself
-    const blockCacheKey = `block_${date}_${spanDays}_${ids.join(",")}`;
-    if (loadingRef.current.has(blockCacheKey)) {
-      return;
-    }
-
-    loadingRef.current.add(blockCacheKey);
-    console.log(
-      `[TrajectoryManager] Ghost Loading block starting at ${date} (span: ${spanDays}d) for ${ids.length} bodies...`,
-    );
-
-    try {
-      const params = new URLSearchParams({
-        date,
-        spanDays: spanDays.toString(),
-        ids: ids.join(","),
-      });
-
-      const response = await fetch(`/api/ephemeris?${params.toString()}`);
-      if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
-
-      const payload = await response.json();
-      appendTrajectoryData(payload.data);
-      console.log(
-        `[TrajectoryManager] Block starting at ${date} appended successfully.`,
-      );
-    } catch (err) {
-      console.error(
-        `[TrajectoryManager] Failed to fetch block at ${date}:`,
-        err,
-      );
-    } finally {
-      setTimeout(() => loadingRef.current.delete(blockCacheKey), 5000);
-    }
-  }
 
   return null;
 }

@@ -51,6 +51,8 @@ async def test_ephemeris_with_center_body(client):
                 )
 
     assert response.status_code == 200
-    mock_cache_get.assert_called_once_with(["501"], "2024-01-01", center="599")
-    mock_fetch.assert_called_once_with(["501"], "2024-01-01", center_body="599")
+    mock_cache_get.assert_called_once_with(["501"], "2024-01-01_30", center="599")
+    mock_fetch.assert_called_once_with(
+        ["501"], "2024-01-01", center_body="599", span_days=30
+    )
     mock_cache_set.assert_called_once()

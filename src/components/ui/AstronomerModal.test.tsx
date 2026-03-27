@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { AstronomerModal } from './AstronomerModal';
+import type { SelectedPlanet } from '@/lib/types';
 
 // Mock dependencies
 vi.mock('lucide-react', () => ({
@@ -21,22 +22,31 @@ vi.mock('@/hooks/useAstronomer', () => ({
 }));
 
 vi.mock('@/store/solarStore', () => ({
-  useSolarStore: (selector: any) => selector({ currentDate: '2026-03-25' }),
+  useSolarStore: <T,>(selector: (state: { currentDate: string }) => T): T =>
+    selector({ currentDate: '2026-03-25' }),
 }));
+
+function createPlanet(overrides: Partial<SelectedPlanet>): SelectedPlanet {
+  return {
+    bodyId: '499',
+    name: 'Mars',
+    englishName: 'Mars',
+    position: { x: 0, y: 0, z: 0 },
+    radius: 1,
+    distanceFromSun: 227.9,
+    ...overrides,
+  };
+}
 
 describe('AstronomerModal', () => {
   it('renders standard planet context correctly', () => {
-    const mockPlanet = {
-      bodyId: '499',
-      englishName: 'Mars',
-      // No parentId/parentName
-    };
+    const mockPlanet = createPlanet({ bodyId: '499', englishName: 'Mars' });
 
     render(
       <AstronomerModal
         isOpen={true}
         onClose={() => {}}
-        planet={mockPlanet as any}
+        planet={mockPlanet}
         currentDate="2026-03-25"
       />
     );
@@ -45,17 +55,18 @@ describe('AstronomerModal', () => {
   });
 
   it('renders moon context correctly with parent name', () => {
-    const mockMoon = {
+    const mockMoon = createPlanet({
       bodyId: '502',
+      name: 'Europa',
       englishName: 'Europa',
       parentName: 'Jupiter',
-    };
+    });
 
     render(
       <AstronomerModal
         isOpen={true}
         onClose={() => {}}
-        planet={mockMoon as any}
+        planet={mockMoon}
         currentDate="2026-03-25"
       />
     );

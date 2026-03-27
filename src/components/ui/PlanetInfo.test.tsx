@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { PlanetInfo } from './PlanetInfo';
+import type { SelectedPlanet } from '@/lib/types';
 
 // Mock Lucide-react icons used in the component
 vi.mock('lucide-react', () => ({
@@ -11,7 +12,7 @@ const mockEarthPosition = { x: 0, y: 0, z: 0 };
 
 describe('PlanetInfo', () => {
   it('renders standard planet info correctly', () => {
-    const mockPlanet = {
+    const mockPlanet: SelectedPlanet = {
       bodyId: '399', // Earth
       name: 'Terra',
       englishName: 'Earth',
@@ -23,7 +24,7 @@ describe('PlanetInfo', () => {
 
     render(
       <PlanetInfo
-        planet={mockPlanet as any}
+        planet={mockPlanet}
         earthPosition={mockEarthPosition}
         onAskAstronomer={() => {}}
       />
@@ -38,7 +39,7 @@ describe('PlanetInfo', () => {
   });
 
   it('renders moon specific info correctly', () => {
-    const mockMoon = {
+    const mockMoon: SelectedPlanet = {
       bodyId: '502', // Europa
       name: 'Europa',
       englishName: 'Europa',
@@ -53,7 +54,7 @@ describe('PlanetInfo', () => {
 
     render(
       <PlanetInfo
-        planet={mockMoon as any}
+        planet={mockMoon}
         earthPosition={mockEarthPosition}
         onAskAstronomer={() => {}}
       />
@@ -75,7 +76,7 @@ describe('PlanetInfo', () => {
   });
 
   it('calculates fallback velocity correctly when API velocity is missing', () => {
-    const mockPlanetNoVelocity = {
+    const mockPlanetNoVelocity: SelectedPlanet = {
       bodyId: '499', // Mars
       name: 'Marte',
       englishName: 'Mars',
@@ -87,7 +88,7 @@ describe('PlanetInfo', () => {
 
     render(
       <PlanetInfo
-        planet={mockPlanetNoVelocity as any}
+        planet={mockPlanetNoVelocity}
         earthPosition={mockEarthPosition}
         onAskAstronomer={() => {}}
       />
