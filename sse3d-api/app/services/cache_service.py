@@ -8,7 +8,11 @@ _TTL = {
     frozenset({"399"}): 3600,
 }
 
-def _get_ttl(body_id: str) -> int:
+def _get_ttl(body_id: str, date_str: str = "") -> int:
+    # Trajectories (30-day blocks) should last longer
+    if "_" in date_str:
+        return 172800  # 48 hours
+    
     for ids, ttl in _TTL.items():
         if body_id in ids:
             return ttl
@@ -47,7 +51,7 @@ async def set_bulk_cached(date: str, items: list[EphemerisData], center: str = "
         )
         for item in items:
             key = _cache_key(item.body_id, date, center=center)
-            ttl = _get_ttl(item.body_id)
+            ttl = _get_ttl(item.body_id, date_str=date)
             await redis.set(key, item.model_dump_json(by_alias=True), ex=ttl)
     except Exception as e:
         print(f"[Cache] Error writing to Redis: {e}")
