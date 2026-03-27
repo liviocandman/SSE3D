@@ -56,8 +56,10 @@ const TrailLine: React.FC<TrailLineProps> = ({ points, color, fadeMode, opacity 
     };
   }, []);
 
+  const lineRef = useRef<THREE.Line>(null);
+
   return (
-    <line ref={useRef<THREE.Line>(null) as any}>
+    <line ref={lineRef as any}>
       <bufferGeometry ref={geometryRef} />
       <lineBasicMaterial
         ref={materialRef}

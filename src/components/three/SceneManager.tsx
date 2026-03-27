@@ -107,6 +107,60 @@ const ALL_PLANET_IDS = [
   BODY_IDS.JUPITER, BODY_IDS.SATURN, BODY_IDS.URANUS, BODY_IDS.NEPTUNE, BODY_IDS.PLUTO
 ];
 
+interface PlanetTrajectoryGroupProps {
+  bodyId: string;
+  segments: any[]; // TrajectorySegment[]
+  fullOrbitData?: any; // EphemerisTrajectory[]
+  currentTime: Date;
+}
+
+/**
+ * Isolated component for rendering a planet's orbit and trail.
+ * Uses useMemo to avoid flattening trajectory segments every frame.
+ */
+function PlanetTrajectoryGroup({ bodyId, segments, fullOrbitData, currentTime }: PlanetTrajectoryGroupProps) {
+  // Expensive flattening happens ONLY when segments change
+  const allPoints = useMemo(() => flattenTrajectorySegments(segments), [segments]);
+  const simTimeMs = currentTime.getTime();
+
+  // Filter for PAST points (from oldest up to current time) for the 'tail' effect
+  // This still runs every frame but on a pre-flattened array
+  const pastPoints = useMemo(() => {
+    return allPoints
+      .filter((p) => {
+        const t = p.timestamp.includes("Z") ? p.timestamp : `${p.timestamp}Z`;
+        return new Date(t).getTime() <= simTimeMs + 3600000; // 1h grace
+      })
+      .map((p) => new THREE.Vector3(p.position.x * KM_TO_UNIT, p.position.y * KM_TO_UNIT, p.position.z * KM_TO_UNIT))
+      .reverse();
+  }, [allPoints, simTimeMs]);
+
+  const hasTrail = pastPoints.length > 2;
+
+  return (
+    <group>
+      {/* The Full NASA Orbit Path (Background) */}
+      {fullOrbitData && (
+        <StaticOrbitLine
+          trajectory={fullOrbitData}
+          color="#a3cffe"
+          opacity={0.12}
+        />
+      )}
+
+      {/* The Dynamic Comet Tail (Effect) */}
+      {hasTrail && (
+        <TrailLine
+          points={pastPoints}
+          color="#ffffff"
+          fadeMode="tail"
+          opacity={0.8}
+        />
+      )}
+    </group>
+  );
+}
+
 // --- Inner Scene Component ---
 
 export function SceneContent({
@@ -307,44 +361,14 @@ export function SceneContent({
 
       {planetsToRender.map((planet) => {
         if (!planet) return null;
-        
-        // Extract and filter trajectory points for TrailLine
-        const segments = masterTrajectorySegments[planet.bodyId] || [];
-        const allPoints = flattenTrajectorySegments(segments);
-        const simTimeMs = currentTime.getTime();
-
-        // Filter for PAST points (from oldest up to current time) for the 'tail' effect
-        const pastPoints = allPoints
-          .filter((p) => {
-            const t = p.timestamp.includes("Z") ? p.timestamp : `${p.timestamp}Z`;
-            return new Date(t).getTime() <= simTimeMs + 3600000; // 1h grace to ensure smooth head
-          })
-          .map((p) => new THREE.Vector3(p.position.x * KM_TO_UNIT, p.position.y * KM_TO_UNIT, p.position.z * KM_TO_UNIT))
-          .reverse();
-
-        const hasTrail = pastPoints.length > 2;
-
         return (
-          <group key={`orbit-group-${planet.bodyId}`}>
-            {/* The Full NASA Orbit Path (Background) */}
-            {fullOrbits[planet.bodyId] && (
-              <StaticOrbitLine
-                trajectory={fullOrbits[planet.bodyId]}
-                color="#a3cffe"
-                opacity={0.12}
-              />
-            )}
-
-            {/* The Dynamic Comet Tail (Effect) */}
-            {hasTrail && (
-              <TrailLine
-                points={pastPoints}
-                color="#ffffff"
-                fadeMode="tail"
-                opacity={0.8}
-              />
-            )}
-          </group>
+          <PlanetTrajectoryGroup
+            key={`trajectory-${planet.bodyId}`}
+            bodyId={planet.bodyId}
+            segments={masterTrajectorySegments[planet.bodyId] || []}
+            fullOrbitData={fullOrbits[planet.bodyId]}
+            currentTime={currentTime}
+          />
         );
       })}
 
