@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrame, useThree, ThreeEvent, useLoader } from "@react-three/fiber";
 import { Text, Billboard } from "@react-three/drei";
 import { TextureLoader } from "three";
@@ -8,6 +8,9 @@ import type { Mesh } from "three";
 import * as THREE from "three";
 import "../../app/globals.css";
 import type { ViewMode } from "@/lib/scales";
+import { useSolarStore } from "@/store/solarStore";
+import type { EphemerisTrajectory } from "@/lib/types";
+import { buildTrajectorySegment, sampleTrajectoryAtTime } from "@/lib/trajectoryEngine";
 
 // --- Types ---
 
@@ -16,6 +19,7 @@ interface CelestialBodyProps {
   englishName: string;
   bodyId: string;
   position: [number, number, number];
+  trajectory?: EphemerisTrajectory[];
   radius: number;
   textureUrl: string;
   rotationSpeed?: number;
@@ -23,6 +27,7 @@ interface CelestialBodyProps {
   onClick?: (bodyId: string) => void;
   onDoubleClick?: (bodyId: string) => void;
   viewMode?: ViewMode;
+  children?: React.ReactNode;
 }
 
 // --- Constants ---
@@ -38,7 +43,8 @@ const THROTTLE_FRAMES = 10;
 export function CelestialBody({
   englishName,
   bodyId,
-  position,
+  position: initialPosition,
+  trajectory,
   radius,
   textureUrl,
   rotationSpeed = DEFAULT_ROTATION_SPEED,
@@ -46,11 +52,12 @@ export function CelestialBody({
   onClick,
   onDoubleClick,
   viewMode = "didactic",
+  children,
 }: CelestialBodyProps) {
   const meshRef = useRef<Mesh>(null);
-
+  const groupRef = useRef<THREE.Group>(null);
+  
   // Use useLoader directly to have access to useLoader.clear() for global cache cleanup
-  // Note: clearing cache on unmount during Suspense can cause infinite loops.
   const texture = useLoader(TextureLoader, textureUrl, (loader) => {
     loader.setCrossOrigin("anonymous");
   });
@@ -61,6 +68,11 @@ export function CelestialBody({
 
   const tempVec = useRef(new THREE.Vector3());
   const frameCountRef = useRef(0);
+  const fallbackSegments = useMemo(() => {
+    if (!trajectory || trajectory.length === 0) return [];
+    const segment = buildTrajectorySegment(trajectory);
+    return segment ? [segment] : [];
+  }, [trajectory]);
 
   // Dispose of geometry and material on unmount to free GPU memory
   useEffect(() => {
@@ -80,18 +92,40 @@ export function CelestialBody({
   }, []);
 
   // Animation loop
-  useFrame(() => {
-    // Planet rotation (every frame)
-    if (meshRef.current) {
-      meshRef.current.rotation.y += rotationSpeed;
+  useFrame((_, delta) => {
+    const solarState = useSolarStore.getState();
+    const simTime = solarState.currentTime.getTime();
+    const isPlaying = solarState.isPlaying;
+    const timeMultiplier = solarState.timeMultiplier;
+    
+    // Read segment-aware trajectory first; fallback to initial prop data.
+    const segments = solarState.masterTrajectorySegments[bodyId] || fallbackSegments;
+
+    // 1. Interpolate position from trajectory if available
+    if (segments.length > 0 && groupRef.current) {
+      const SCALE = 1 / 1_000_000;
+      const sampled = sampleTrajectoryAtTime(segments, simTime);
+      if (sampled) {
+        const { x, y, z } = sampled.position;
+        groupRef.current.position.set(
+          x * SCALE,
+          y * SCALE,
+          z * SCALE
+        );
+      }
     }
 
-    // Throttled calculations
+    // 2. Planet rotation (Time-scaled axial rotation)
+    if (meshRef.current) {
+      meshRef.current.rotation.y += rotationSpeed * 60 * delta * (isPlaying ? timeMultiplier : 1);
+    }
+
+    // 3. Throttled calculations for UI/Labels
     frameCountRef.current++;
 
     // Calculate squared distance (no sqrt, faster) for adaptive throttling
-    tempVec.current.set(position[0], position[1], position[2]);
-    const distanceSq = camera.position.distanceToSquared(tempVec.current);
+    const currentPos = groupRef.current?.position || tempVec.current.set(initialPosition[0], initialPosition[1], initialPosition[2]);
+    const distanceSq = camera.position.distanceToSquared(currentPos);
 
     // Adaptive throttling: planets further away update labels/markers less frequently
     const throttleInterval = frameCountRef.current < 100
@@ -147,10 +181,8 @@ export function CelestialBody({
   const labelAnchorY = isHovered ? "bottom" : "top";
 
   return (
-    <group position={position}>
+    <group name={englishName} ref={groupRef} position={initialPosition}>
       {/* Invisible hitbox for interaction - always large enough to click */}
-      {/* NOTE: visible={false} disables raycasting in Three.js — we use colorWrite={false}
-           + depthWrite={false} instead to keep it invisible but still raycastable. */}
       <mesh
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
@@ -162,7 +194,7 @@ export function CelestialBody({
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {/* Visible planet mesh — also wires events so clicking the texture itself works */}
+      {/* Visible planet mesh */}
       <mesh
         ref={meshRef}
         onClick={handleClick}
@@ -208,6 +240,7 @@ export function CelestialBody({
           {englishName.toUpperCase()}
         </Text>
       </Billboard>
+      {children}
     </group>
   );
 }
