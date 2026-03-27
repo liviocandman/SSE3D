@@ -39,6 +39,7 @@ function isValidDate(dateString: string): boolean {
 
 export default function Home() {
   const currentDate = useSolarStore((state) => state.currentDate);
+  const trajectoryBaseDate = useSolarStore((state) => state.trajectoryBaseDate);
   const setCurrentDate = useSolarStore((state) => state.setCurrentDate);
 
   // Trigger data merge if user just logged in
@@ -54,7 +55,7 @@ export default function Home() {
     retry,
     retryCount,
     refresh
-  } = useEphemeris({ date: currentDate });
+  } = useEphemeris({ date: trajectoryBaseDate, spanDays: 30 });
 
   // WebGL error detection
   const {

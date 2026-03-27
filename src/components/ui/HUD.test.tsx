@@ -5,7 +5,15 @@ import { HUD } from './HUD';
 // Mock framer-motion to bypass animation delays in tests
 vi.mock('framer-motion', () => ({
   motion: {
-    div: ({ children, className, 'data-testid': dataTestId, ...props }: any) => (
+    div: ({
+      children,
+      className,
+      'data-testid': dataTestId,
+      initial,
+      animate,
+      transition,
+      ...props
+    }: any) => (
       <div className={className} data-testid={dataTestId} {...props}>
         {children}
       </div>
@@ -14,16 +22,32 @@ vi.mock('framer-motion', () => ({
 }));
 
 // Mock hooks and stores
+const mockSolarState = {
+  selectedPlanet: { bodyId: '399', englishName: 'Earth' },
+  currentDate: '2026-03-26',
+  currentTime: new Date('2026-03-26T00:00:00.000Z'),
+  viewMode: 'didactic' as const,
+  timeMultiplier: 1,
+  isPlaying: false,
+  toggleViewMode: vi.fn(),
+  setIsPlaying: vi.fn(),
+  setTimeMultiplier: vi.fn(),
+  setCurrentDate: vi.fn(),
+};
+
 vi.mock('@/store/solarStore', () => ({
-  useSolarStore: () => ({
-    selectedPlanet: { bodyId: '399', englishName: 'Earth' },
-  }),
+  useSolarStore: (selector?: (state: typeof mockSolarState) => unknown) =>
+    selector ? selector(mockSolarState) : mockSolarState,
 }));
 
+const mockUIState = {
+  isMobile: false,
+  openFavorites: vi.fn(),
+};
+
 vi.mock('@/store/uiStore', () => ({
-  useUIStore: () => ({
-    isMobile: false,
-  }),
+  useUIStore: (selector?: (state: typeof mockUIState) => unknown) =>
+    selector ? selector(mockUIState) : mockUIState,
 }));
 
 vi.mock('@/hooks/useFavorites', () => ({
@@ -49,6 +73,12 @@ vi.mock('lucide-react', () => ({
   Heart: () => <div data-testid="heart" />,
   Telescope: () => <div data-testid="telescope" />,
   Calendar: () => <div data-testid="calendar" />,
+  Clock: () => <div data-testid="clock" />,
+  Play: () => <div data-testid="play" />,
+  Pause: () => <div data-testid="pause" />,
+  FastForward: () => <div data-testid="fast-forward" />,
+  Rewind: () => <div data-testid="rewind" />,
+  RotateCcw: () => <div data-testid="rotate-ccw" />,
   Menu: () => <div data-testid="menu" />,
   LogOut: () => <div data-testid="logout" />,
   User: () => <div data-testid="user" />,

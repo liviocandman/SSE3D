@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { PlanetInfo } from "./PlanetInfo";
-import { DateSelector } from "./DateSelector";
 import { AstronomerModal } from "./AstronomerModal";
 import { AuthModal } from "./AuthModal";
 import { FavoritesModal } from "./FavoritesModal";
@@ -12,6 +11,7 @@ import { useUIStore } from "@/store/uiStore";
 import { useShallow } from "zustand/react/shallow";
 import { ChevronLeft, ChevronRight, Heart } from "lucide-react";
 import { useFavorites } from "@/hooks/useFavorites";
+import { TimeTravelControls } from "./TimeTravelControls";
 
 // --- Types ---
 
@@ -176,15 +176,6 @@ export function HUD({
                 )}
               </div>
 
-              {/* Date Selector */}
-              <DateSelector
-                currentDate={currentDate}
-                onDateChange={onDateChange}
-                onRefresh={onRefresh}
-              />
-
-              <div className="h-px bg-white/10" />
-
               {/* Planet Info */}
               <PlanetInfo
                 planet={selectedPlanet}
@@ -194,6 +185,7 @@ export function HUD({
             </div>
           </div>
         </div>
+        <TimeTravelControls />
         <AstronomerModal
           isOpen={isAstronomerOpen}
           onClose={() => setIsAstronomerOpen(false)}
@@ -273,15 +265,6 @@ export function HUD({
         <div className="flex-1 p-6 overflow-y-auto scrollbar-hide">
           {/* sidebarContentStyle */}
           <div className="space-y-8">
-            {/* Date Selector */}
-            <DateSelector
-              currentDate={currentDate}
-              onDateChange={onDateChange}
-              onRefresh={onRefresh}
-            />
-
-            <div className="h-px bg-white/5" />
-
             {/* Planet Info */}
             <PlanetInfo
               planet={selectedPlanet}
@@ -294,6 +277,7 @@ export function HUD({
         {/* Decorative footer element */}
         <div className="h-1 w-full bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-50" />
       </motion.div>
+      <TimeTravelControls />
       <AstronomerModal
         isOpen={isAstronomerOpen}
         onClose={() => setIsAstronomerOpen(false)}
