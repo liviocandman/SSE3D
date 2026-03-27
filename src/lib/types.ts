@@ -9,6 +9,12 @@ export interface EphemerisPosition {
   z: number;
 }
 
+export interface EphemerisTrajectory {
+  position: EphemerisPosition;
+  velocity?: EphemerisPosition;
+  timestamp: string;
+}
+
 export interface EphemerisData {
   bodyId: string;
   name: string;
@@ -16,6 +22,7 @@ export interface EphemerisData {
   velocity?: EphemerisPosition; // km/s from NASA API
   timestamp: string;
   parentId?: string;
+  trajectory?: EphemerisTrajectory[];
 }
 
 export interface SelectedPlanet {
@@ -30,6 +37,7 @@ export interface SelectedPlanet {
   parentId?: string;           // NASA ID of parent planet
   parentName?: string;         // Human-readable parent planet name (e.g. 'Jupiter')
   distanceToParentKm?: number; // Live distance to parent computed from API position vector
+  trajectory?: EphemerisTrajectory[];
 }
 
 export type DataSource = 'NASA_LIVE' | 'CACHE_HIT' | 'FALLBACK_DATASET';

@@ -16,7 +16,7 @@ export const DIDACTIC_SCALE = {
   SUN: 50,
   GAS_GIANT: 400,
   ROCKY_PLANET: 2000,
-  MOON: 3000,
+  MOON: 1500,
 };
 
 // Planet type classification
@@ -173,7 +173,10 @@ export function getMoonOrbitScale(
 
   const parentDidacticRadius = getRadius(parentId, parentClass, 'didactic');
   const realOrbitInUnits = realOrbitRadiusKm * KM_TO_UNIT;
+  if (realOrbitInUnits <= 0) return 1;
 
-  if (realOrbitInUnits > parentDidacticRadius * MOON_ORBIT_PADDING) return 1;
-  return (parentDidacticRadius * MOON_ORBIT_PADDING) / realOrbitInUnits;
+  const minOrbitUnits = parentDidacticRadius * MOON_ORBIT_PADDING;
+  if (realOrbitInUnits >= minOrbitUnits) return 1;
+
+  return minOrbitUnits / realOrbitInUnits;
 }

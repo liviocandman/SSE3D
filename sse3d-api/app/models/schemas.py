@@ -28,6 +28,11 @@ class Position(BaseModel):
     y: float
     z: float
 
+class EphemerisTrajectory(BaseModel):
+    position: Position
+    velocity: Optional[Position] = None
+    timestamp: str
+
 class EphemerisData(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     
@@ -37,6 +42,7 @@ class EphemerisData(BaseModel):
     velocity: Optional[Position] = None
     timestamp: str
     parent_id: Optional[str] = Field(default=None, alias="parentId")
+    trajectory: Optional[list[EphemerisTrajectory]] = None
 
 class EphemerisMeta(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
