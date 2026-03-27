@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, ReactNode, useRef, useMemo } from 'react';
+import { Suspense, ReactNode, useRef, useMemo, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Stars } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
@@ -19,10 +19,13 @@ import {
 import { getRadius, scalePositionFromKm, AU_TO_UNIT } from '@/lib/scales';
 import { CameraController } from '@/hooks/useCameraAnimation';
 import { OrbitLine, getOrbitOpacity } from './OrbitLine';
+import TrailLine from './TrailLine';
 import * as THREE from 'three';
 import { useSolarStore } from '@/store/solarStore';
 import { useShallow } from 'zustand/react/shallow';
 import { TrajectoryManager } from './TrajectoryManager';
+import { flattenTrajectorySegments } from '@/lib/trajectoryEngine';
+import { KM_TO_UNIT } from '@/lib/scales';
 
 // --- Types ---
 
@@ -96,6 +99,14 @@ function calculateMillionKmFromSun(position: [number, number, number]): number {
   return Math.sqrt(x * x + y * y + z * z);
 }
 
+import StaticOrbitLine from './StaticOrbitLine';
+import { BODY_IDS } from '@/lib/types';
+
+const ALL_PLANET_IDS = [
+  BODY_IDS.MERCURY, BODY_IDS.VENUS, BODY_IDS.EARTH, BODY_IDS.MARS,
+  BODY_IDS.JUPITER, BODY_IDS.SATURN, BODY_IDS.URANUS, BODY_IDS.NEPTUNE, BODY_IDS.PLUTO
+];
+
 // --- Inner Scene Component ---
 
 export function SceneContent({
@@ -113,6 +124,10 @@ export function SceneContent({
     travelTarget,
     travelTargetRadius,
     setTravelTarget,
+    masterTrajectorySegments,
+    currentTime,
+    fullOrbits,
+    appendFullOrbits,
   } = useSolarStore(
     useShallow((state) => ({
       currentDate: state.currentDate,
@@ -123,8 +138,31 @@ export function SceneContent({
       travelTarget: state.travelTarget,
       travelTargetRadius: state.travelTargetRadius,
       setTravelTarget: state.setTravelTarget,
+      masterTrajectorySegments: state.masterTrajectorySegments,
+      currentTime: state.currentTime,
+      fullOrbits: state.fullOrbits,
+      appendFullOrbits: state.appendFullOrbits,
     }))
   );
+
+  // Load 100% accurate full-cycle NASA orbits on mount
+  useEffect(() => {
+    const fetchFullOrbits = async () => {
+      const missingIds = ALL_PLANET_IDS.filter(id => !fullOrbits[id]);
+      if (missingIds.length === 0) return;
+
+      try {
+        const resp = await fetch(`/api/ephemeris?ids=${missingIds.join(',')}&fullOrbit=true`);
+        if (!resp.ok) throw new Error('Failed to fetch full orbits');
+        const result = await resp.json();
+        appendFullOrbits(result.data);
+      } catch (err) {
+        console.error('Error fetching full orbits:', err);
+      }
+    };
+
+    fetchFullOrbits();
+  }, [fullOrbits, appendFullOrbits]);
 
   const planetsToRender = useMemo(() => {
     if (!ephemerisData || ephemerisData.length === 0) {
@@ -269,22 +307,44 @@ export function SceneContent({
 
       {planetsToRender.map((planet) => {
         if (!planet) return null;
-        const config = getPlanetConfig(planet.bodyId);
-        if (!config) return null;
-        const semiMajorAxis = config.meanDistanceAU * AU_TO_UNIT;
+        
+        // Extract and filter trajectory points for TrailLine
+        const segments = masterTrajectorySegments[planet.bodyId] || [];
+        const allPoints = flattenTrajectorySegments(segments);
+        const simTimeMs = currentTime.getTime();
+
+        // Filter for PAST points (from oldest up to current time) for the 'tail' effect
+        const pastPoints = allPoints
+          .filter((p) => {
+            const t = p.timestamp.includes("Z") ? p.timestamp : `${p.timestamp}Z`;
+            return new Date(t).getTime() <= simTimeMs + 3600000; // 1h grace to ensure smooth head
+          })
+          .map((p) => new THREE.Vector3(p.position.x * KM_TO_UNIT, p.position.y * KM_TO_UNIT, p.position.z * KM_TO_UNIT))
+          .reverse();
+
+        const hasTrail = pastPoints.length > 2;
 
         return (
-          <OrbitLine
-            key={`orbit-${planet.bodyId}`}
-            semiMajorAxis={semiMajorAxis}
-            eccentricity={config.eccentricity}
-            inclination={config.orbitalInclination}
-            longAscNode={config.longAscNode}
-            longPerihelion={config.longPerihelion}
-            opacity={getOrbitOpacity(planet.distanceFromSun)}
-            color="#a3cffe"
-            viewMode={viewMode}
-          />
+          <group key={`orbit-group-${planet.bodyId}`}>
+            {/* The Full NASA Orbit Path (Background) */}
+            {fullOrbits[planet.bodyId] && (
+              <StaticOrbitLine
+                trajectory={fullOrbits[planet.bodyId]}
+                color="#a3cffe"
+                opacity={0.12}
+              />
+            )}
+
+            {/* The Dynamic Comet Tail (Effect) */}
+            {hasTrail && (
+              <TrailLine
+                points={pastPoints}
+                color="#ffffff"
+                fadeMode="tail"
+                opacity={0.8}
+              />
+            )}
+          </group>
         );
       })}
 

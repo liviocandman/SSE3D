@@ -29,6 +29,10 @@ interface SolarState {
   masterTrajectory: Record<string, EphemerisTrajectory[]>;
   masterTrajectorySegments: Record<string, TrajectorySegment[]>;
   
+  // Full Cycle Buffer: Maps bodyId -> 100% of orbital period (approx 400-600 points)
+  // These are static background lines that do not expire.
+  fullOrbits: Record<string, EphemerisTrajectory[]>;
+  
   // Actions
   setCurrentDate: (date: string) => void;
   setCurrentTime: (time: Date) => void;
@@ -37,6 +41,7 @@ interface SolarState {
   advanceTime: (deltaSeconds: number) => void;
   setSelectedPlanet: (planet: SelectedPlanet | null) => void;
   appendTrajectoryData: (data: EphemerisData[]) => void;
+  appendFullOrbits: (data: EphemerisData[]) => void;
   setViewMode: (mode: ViewMode) => void;
   toggleViewMode: () => void;
   setTravelTarget: (target: TravelTarget | null, radius?: number) => void;
@@ -76,6 +81,7 @@ export const useSolarStore = create<SolarState>((set) => ({
   travelTargetRadius: undefined,
   masterTrajectory: {},
   masterTrajectorySegments: {},
+  fullOrbits: {},
 
   setCurrentDate: (date) =>
     set((state) => {
@@ -148,6 +154,17 @@ export const useSolarStore = create<SolarState>((set) => ({
       };
     }),
 
+  appendFullOrbits: (data) =>
+    set((state) => {
+      const merged = { ...state.fullOrbits };
+      data.forEach((body) => {
+        if (body.trajectory) {
+          merged[body.bodyId] = body.trajectory;
+        }
+      });
+      return { fullOrbits: merged };
+    }),
+
   setSelectedPlanet: (planet) => set(() => ({ selectedPlanet: planet })),
   setViewMode: (mode) => set(() => ({ viewMode: mode })),
   toggleViewMode: () =>
@@ -156,5 +173,5 @@ export const useSolarStore = create<SolarState>((set) => ({
     set(() => ({ travelTarget: target, travelTargetRadius: radius })),
   resetTravel: () => set(() => ({ travelTarget: null, travelTargetRadius: undefined })),
   clearTrajectoryBuffer: () =>
-    set(() => ({ masterTrajectory: {}, masterTrajectorySegments: {} })),
+    set(() => ({ masterTrajectory: {}, masterTrajectorySegments: {}, fullOrbits: {} })),
 }));

@@ -6,6 +6,7 @@ import { Billboard, Text } from '@react-three/drei';
 import { TextureLoader } from 'three';
 import * as THREE from 'three';
 import { OrbitLine } from './OrbitLine';
+import TrailLine from './TrailLine';
 import {
   getPlanetConfig,
   getTexturePath,
@@ -277,12 +278,12 @@ export function MoonSystem({
         }
 
         return (
-          <OrbitLine
+          <TrailLine
             key={`orbit-${moonId}`}
             points={finalPoints}
-            opacity={0.12}
             color="#88aaff"
-            viewMode={viewMode}
+            fadeMode="ring"
+            opacity={0.6}
           />
         );
       })}
