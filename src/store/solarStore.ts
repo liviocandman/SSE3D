@@ -173,5 +173,5 @@ export const useSolarStore = create<SolarState>((set) => ({
     set(() => ({ travelTarget: target, travelTargetRadius: radius })),
   resetTravel: () => set(() => ({ travelTarget: null, travelTargetRadius: undefined })),
   clearTrajectoryBuffer: () =>
-    set(() => ({ masterTrajectory: {}, masterTrajectorySegments: {}, fullOrbits: {} })),
+    set(() => ({ masterTrajectory: {}, masterTrajectorySegments: {} })),
 }));
