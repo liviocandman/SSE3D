@@ -16,7 +16,7 @@ export const DIDACTIC_SCALE = {
   SUN: 50,
   GAS_GIANT: 400,
   ROCKY_PLANET: 2000,
-  MOON: 3000,
+  MOON: 1500,
 };
 
 // Planet type classification
@@ -33,7 +33,34 @@ export const REAL_RADII_KM: Record<string, number> = {
   '699': 60268,    // Saturn (equatorial)
   '799': 25559,    // Uranus (equatorial)
   '899': 24764,    // Neptune (equatorial)
+  '999': 1188,     // Pluto
+  '301': 1737,     // Moon
+  '401': 11,       // Phobos
+  '402': 6,        // Deimos
+  '501': 1822,     // Io
+  '502': 1561,     // Europa
+  '503': 2634,     // Ganymede
+  '504': 2410,     // Callisto
+  '601': 198,      // Mimas
+  '602': 252,      // Enceladus
+  '603': 531,      // Tethys
+  '604': 561,      // Dione
+  '605': 763,      // Rhea
+  '606': 2575,     // Titan
+  '608': 734,      // Iapetus
+  '701': 579,      // Ariel
+  '702': 585,      // Umbriel
+  '703': 788,      // Titania
+  '704': 761,      // Oberon
+  '705': 236,      // Miranda
+  '801': 1353,     // Triton
+  '901': 606,      // Charon
 };
+
+/**
+ * Additional clearance multiplier for moon orbits around didactically-inflated planets.
+ */
+export const MOON_ORBIT_PADDING = 1.5;
 
 /**
  * Converts real radius in km to didactic rendering units
@@ -131,4 +158,25 @@ export function getRadius(
     default:
       return realisticRadius * DIDACTIC_SCALE.ROCKY_PLANET;
   }
+}
+
+/**
+ * Scales moon orbits to keep them outside the didactically-inflated parent planet.
+ */
+export function getMoonOrbitScale(
+  parentId: string,
+  parentClass: BodyClass,
+  realOrbitRadiusKm: number,
+  mode: ViewMode = 'didactic'
+): number {
+  if (mode === 'realistic') return 1;
+
+  const parentDidacticRadius = getRadius(parentId, parentClass, 'didactic');
+  const realOrbitInUnits = realOrbitRadiusKm * KM_TO_UNIT;
+  if (realOrbitInUnits <= 0) return 1;
+
+  const minOrbitUnits = parentDidacticRadius * MOON_ORBIT_PADDING;
+  if (realOrbitInUnits >= minOrbitUnits) return 1;
+
+  return minOrbitUnits / realOrbitInUnits;
 }

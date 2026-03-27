@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
 import { useUserStore } from '@/store/userStore';
@@ -10,10 +10,12 @@ export function useSessionMerge() {
   const { status } = useSession();
   const sessionId = useUserStore((state) => state.sessionId);
   const queryClient = useQueryClient();
+  const hasRun = useRef(false);
 
   useEffect(() => {
     // Only run if authenticated and we have a session ID
-    if (status === 'authenticated' && sessionId) {
+    if (status === 'authenticated' && sessionId && !hasRun.current) {
+      hasRun.current = true;
       const performMerge = async () => {
         try {
           const response = await fetch('/api/users/merge', {

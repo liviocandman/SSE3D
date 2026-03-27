@@ -11,6 +11,7 @@ import { ErrorOverlay } from '@/components/ui/ErrorOverlay';
 import { HUD } from '@/components/ui/HUD';
 import { useSessionMerge } from '@/hooks/useSessionMerge';
 import { BODY_IDS } from '@/lib/types';
+import { scalePositionFromKm } from '@/lib/scales';
 import type { AppError } from '@/components/ui/ErrorOverlay';
 import { useSolarStore } from '@/store/solarStore';
 
@@ -38,6 +39,7 @@ function isValidDate(dateString: string): boolean {
 
 export default function Home() {
   const currentDate = useSolarStore((state) => state.currentDate);
+  const trajectoryBaseDate = useSolarStore((state) => state.trajectoryBaseDate);
   const setCurrentDate = useSolarStore((state) => state.setCurrentDate);
 
   // Trigger data merge if user just logged in
@@ -53,7 +55,7 @@ export default function Home() {
     retry,
     retryCount,
     refresh
-  } = useEphemeris({ date: currentDate });
+  } = useEphemeris({ date: trajectoryBaseDate, spanDays: 30 });
 
   // WebGL error detection
   const {
@@ -72,10 +74,11 @@ export default function Home() {
   const earthPosition = useMemo(() => {
     const earth = ephemerisData.find(body => body.bodyId === BODY_IDS.EARTH);
     if (earth) {
+      const scaledEarth = scalePositionFromKm(earth.position.x, earth.position.y, earth.position.z);
       return {
-        x: earth.position.x,
-        y: earth.position.y,
-        z: earth.position.z,
+        x: scaledEarth[0],
+        y: scaledEarth[1],
+        z: scaledEarth[2],
       };
     }
     return undefined;

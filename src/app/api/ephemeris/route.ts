@@ -8,15 +8,20 @@ const ALL_PLANET_IDS = Object.values(BODY_IDS);
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const date = searchParams.get('date') ?? new Date().toISOString().split('T')[0];
+  const spanDays = searchParams.get('spanDays') ?? '30';
   const force = searchParams.get('force') === 'true';
   const idsParam = searchParams.get('ids');
+  const centerBody = searchParams.get('center_body') ?? '10';
   
   const bodyIds = idsParam 
     ? idsParam.split(',').map(id => id.trim()) 
     : ALL_PLANET_IDS;
 
+  // Include spanDays in the cache key to match backend strategy and avoid collisions
+  const cacheKeyDate = `${date}_${spanDays}`;
+
   if (!force) {
-    const cacheResult = await getCachedBulkEphemeris(bodyIds, date);
+    const cacheResult = await getCachedBulkEphemeris(bodyIds, cacheKeyDate, centerBody);
     if (cacheResult.missing.length === 0 && cacheResult.cached.length > 0) {
       return NextResponse.json({
         data: cacheResult.cached,
@@ -33,8 +38,10 @@ export async function GET(request: NextRequest) {
 
   const idsQuery = idsParam ? `&ids=${idsParam}` : '';
   const forceQuery = force ? '&force=true' : '';
+  const centerQuery = centerBody !== '10' ? `&center_body=${centerBody}` : '';
+  const spanQuery = `&spanDays=${spanDays}`;
   const pythonUrl = process.env.PYTHON_API_URL || API_BASE_URL;
-  const apiUrl = `${pythonUrl}/api/ephemeris?date=${date}${idsQuery}${forceQuery}`;
+  const apiUrl = `${pythonUrl}/api/ephemeris?date=${date}${idsQuery}${centerQuery}${forceQuery}${spanQuery}`;
 
   try {
     const response = await fetch(apiUrl, { next: { revalidate: 0 } });
