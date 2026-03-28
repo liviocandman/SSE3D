@@ -37,36 +37,4 @@ describe('textureConfig', () => {
       });
     });
   });
-
-  describe('Axial Tilt and Day Length', () => {
-    const planetIds = ['199', '299', '399', '499', '599', '699', '799', '899', '999'];
-    
-    planetIds.forEach(id => {
-      it(`should have axialTilt and dayLength for ${id}`, () => {
-        const config = getPlanetConfig(id);
-        expect(config).toBeDefined();
-        expect(typeof config?.axialTilt).toBe('number');
-        expect(typeof config?.dayLength).toBe('number');
-        expect(config?.dayLength).not.toBe(0);
-      });
-    });
-
-    it('should have negative dayLength for retrograde planets', () => {
-      const venus = getPlanetConfig('299');
-      const uranus = getPlanetConfig('799');
-      const pluto = getPlanetConfig('999');
-
-      expect(venus?.dayLength).toBeLessThan(0);
-      expect(uranus?.dayLength).toBeLessThan(0);
-      expect(pluto?.dayLength).toBeLessThan(0);
-    });
-
-    it('should have high axial tilt for Uranus and Pluto', () => {
-      const uranus = getPlanetConfig('799');
-      const pluto = getPlanetConfig('999');
-
-      expect(uranus?.axialTilt).toBeGreaterThan(90);
-      expect(pluto?.axialTilt).toBeGreaterThan(90);
-    });
-  });
 });

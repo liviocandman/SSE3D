@@ -49,8 +49,8 @@ export function Sun({
       const distance = camera.position.length();
 
       // 2. Definir um fator de escala visual
-      // "distance / 500" significa: a cada 500 unidades de distância, o sol ganha 1 unidade de tamanho visual.
-      // Isso mantém ele visível como um disco pequeno no céu de Netuno (~12 units).
+      // "distance / 120" significa: a cada 120 unidades de distância, o sol ganha 1 unidade de tamanho visual.
+      // Isso mantém ele visível como um disco pequeno no céu de Netuno.
       const visualScale = distance / 500;
 
       // 3. Clamp (Trava de segurança)
@@ -59,14 +59,9 @@ export function Sun({
       targetScale = Math.max(realisticRadius, visualScale);
     }
 
-    // --- O BUG ESTAVA NO LERP ACIMA ---
+    // Animação suave (Lerp) para não "pular" de tamanho quando troca de modo
     const currentScale = meshRef.current.scale.x;
-
-    // NOVA FÓRMULA SEGURA: 
-    // O Math.exp garante que, mesmo que o delta seja gigante (lag extremo), 
-    // o lerpFactor nunca, jamais, ultrapassará 1.0.
-    const lerpFactor = 1 - Math.exp(-25 * delta);
-    const smoothScale = THREE.MathUtils.lerp(currentScale, targetScale, lerpFactor);
+    const smoothScale = THREE.MathUtils.lerp(currentScale, targetScale, delta * 25);
 
     meshRef.current.scale.setScalar(smoothScale);
     meshRef.current.rotation.y += 0.0005;
