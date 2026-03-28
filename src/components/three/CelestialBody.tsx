@@ -11,7 +11,7 @@ import type { ViewMode } from "@/lib/scales";
 import { useSolarStore } from "@/store/solarStore";
 import type { EphemerisTrajectory } from "@/lib/types";
 import { buildTrajectorySegment, sampleTrajectoryAtTime } from "@/lib/trajectoryEngine";
-import { calculateRotationStep, calculateAbsoluteRotation } from "@/lib/rotationUtils";
+import { calculateAbsoluteRotation } from "@/lib/rotationUtils";
 
 // --- Types ---
 
@@ -101,8 +101,6 @@ export function CelestialBody({
   useFrame((state, delta) => {
     const solarState = useSolarStore.getState();
     const simTime = solarState.currentTime.getTime();
-    const isPlaying = solarState.isPlaying;
-    const timeMultiplier = solarState.timeMultiplier;
 
     // Read segment-aware trajectory first; fallback to initial prop data.
     const segments = solarState.masterTrajectorySegments[bodyId] || fallbackSegments;

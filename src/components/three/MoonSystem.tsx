@@ -5,8 +5,8 @@ import { useLoader, useFrame, ThreeEvent } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import { TextureLoader } from 'three';
 import * as THREE from 'three';
-import { OrbitLine } from './OrbitLine';
 import TrailLine from './TrailLine';
+
 import {
   getPlanetConfig,
   getTexturePath,

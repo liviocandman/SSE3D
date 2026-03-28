@@ -9,7 +9,11 @@ import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { Sun } from './Sun';
 import { CelestialBody } from './CelestialBody';
 import { MoonSystem } from './MoonSystem';
-import type { EphemerisData, SelectedPlanet } from '@/lib/types';
+import {
+  type TrajectorySegment,
+  flattenTrajectorySegments,
+} from '@/lib/trajectoryEngine';
+import type { EphemerisData, SelectedPlanet, EphemerisTrajectory } from '@/lib/types';
 import {
   getPlanetConfig,
   getTexturePath,
@@ -23,8 +27,8 @@ import * as THREE from 'three';
 import { useSolarStore } from '@/store/solarStore';
 import { useShallow } from 'zustand/react/shallow';
 import { TrajectoryManager } from './TrajectoryManager';
-import { flattenTrajectorySegments } from '@/lib/trajectoryEngine';
 import { KM_TO_UNIT } from '@/lib/scales';
+
 
 // --- Types ---
 
@@ -107,7 +111,7 @@ const ALL_PLANET_IDS = [
 ];
 
 const TRAIL_GRACE_MS = 12 * 60 * 60 * 1000;
-const MAX_TRAIL_POINTS = 240;
+
 
 function parseTimestampMs(timestamp: string): number {
   const utcString = timestamp.includes('Z') ? timestamp : `${timestamp}Z`;
@@ -134,10 +138,11 @@ function findLastSampleIndex(samples: { timestampMs: number }[], cutoffMs: numbe
 }
 
 interface PlanetTrajectoryGroupProps {
-  segments: any[]; // TrajectorySegment[]
-  fullOrbitData?: any; // EphemerisTrajectory[]
+  segments: TrajectorySegment[];
+  fullOrbitData?: EphemerisTrajectory[];
   currentTime: Date;
 }
+
 
 function PlanetTrajectoryGroup({ segments, fullOrbitData, currentTime }: PlanetTrajectoryGroupProps) {
   const { tier } = useQualityTier();
@@ -169,7 +174,8 @@ function PlanetTrajectoryGroup({ segments, fullOrbitData, currentTime }: PlanetT
       points.push(samples[i].point);
     }
     return points;
-  }, [samples, simTimeMs]);
+  }, [samples, simTimeMs, maxTrailPoints]);
+
 
   return (
     <group>

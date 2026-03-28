@@ -1,6 +1,6 @@
 import asyncio
 import re
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Optional
 import httpx
 from loguru import logger
