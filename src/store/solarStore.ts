@@ -53,16 +53,13 @@ function getTodayString(): string {
   return new Date().toISOString().split('T')[0];
 }
 
-function toLocalDateString(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+function toUTCDateString(date: Date): string {
+  return date.toISOString().split('T')[0];
 }
 
-function parseLocalDate(date: string): Date {
-  const [year, month, day] = date.split('-').map(Number);
-  return new Date(year, month - 1, day);
+function parseUTCDate(date: string): Date {
+  const utcDate = new Date(`${date}T00:00:00Z`);
+  return Number.isNaN(utcDate.getTime()) ? new Date() : utcDate;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -86,12 +83,9 @@ export const useSolarStore = create<SolarState>((set) => ({
 
   setCurrentDate: (date) =>
     set((state) => {
-      const newTime = parseLocalDate(date);
-      if (Number.isNaN(newTime.getTime())) {
-        return state;
-      }
-
-      const currentBaseTime = parseLocalDate(state.trajectoryBaseDate).getTime();
+      const newTime = parseUTCDate(date);
+      
+      const currentBaseTime = parseUTCDate(state.trajectoryBaseDate).getTime();
       const targetTime = newTime.getTime();
       const diffDays = (targetTime - currentBaseTime) / DAY_MS;
 
@@ -110,7 +104,7 @@ export const useSolarStore = create<SolarState>((set) => ({
   setCurrentTime: (time) => 
     set(() => ({ 
       currentTime: time,
-      currentDate: toLocalDateString(time),
+      currentDate: toUTCDateString(time),
     })),
 
   setTimeMultiplier: () => set({ timeMultiplier: 1.0 }),
@@ -123,7 +117,7 @@ export const useSolarStore = create<SolarState>((set) => ({
       
       const simDeltaMs = deltaSeconds * state.timeMultiplier * 24 * 60 * 60 * 1000;
       const newTime = new Date(state.currentTime.getTime() + simDeltaMs);
-      const newDateStr = toLocalDateString(newTime);
+      const newDateStr = toUTCDateString(newTime);
       
       return {
         currentTime: newTime,

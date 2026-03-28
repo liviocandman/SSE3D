@@ -8,6 +8,7 @@ interface StaticOrbitLineProps {
   trajectory: EphemerisTrajectory[];
   color: string | THREE.Color;
   opacity?: number;
+  lineWidth?: number;
 }
 
 /**
@@ -16,7 +17,8 @@ interface StaticOrbitLineProps {
 const StaticOrbitLine: React.FC<StaticOrbitLineProps> = ({ 
   trajectory, 
   color, 
-  opacity = 0.12 
+  opacity = 0.05,
+  lineWidth = 0.5,
 }) => {
   const points = useMemo(() => {
     const converted = trajectory.map((p) => new THREE.Vector3(
@@ -39,7 +41,7 @@ const StaticOrbitLine: React.FC<StaticOrbitLineProps> = ({
     <Line
       points={points}
       color={color}
-      lineWidth={1}
+      lineWidth={lineWidth}
       transparent
       opacity={opacity}
       depthWrite={false}

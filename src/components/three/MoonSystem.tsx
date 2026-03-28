@@ -85,6 +85,7 @@ function MoonMesh({
 }: MoonMeshProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
+  const isInitializedRef = useRef(false);
   const [isHovered, setIsHovered] = useState(false);
   const fallbackSegments = useMemo(() => {
     if (!trajectory || trajectory.length === 0) return [];
@@ -112,9 +113,18 @@ function MoonMesh({
         const { x, y, z } = sampled.position;
         const targetPos = new THREE.Vector3(x * SCALE, y * SCALE, z * SCALE);
         
-        // Smoothly move the moon to its new interpolated position
-        groupRef.current.position.lerp(targetPos, 0.15); 
+        if (!isInitializedRef.current) {
+          groupRef.current.position.copy(targetPos);
+          isInitializedRef.current = true;
+        } else {
+          // Use frame-rate independent LERP (approx 0.15 at 60fps)
+          const lerpFactor = 1 - Math.exp(-10 * delta);
+          groupRef.current.position.lerp(targetPos, lerpFactor); 
+        }
       }
+    } else if (groupRef.current && !isInitializedRef.current) {
+      groupRef.current.position.set(...initialPosition);
+      isInitializedRef.current = true;
     }
 
     // 2. Rotation (Time-scaled)
@@ -159,7 +169,7 @@ function MoonMesh({
   };
 
   return (
-    <group name={name} ref={groupRef} position={initialPosition}>
+    <group name={name} ref={groupRef}>
       <mesh {...events} renderOrder={-1}>
         <sphereGeometry args={[hitboxRadius, 8, 8]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />

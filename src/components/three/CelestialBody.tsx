@@ -67,6 +67,7 @@ export function CelestialBody({
   const { camera } = useThree();
 
   const tempVec = useRef(new THREE.Vector3());
+  const isInitializedRef = useRef(false);
   const frameCountRef = useRef(0);
   const fallbackSegments = useMemo(() => {
     if (!trajectory || trajectory.length === 0) return [];
@@ -109,10 +110,20 @@ export function CelestialBody({
         const { x, y, z } = sampled.position;
         const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);
         
-        // Use LERP for visual smoothing (0.1 = 10% toward target per frame)
-        // This prevents 'teleporting' when segments change or jump.
-        groupRef.current.position.lerp(targetPos, 0.1);
+        if (!isInitializedRef.current) {
+          // Snap to first valid position to avoid flying from origin
+          groupRef.current.position.copy(targetPos);
+          isInitializedRef.current = true;
+        } else {
+          // Use frame-rate independent LERP (approx 0.1 at 60fps)
+          const lerpFactor = 1 - Math.exp(-6 * delta);
+          groupRef.current.position.lerp(targetPos, lerpFactor);
+        }
       }
+    } else if (groupRef.current && !isInitializedRef.current) {
+      // Fallback: use static prop position once if no trajectory is ready
+      groupRef.current.position.set(...initialPosition);
+      isInitializedRef.current = true;
     }
 
     // 2. Planet rotation (Time-scaled axial rotation)
@@ -181,7 +192,7 @@ export function CelestialBody({
   const labelAnchorY = isHovered ? "bottom" : "top";
 
   return (
-    <group name={englishName} ref={groupRef} position={initialPosition}>
+    <group name={englishName} ref={groupRef}>
       {/* Invisible hitbox for interaction - always large enough to click */}
       <mesh
         onClick={handleClick}

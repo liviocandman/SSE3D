@@ -20,7 +20,7 @@ const TrailLine: React.FC<TrailLineProps> = ({
   color,
   fadeMode,
   opacity = 0.8,
-  lineWidth = 1.0,
+  lineWidth = 2.5,
 }) => {
   const vertexColors = useMemo(() => {
     return getTrailVertexColors(points.length, color, fadeMode);
@@ -35,6 +35,7 @@ const TrailLine: React.FC<TrailLineProps> = ({
       lineWidth={lineWidth}
       transparent
       opacity={opacity}
+
       depthWrite={false}
     />
   );

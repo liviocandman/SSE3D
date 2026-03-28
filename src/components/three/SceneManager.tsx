@@ -175,17 +175,18 @@ function PlanetTrajectoryGroup({ segments, fullOrbitData, currentTime }: PlanetT
         <StaticOrbitLine
           trajectory={fullOrbitData}
           color="#a3cffe"
-          opacity={0.12}
+          opacity={0.05}
+          lineWidth={0.5}
         />
       )}
 
       {pastPoints.length > 2 && (
         <TrailLine
           points={pastPoints}
-          color="#cfe6ff"
+          color="#a3cffe"
           fadeMode="tail"
-          opacity={0.75}
-          lineWidth={1.0}
+          opacity={0.8}
+          lineWidth={1.5}
         />
       )}
     </group>
