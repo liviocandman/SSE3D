@@ -243,11 +243,19 @@ function interpolateHermite(
   const m1y = v2.y * deltaSeconds;
   const m1z = v2.z * deltaSeconds;
 
-  return {
+  const result = {
     x: h00 * p1.position.x + h10 * m0x + h01 * p2.position.x + h11 * m1x,
     y: h00 * p1.position.y + h10 * m0y + h01 * p2.position.y + h11 * m1y,
     z: h00 * p1.position.z + h10 * m0z + h01 * p2.position.z + h11 * m1z,
   };
+
+  // Safety Sanitization: If any component is not a finite number (NaN, Infinity), 
+  // fallback to base position to prevent engine "explosion".
+  if (!Number.isFinite(result.x) || !Number.isFinite(result.y) || !Number.isFinite(result.z)) {
+    return { x: p1.position.x, y: p1.position.y, z: p1.position.z };
+  }
+
+  return result;
 }
 
 function clampToNearestGapEndpoint(

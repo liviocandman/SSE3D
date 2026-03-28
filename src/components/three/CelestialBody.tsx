@@ -61,7 +61,7 @@ export function CelestialBody({
 }: CelestialBodyProps) {
   const meshRef = useRef<Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
-  
+
   // Use useLoader directly to have access to useLoader.clear() for global cache cleanup
   const texture = useLoader(TextureLoader, textureUrl, (loader) => {
     loader.setCrossOrigin("anonymous");
@@ -103,7 +103,7 @@ export function CelestialBody({
     const simTime = solarState.currentTime.getTime();
     const isPlaying = solarState.isPlaying;
     const timeMultiplier = solarState.timeMultiplier;
-    
+
     // Read segment-aware trajectory first; fallback to initial prop data.
     const segments = solarState.masterTrajectorySegments[bodyId] || fallbackSegments;
 
@@ -114,7 +114,7 @@ export function CelestialBody({
       if (sampled) {
         const { x, y, z } = sampled.position;
         const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);
-        
+
         if (!isInitializedRef.current) {
           // Snap to first valid position to avoid flying from origin
           groupRef.current.position.copy(targetPos);
@@ -140,18 +140,18 @@ export function CelestialBody({
         // Didactic mode: absolute orientation (boosted) + real-time spin
         // This ensures the planet "jumps" correctly during time travel
         // but still feels "alive" when simulation is paused.
-        
+
         // 1. Physical base rotation (from dayLength, slightly boosted for visibility)
-        const baseRotation = dayLength !== undefined 
-          ? calculateAbsoluteRotation(dayLength, simTime) 
+        const baseRotation = dayLength !== undefined
+          ? calculateAbsoluteRotation(dayLength, simTime)
           : 0;
-        
+
         // 2. Visual "didactic" spin (constant rotation for feedback)
         // Uses state.clock.elapsedTime (real world time)
         const direction = (dayLength !== undefined && dayLength < 0) ? -1 : 1;
         const speed = rotationSpeed ?? DEFAULT_ROTATION_SPEED;
         const visualSpin = state.clock.elapsedTime * speed * 60 * direction;
-        
+
         // Combine them
         meshRef.current.rotation.y = baseRotation + visualSpin;
       }
