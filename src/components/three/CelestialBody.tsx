@@ -11,7 +11,7 @@ import type { ViewMode } from "@/lib/scales";
 import { useSolarStore } from "@/store/solarStore";
 import type { EphemerisTrajectory } from "@/lib/types";
 import { buildTrajectorySegment, sampleTrajectoryAtTime } from "@/lib/trajectoryEngine";
-import { calculateRotationStep } from "@/lib/rotationUtils";
+import { calculateRotationStep, calculateAbsoluteRotation } from "@/lib/rotationUtils";
 
 // --- Types ---
 
@@ -98,7 +98,7 @@ export function CelestialBody({
   }, []);
 
   // Animation loop
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     const solarState = useSolarStore.getState();
     const simTime = solarState.currentTime.getTime();
     const isPlaying = solarState.isPlaying;
@@ -131,16 +131,29 @@ export function CelestialBody({
       isInitializedRef.current = true;
     }
 
-    // 2. Planet rotation (Time-scaled axial rotation)
+    // 2. Planet rotation (Absolute orientation + Optional didactic spin)
     if (meshRef.current) {
-      if (dayLength !== undefined) {
-        // Use physics-based rotation from day length
-        const step = calculateRotationStep(dayLength, delta, isPlaying ? timeMultiplier : 0);
-        meshRef.current.rotation.y += step;
+      if (viewMode === "realistic" && dayLength !== undefined) {
+        // Realistic mode: strictly physical orientation based on timestamp
+        meshRef.current.rotation.y = calculateAbsoluteRotation(dayLength, simTime);
       } else {
-        // Fallback to legacy rotation speed if dayLength is not provided
+        // Didactic mode: absolute orientation (boosted) + real-time spin
+        // This ensures the planet "jumps" correctly during time travel
+        // but still feels "alive" when simulation is paused.
+        
+        // 1. Physical base rotation (from dayLength, slightly boosted for visibility)
+        const baseRotation = dayLength !== undefined 
+          ? calculateAbsoluteRotation(dayLength, simTime) 
+          : 0;
+        
+        // 2. Visual "didactic" spin (constant rotation for feedback)
+        // Uses state.clock.elapsedTime (real world time)
+        const direction = (dayLength !== undefined && dayLength < 0) ? -1 : 1;
         const speed = rotationSpeed ?? DEFAULT_ROTATION_SPEED;
-        meshRef.current.rotation.y += speed * 60 * delta * (isPlaying ? timeMultiplier : 1);
+        const visualSpin = state.clock.elapsedTime * speed * 60 * direction;
+        
+        // Combine them
+        meshRef.current.rotation.y = baseRotation + visualSpin;
       }
     }
 
