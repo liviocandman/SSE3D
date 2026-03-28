@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, ReactNode, useRef, useMemo } from 'react';
+import { Suspense, ReactNode, useRef, useMemo, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Stars } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
@@ -16,13 +16,15 @@ import {
   PLANET_MOONS,
   TextureTier,
 } from '@/lib/textureConfig';
-import { getRadius, scalePositionFromKm, AU_TO_UNIT } from '@/lib/scales';
+import { getRadius, scalePositionFromKm } from '@/lib/scales';
 import { CameraController } from '@/hooks/useCameraAnimation';
-import { OrbitLine, getOrbitOpacity } from './OrbitLine';
+import TrailLine from './TrailLine';
 import * as THREE from 'three';
 import { useSolarStore } from '@/store/solarStore';
 import { useShallow } from 'zustand/react/shallow';
 import { TrajectoryManager } from './TrajectoryManager';
+import { flattenTrajectorySegments } from '@/lib/trajectoryEngine';
+import { KM_TO_UNIT } from '@/lib/scales';
 
 // --- Types ---
 
@@ -96,6 +98,103 @@ function calculateMillionKmFromSun(position: [number, number, number]): number {
   return Math.sqrt(x * x + y * y + z * z);
 }
 
+import StaticOrbitLine from './StaticOrbitLine';
+import { BODY_IDS } from '@/lib/types';
+
+const ALL_PLANET_IDS = [
+  BODY_IDS.MERCURY, BODY_IDS.VENUS, BODY_IDS.EARTH, BODY_IDS.MARS,
+  BODY_IDS.JUPITER, BODY_IDS.SATURN, BODY_IDS.URANUS, BODY_IDS.NEPTUNE, BODY_IDS.PLUTO
+];
+
+const TRAIL_GRACE_MS = 12 * 60 * 60 * 1000;
+const MAX_TRAIL_POINTS = 240;
+
+function parseTimestampMs(timestamp: string): number {
+  const utcString = timestamp.includes('Z') ? timestamp : `${timestamp}Z`;
+  return new Date(utcString).getTime();
+}
+
+function findLastSampleIndex(samples: { timestampMs: number }[], cutoffMs: number): number {
+  let left = 0;
+  let right = samples.length - 1;
+  let result = -1;
+
+  while (left <= right) {
+    const mid = Math.floor((left + right) / 2);
+    const value = samples[mid].timestampMs;
+    if (value <= cutoffMs) {
+      result = mid;
+      left = mid + 1;
+    } else {
+      right = mid - 1;
+    }
+  }
+
+  return result;
+}
+
+interface PlanetTrajectoryGroupProps {
+  segments: any[]; // TrajectorySegment[]
+  fullOrbitData?: any; // EphemerisTrajectory[]
+  currentTime: Date;
+}
+
+function PlanetTrajectoryGroup({ segments, fullOrbitData, currentTime }: PlanetTrajectoryGroupProps) {
+  const { tier } = useQualityTier();
+  const maxTrailPoints = tier === 'high' ? 240 : tier === 'mid' ? 120 : 60;
+  const allPoints = useMemo(() => flattenTrajectorySegments(segments), [segments]);
+
+  const samples = useMemo(() => {
+    return allPoints.map((p) => ({
+      timestampMs: parseTimestampMs(p.timestamp),
+      point: new THREE.Vector3(
+        p.position.x * KM_TO_UNIT,
+        p.position.y * KM_TO_UNIT,
+        p.position.z * KM_TO_UNIT
+      ),
+    }));
+  }, [allPoints]);
+
+  const simTimeMs = currentTime.getTime();
+  const pastPoints = useMemo(() => {
+    if (samples.length < 2) return [];
+
+    const cutoffMs = simTimeMs + TRAIL_GRACE_MS;
+    const lastVisibleIndex = findLastSampleIndex(samples, cutoffMs);
+    if (lastVisibleIndex < 1) return [];
+
+    const startIndex = Math.max(0, lastVisibleIndex - maxTrailPoints + 1);
+    const points: THREE.Vector3[] = [];
+    for (let i = lastVisibleIndex; i >= startIndex; i--) {
+      points.push(samples[i].point);
+    }
+    return points;
+  }, [samples, simTimeMs]);
+
+  return (
+    <group>
+      {fullOrbitData && (
+        <StaticOrbitLine
+          trajectory={fullOrbitData}
+          color="#a3cffe"
+          opacity={0.05}
+          lineWidth={0.5}
+        />
+      )}
+
+      {pastPoints.length > 2 && (
+        <TrailLine
+          points={pastPoints}
+          color="#a3cffe"
+          fadeMode="tail"
+          opacity={0.8}
+          lineWidth={1.5}
+        />
+      )}
+    </group>
+  );
+}
+
 // --- Inner Scene Component ---
 
 export function SceneContent({
@@ -103,7 +202,7 @@ export function SceneContent({
   ephemerisData,
 }: SceneContentProps) {
   const { tier, settings } = useQualityTier();
-  
+
   const {
     currentDate,
     selectedPlanet,
@@ -113,6 +212,10 @@ export function SceneContent({
     travelTarget,
     travelTargetRadius,
     setTravelTarget,
+    masterTrajectorySegments,
+    currentTime,
+    fullOrbits,
+    appendFullOrbits,
   } = useSolarStore(
     useShallow((state) => ({
       currentDate: state.currentDate,
@@ -123,8 +226,31 @@ export function SceneContent({
       travelTarget: state.travelTarget,
       travelTargetRadius: state.travelTargetRadius,
       setTravelTarget: state.setTravelTarget,
+      masterTrajectorySegments: state.masterTrajectorySegments,
+      currentTime: state.currentTime,
+      fullOrbits: state.fullOrbits,
+      appendFullOrbits: state.appendFullOrbits,
     }))
   );
+
+  // Load 100% accurate full-cycle NASA orbits on mount
+  useEffect(() => {
+    const fetchFullOrbits = async () => {
+      const missingIds = ALL_PLANET_IDS.filter(id => !fullOrbits[id]);
+      if (missingIds.length === 0) return;
+
+      try {
+        const resp = await fetch(`/api/ephemeris?ids=${missingIds.join(',')}&fullOrbit=true`);
+        if (!resp.ok) throw new Error('Failed to fetch full orbits');
+        const result = await resp.json();
+        appendFullOrbits(result.data);
+      } catch (err) {
+        console.error('Error fetching full orbits:', err);
+      }
+    };
+
+    fetchFullOrbits();
+  }, [fullOrbits, appendFullOrbits]);
 
   const planetsToRender = useMemo(() => {
     if (!ephemerisData || ephemerisData.length === 0) {
@@ -155,6 +281,8 @@ export function SceneContent({
           radius: getRadius(body.bodyId, config.bodyClass, viewMode),
           texturePath: getTexturePath(body.bodyId, tier as TextureTier),
           rotationSpeed: config.rotationSpeed,
+          axialTilt: config.axialTilt,
+          dayLength: config.dayLength,
           distanceFromSun: calculateMillionKmFromSun(position),
           bodyClass: config.bodyClass,
           segments,
@@ -234,15 +362,17 @@ export function SceneContent({
       <GlobalTimeController />
       <TrajectoryManager />
 
-      <EffectComposer>
-        <Bloom
-          intensity={2.5}
-          luminanceThreshold={0.6}
-          luminanceSmoothing={0.9}
-          mipmapBlur
-          color="#ffffffff"
-        />
-      </EffectComposer>
+      {tier !== 'low' && (
+        <EffectComposer enableNormalPass={false}>
+          <Bloom
+            intensity={tier === 'high' ? 2.5 : 1.5}
+            luminanceThreshold={0.6}
+            luminanceSmoothing={0.9}
+            mipmapBlur={tier === 'high'}
+            color="#ffffffff"
+          />
+        </EffectComposer>
+      )}
 
       <Stars
         radius={4000}
@@ -269,21 +399,12 @@ export function SceneContent({
 
       {planetsToRender.map((planet) => {
         if (!planet) return null;
-        const config = getPlanetConfig(planet.bodyId);
-        if (!config) return null;
-        const semiMajorAxis = config.meanDistanceAU * AU_TO_UNIT;
-
         return (
-          <OrbitLine
-            key={`orbit-${planet.bodyId}`}
-            semiMajorAxis={semiMajorAxis}
-            eccentricity={config.eccentricity}
-            inclination={config.orbitalInclination}
-            longAscNode={config.longAscNode}
-            longPerihelion={config.longPerihelion}
-            opacity={getOrbitOpacity(planet.distanceFromSun)}
-            color="#a3cffe"
-            viewMode={viewMode}
+          <PlanetTrajectoryGroup
+            key={`orbit-group-${planet.bodyId}`}
+            segments={masterTrajectorySegments[planet.bodyId] || []}
+            fullOrbitData={fullOrbits[planet.bodyId]}
+            currentTime={currentTime}
           />
         );
       })}
@@ -301,6 +422,8 @@ export function SceneContent({
               radius={planet.radius}
               textureUrl={planet.texturePath}
               rotationSpeed={planet.rotationSpeed}
+              axialTilt={planet.axialTilt}
+              dayLength={planet.dayLength}
               segments={planet.segments}
               onClick={handlePlanetClick}
               onDoubleClick={handlePlanetDoubleClick}
@@ -308,17 +431,17 @@ export function SceneContent({
             >
               {PLANET_MOONS[planet.bodyId] &&
                 (selectedPlanet?.bodyId === planet.bodyId ||
-                 selectedPlanet?.parentId === planet.bodyId) && (
-                <MoonSystem
-                  parentId={planet.bodyId}
-                  parentClass={planet.bodyClass}
-                  parentPosition={[0, 0, 0]}
-                  worldParentPosition={planet.position}
-                  date={currentDate}
-                  viewMode={viewMode}
-                  tier={tier}
-                />
-              )}
+                  selectedPlanet?.parentId === planet.bodyId) && (
+                  <MoonSystem
+                    parentId={planet.bodyId}
+                    parentClass={planet.bodyClass}
+                    parentPosition={[0, 0, 0]}
+                    worldParentPosition={planet.position}
+                    date={currentDate}
+                    viewMode={viewMode}
+                    tier={tier}
+                  />
+                )}
               {selectedPlanetData?.bodyId === planet.bodyId && (
                 <SelectionRing
                   position={[0, 0, 0]}
