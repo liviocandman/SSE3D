@@ -279,6 +279,8 @@ export function SceneContent({
           radius: getRadius(body.bodyId, config.bodyClass, viewMode),
           texturePath: getTexturePath(body.bodyId, tier as TextureTier),
           rotationSpeed: config.rotationSpeed,
+          axialTilt: config.axialTilt,
+          dayLength: config.dayLength,
           distanceFromSun: calculateMillionKmFromSun(position),
           bodyClass: config.bodyClass,
           segments,
@@ -416,6 +418,8 @@ export function SceneContent({
               radius={planet.radius}
               textureUrl={planet.texturePath}
               rotationSpeed={planet.rotationSpeed}
+              axialTilt={planet.axialTilt}
+              dayLength={planet.dayLength}
               segments={planet.segments}
               onClick={handlePlanetClick}
               onDoubleClick={handlePlanetDoubleClick}

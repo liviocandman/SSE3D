@@ -11,6 +11,7 @@ import type { ViewMode } from "@/lib/scales";
 import { useSolarStore } from "@/store/solarStore";
 import type { EphemerisTrajectory } from "@/lib/types";
 import { buildTrajectorySegment, sampleTrajectoryAtTime } from "@/lib/trajectoryEngine";
+import { calculateRotationStep } from "@/lib/rotationUtils";
 
 // --- Types ---
 
@@ -23,6 +24,8 @@ interface CelestialBodyProps {
   radius: number;
   textureUrl: string;
   rotationSpeed?: number;
+  axialTilt?: number;
+  dayLength?: number;
   segments?: number;
   onClick?: (bodyId: string) => void;
   onDoubleClick?: (bodyId: string) => void;
@@ -47,7 +50,9 @@ export function CelestialBody({
   trajectory,
   radius,
   textureUrl,
-  rotationSpeed = DEFAULT_ROTATION_SPEED,
+  rotationSpeed,
+  axialTilt = 0,
+  dayLength,
   segments = 64,
   onClick,
   onDoubleClick,
@@ -128,7 +133,15 @@ export function CelestialBody({
 
     // 2. Planet rotation (Time-scaled axial rotation)
     if (meshRef.current) {
-      meshRef.current.rotation.y += rotationSpeed * 60 * delta * (isPlaying ? timeMultiplier : 1);
+      if (dayLength !== undefined) {
+        // Use physics-based rotation from day length
+        const step = calculateRotationStep(dayLength, delta, isPlaying ? timeMultiplier : 0);
+        meshRef.current.rotation.y += step;
+      } else {
+        // Fallback to legacy rotation speed if dayLength is not provided
+        const speed = rotationSpeed ?? DEFAULT_ROTATION_SPEED;
+        meshRef.current.rotation.y += speed * 60 * delta * (isPlaying ? timeMultiplier : 1);
+      }
     }
 
     // 3. Throttled calculations for UI/Labels
@@ -205,21 +218,25 @@ export function CelestialBody({
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {/* Visible planet mesh */}
-      <mesh
-        ref={meshRef}
-        onClick={handleClick}
-        onDoubleClick={handleDoubleClick}
-        onPointerEnter={() => setIsHovered(true)}
-        onPointerLeave={() => setIsHovered(false)}
-      >
-        <sphereGeometry args={[radius, segments, segments]} />
-        <meshStandardMaterial
-          map={texture}
-          emissive={0x333333}
-          emissiveIntensity={0.05}
-        />
-      </mesh>
+      {/* Axial Tilt Pivot Group */}
+      <group rotation={[0, 0, THREE.MathUtils.degToRad(axialTilt)]}>
+        {/* Visible planet mesh */}
+        <mesh
+          ref={meshRef}
+          onClick={handleClick}
+          onDoubleClick={handleDoubleClick}
+          onPointerEnter={() => setIsHovered(true)}
+          onPointerLeave={() => setIsHovered(false)}
+        >
+          <sphereGeometry args={[radius, segments, segments]} />
+          <meshStandardMaterial
+            map={texture}
+            emissive={0x333333}
+            emissiveIntensity={0.05}
+          />
+        </mesh>
+        {/* Future Rings will go here to stay tilted with planet */}
+      </group>
 
       {/* Hover Ring - white elliptical border around planet */}
       {isHovered && (
