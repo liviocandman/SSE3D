@@ -32,7 +32,7 @@ async def get_ephemeris(
 
     if not force:
         # Full orbits use a static cache key independent of the target date
-        cache_key = f"FULL_ORBIT" if full_orbit else f"{date_str}_{span_days}"
+        cache_key = "FULL_ORBIT" if full_orbit else f"{date_str}_{span_days}"
         cached, missing = await get_bulk_cached(body_ids, cache_key, center=center_body)
     else:
         cached, missing = [], body_ids

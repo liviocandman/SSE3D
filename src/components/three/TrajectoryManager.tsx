@@ -42,22 +42,18 @@ export function TrajectoryManager() {
     currentTime,
     currentDate,
     timeMultiplier,
-    isPlaying,
     selectedPlanet,
     masterTrajectorySegments,
     appendTrajectoryData,
-    setIsPlaying,
   } = useSolarStore(
     useShallow((s) => ({
       currentTime: s.currentTime,
       currentDate: s.currentDate,
       timeMultiplier: s.timeMultiplier,
-      isPlaying: s.isPlaying,
       selectedPlanet: s.selectedPlanet,
       masterTrajectorySegments: s.masterTrajectorySegments,
       appendTrajectoryData: s.appendTrajectoryData,
       clearTrajectoryBuffer: s.clearTrajectoryBuffer,
-      setIsPlaying: s.setIsPlaying,
     })),
   );
 
@@ -141,6 +137,7 @@ export function TrajectoryManager() {
     }
   }, [
     currentDate,
+    currentTime,
     selectedPlanet?.bodyId,
     masterTrajectorySegments,
     fetchBlock,

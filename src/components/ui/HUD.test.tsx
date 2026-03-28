@@ -1,6 +1,17 @@
-import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
+
+// Hoist safety for Next.js 15+ internal config checks
+vi.mock('next/config', () => ({
+  default: () => ({ publicRuntimeConfig: {}, serverRuntimeConfig: {} }),
+  getConfig: () => ({ publicRuntimeConfig: {}, serverRuntimeConfig: {} }),
+}));
+// @ts-expect-error - Global config is not defined in standard Node/TS typings
+global.config = global.config || {};
+
+
+import { render, screen, fireEvent } from '@testing-library/react';
 import { HUD } from './HUD';
+
 import type { HTMLAttributes, ReactNode } from 'react';
 
 type MockMotionDivProps = HTMLAttributes<HTMLDivElement> & {

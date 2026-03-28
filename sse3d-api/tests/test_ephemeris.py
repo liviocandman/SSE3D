@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 from app.models.schemas import EphemerisData, Position
+from app.services.nasa_client import calculate_trajectory_params
 
 def _mock_planet(body_id: str) -> EphemerisData:
     return EphemerisData(
@@ -53,7 +54,7 @@ async def test_ephemeris_with_center_body(client):
     assert response.status_code == 200
     mock_cache_get.assert_called_once_with(["501"], "2024-01-01_30", center="599")
     mock_fetch.assert_called_once_with(
-        ["501"], "2024-01-01", center_body="599", span_days=30
+        ["501"], "2024-01-01", center_body="599", span_days=30, full_orbit=False
     )
     mock_cache_set.assert_called_once()
 
@@ -63,7 +64,6 @@ def test_dynamic_payload_generation():
     # Fast moon: Io (501) - 1.769 days period
     # Span should be 1.769 * 1.1 = 1.9459 days
     # roughly 46.7 hours -> step size should be 46.7 / 200 = 0.23 hours = 14 mins
-    # the function might return 14 m or 1 h depending on the logic, wait, in calculate_trajectory_params:
     span, step_size = calculate_trajectory_params("501", 30)
     assert round(span, 3) == 1.946
     # 1.9459 * 24 = 46.7 hours. 46.7 * 60 = 2802 mins. 2802 / 200 = 14 mins.

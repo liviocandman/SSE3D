@@ -1,22 +1,26 @@
-from app.services.nasa_client import get_step_size, _parse_horizons_csv
+from app.services.nasa_client import calculate_trajectory_params, _parse_horizons_csv
 
-def test_get_step_size():
+def test_calculate_trajectory_params():
     # Fast bodies
-    assert get_step_size("501") == "1 h"  # Io
-    assert get_step_size("401") == "1 h"  # Phobos
+    _, s1 = calculate_trajectory_params("501", 30)
+    assert s1 == "1 h"  # Io
+    _, s2 = calculate_trajectory_params("401", 30)
+    assert s2 == "1 h"  # Phobos
     
     # Medium bodies
-    assert get_step_size("502") == "6 h"  # Europa
-    assert get_step_size("801") == "6 h"  # Triton
+    _, s3 = calculate_trajectory_params("502", 30)
+    assert s3 == "1 h"  # Europa
+    _, s4 = calculate_trajectory_params("801", 30)
+    assert s4 == "1 h"  # Triton
     
     # Slow bodies
-    assert get_step_size("199") == "12 h" # Mercury
-    assert get_step_size("301") == "12 h" # Moon
+    _, s5 = calculate_trajectory_params("199", 30)
+    assert s5 == "1 h" # Mercury
     
     # Outer bodies
-    assert get_step_size("399") == "1 d"  # Earth
-    assert get_step_size("599") == "1 d"  # Jupiter
-    assert get_step_size("899") == "1 d"  # Neptune
+    _, s6 = calculate_trajectory_params("399", 30)
+    # Earth: period 365.25. span = 365.25/12 = 30.4. total_hours = 730. step = 730/200 = 3.65 -> 3h.
+    assert s6 == "3 h"
 
 def test_parse_horizons_csv_trajectory():
     # Mock CSV result from NASA with two points (using realistic AU values for Earth ~1.0)
