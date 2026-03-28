@@ -6,7 +6,6 @@ import { Billboard, Text } from '@react-three/drei';
 import { TextureLoader } from 'three';
 import * as THREE from 'three';
 import { OrbitLine } from './OrbitLine';
-import TrailLine from './TrailLine';
 import {
   getPlanetConfig,
   getTexturePath,
@@ -85,7 +84,6 @@ function MoonMesh({
 }: MoonMeshProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
-  const isInitializedRef = useRef(false);
   const [isHovered, setIsHovered] = useState(false);
   const fallbackSegments = useMemo(() => {
     if (!trajectory || trajectory.length === 0) return [];
@@ -111,20 +109,12 @@ function MoonMesh({
       const sampled = sampleTrajectoryAtTime(segments, simTime);
       if (sampled) {
         const { x, y, z } = sampled.position;
-        const targetPos = new THREE.Vector3(x * SCALE, y * SCALE, z * SCALE);
-        
-        if (!isInitializedRef.current) {
-          groupRef.current.position.copy(targetPos);
-          isInitializedRef.current = true;
-        } else {
-          // Use frame-rate independent LERP (approx 0.15 at 60fps)
-          const lerpFactor = 1 - Math.exp(-10 * delta);
-          groupRef.current.position.lerp(targetPos, lerpFactor); 
-        }
+        groupRef.current.position.set(
+          x * SCALE,
+          y * SCALE,
+          z * SCALE
+        );
       }
-    } else if (groupRef.current && !isInitializedRef.current) {
-      groupRef.current.position.set(...initialPosition);
-      isInitializedRef.current = true;
     }
 
     // 2. Rotation (Time-scaled)
@@ -169,7 +159,7 @@ function MoonMesh({
   };
 
   return (
-    <group name={name} ref={groupRef}>
+    <group name={name} ref={groupRef} position={initialPosition}>
       <mesh {...events} renderOrder={-1}>
         <sphereGeometry args={[hitboxRadius, 8, 8]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
@@ -272,18 +262,6 @@ export function MoonSystem({
           if (tMs - startTime >= orbitalPeriodMs) break;
         }
 
-        // 1. COORDINATE SHIELD (Prevents iOS "Spider Web" artifacts)
-        const safeRawPoints = rawPoints.filter((p, i, arr) => {
-          // Remove invalid math results that crash the GPU buffers on WebKit
-          if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) return false;
-          
-          // Remove duplicate points that cause division-by-zero during 
-          // curve interpolation (critical for iOS stability)
-          if (i > 0 && p.distanceToSquared(arr[i - 1]) < 0.000001) return false;
-          
-          return true;
-        });
-
         // Use CatmullRomCurve3 to smooth out sparse JPL Horizons steps into a perfect ring.
         // Only set 'closed: true' if the data actually covers nearly the full period to avoid shortcuts.
         const totalTimeMs =
@@ -292,21 +270,19 @@ export function MoonSystem({
         const coverageRatio = orbitalPeriodMs > 0 ? totalTimeMs / orbitalPeriodMs : 0;
         const isClosed = coverageRatio >= 0.95;
 
-        let finalPoints = safeRawPoints;
-        if (safeRawPoints.length >= 3) {
-          // 2. iOS-SAFE CURVE GENERATION
-          // We only interpolate if we have enough points and no duplicates
-          const curve = new THREE.CatmullRomCurve3(safeRawPoints, isClosed);
+        let finalPoints = rawPoints;
+        if (rawPoints.length >= 3) {
+          const curve = new THREE.CatmullRomCurve3(rawPoints, isClosed);
           finalPoints = curve.getPoints(128); // 128 segments for smoothness
         }
 
         return (
-          <TrailLine
+          <OrbitLine
             key={`orbit-${moonId}`}
             points={finalPoints}
+            opacity={0.12}
             color="#88aaff"
-            fadeMode="ring"
-            opacity={0.6}
+            viewMode={viewMode}
           />
         );
       })}
