@@ -17,7 +17,6 @@ vi.mock('next/navigation', () => ({
 
 // Polyfill for process.env and internal Next.js config access
 if (typeof process !== 'undefined') {
-  // @ts-expect-error - process.env might not be fully defined in all environments
   process.env = process.env || {};
   // @ts-expect-error - internal config is not in standard types
   process.env.config = process.env.config || {};
