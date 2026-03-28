@@ -7,7 +7,7 @@ import { useShallow } from "zustand/react/shallow";
 import { PLANET_MOONS } from "@/lib/textureConfig";
 import { computeBufferPlan, hasCoverageNearTime } from "@/lib/trajectoryEngine";
 
-const COVERAGE_TOLERANCE_MS = 24 * 60 * 60 * 1000;
+const COVERAGE_TOLERANCE_MS = 48 * 60 * 60 * 1000; // Increased to 48h to avoid flickering at segment boundaries
 const CORE_PLANET_IDS = [
   "199",
   "299",
@@ -46,7 +46,6 @@ export function TrajectoryManager() {
     selectedPlanet,
     masterTrajectorySegments,
     appendTrajectoryData,
-    clearTrajectoryBuffer,
     setIsPlaying,
   } = useSolarStore(
     useShallow((s) => ({
@@ -64,6 +63,7 @@ export function TrajectoryManager() {
 
   const loadingRef = useRef<Set<string>>(new Set());
   const frameCountRef = useRef(0);
+  const lastFetchRef = useRef<string | null>(null);
 
   const fetchBlock = useCallback(
     async (date: string, spanDays: number, specificIds?: string[]) => {
@@ -73,7 +73,6 @@ export function TrajectoryManager() {
           ? specificIds
           : buildFetchBodyIds(liveSelectedBodyId);
 
-      // Fallback block key to prevent exact duplicate fetches within this function itself
       const blockCacheKey = `block_${date}_${spanDays}_${ids.join(",")}`;
       if (loadingRef.current.has(blockCacheKey)) {
         return;
@@ -111,13 +110,15 @@ export function TrajectoryManager() {
     [appendTrajectoryData],
   );
 
-  // 1. Initial / Jump Fetch
+  // 1. Initial / Jump Fetch - triggered ONLY when currentDate changes significantly
   useEffect(() => {
+    // Only trigger if we haven't fetched this base date recently
+    if (lastFetchRef.current === currentDate) return;
+
     const bodyIds = buildFetchBodyIds(selectedPlanet?.bodyId);
     const timeMs = currentTime.getTime();
     const { fetchSpanDays } = getDynamicBufferParams();
 
-    // Identify exactly which bodies lack coverage for the current time
     const missingIds = bodyIds.filter((id) => {
       const segments = masterTrajectorySegments[id] || [];
       return !hasCoverageNearTime(segments, timeMs, COVERAGE_TOLERANCE_MS);
@@ -127,36 +128,29 @@ export function TrajectoryManager() {
       const cacheKey = `jump_${currentDate}_${fetchSpanDays}_${missingIds.join(",")}`;
 
       if (!loadingRef.current.has(cacheKey)) {
-        // If Earth is missing, we consider it a true "jump" completely out of bounds
-        if (missingIds.includes("399")) {
-          console.log(
-            `[TrajectoryManager] Out-of-bounds jump detected. Clearing buffer.`,
-          );
-          clearTrajectoryBuffer();
-        }
-
+        loadingRef.current.add(cacheKey);
+        
         console.log(
           `[TrajectoryManager] Fetching missing data for ${missingIds.length} bodies at ${currentDate}`,
         );
         fetchBlock(currentDate, fetchSpanDays, missingIds);
+        lastFetchRef.current = currentDate;
 
-        loadingRef.current.add(cacheKey);
         setTimeout(() => loadingRef.current.delete(cacheKey), 5000);
       }
     }
   }, [
     currentDate,
-    currentTime,
     selectedPlanet?.bodyId,
     masterTrajectorySegments,
-    clearTrajectoryBuffer,
     fetchBlock,
   ]);
 
   // 2. Background pagination driven by segment coverage
   useFrame(() => {
     frameCountRef.current++;
-    if (frameCountRef.current % 30 !== 0) return;
+    // Check every 60 frames (approx 1s) to reduce CPU overhead
+    if (frameCountRef.current % 60 !== 0) return;
 
     const timeMs = currentTime.getTime();
     const { fetchSpanDays, thresholdDays } = getDynamicBufferParams();
@@ -164,7 +158,6 @@ export function TrajectoryManager() {
     const liveSelectedBodyId = useSolarStore.getState().selectedPlanet?.bodyId;
     const bodyIds = buildFetchBodyIds(liveSelectedBodyId);
 
-    let shouldPause = false;
     const fetchDates = new Set<string>();
     const missingIdsForDate: Record<string, Set<string>> = {};
 
@@ -179,20 +172,14 @@ export function TrajectoryManager() {
         currentDate,
       });
 
-      if (plan.pause) shouldPause = true;
+      // We DON'T pause anymore. We let the simulation "ghost" using fallbacks
+      // while we fetch in the background. This is much smoother for the user.
 
       for (const date of plan.fetchDates) {
         fetchDates.add(date);
         if (!missingIdsForDate[date]) missingIdsForDate[date] = new Set();
         missingIdsForDate[date].add(id);
       }
-    }
-
-    if (shouldPause && isPlaying) {
-      console.warn(
-        "[TrajectoryManager] Playhead is outside loaded trajectory segments. Pausing playback.",
-      );
-      setIsPlaying(false);
     }
 
     for (const date of fetchDates) {
@@ -203,7 +190,6 @@ export function TrajectoryManager() {
         loadingRef.current.add(preciseCacheKey);
         fetchBlock(date, fetchSpanDays, idsToFetch);
 
-        // Let it retry/cleanup after a longer delay
         setTimeout(() => loadingRef.current.delete(preciseCacheKey), 10000);
       }
     }

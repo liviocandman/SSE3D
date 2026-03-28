@@ -16,9 +16,8 @@ import {
   PLANET_MOONS,
   TextureTier,
 } from '@/lib/textureConfig';
-import { getRadius, scalePositionFromKm, AU_TO_UNIT } from '@/lib/scales';
+import { getRadius, scalePositionFromKm } from '@/lib/scales';
 import { CameraController } from '@/hooks/useCameraAnimation';
-import { OrbitLine, getOrbitOpacity } from './OrbitLine';
 import TrailLine from './TrailLine';
 import * as THREE from 'three';
 import { useSolarStore } from '@/store/solarStore';
@@ -107,39 +106,71 @@ const ALL_PLANET_IDS = [
   BODY_IDS.JUPITER, BODY_IDS.SATURN, BODY_IDS.URANUS, BODY_IDS.NEPTUNE, BODY_IDS.PLUTO
 ];
 
+const TRAIL_GRACE_MS = 12 * 60 * 60 * 1000;
+const MAX_TRAIL_POINTS = 240;
+
+function parseTimestampMs(timestamp: string): number {
+  const utcString = timestamp.includes('Z') ? timestamp : `${timestamp}Z`;
+  return new Date(utcString).getTime();
+}
+
+function findLastSampleIndex(samples: { timestampMs: number }[], cutoffMs: number): number {
+  let left = 0;
+  let right = samples.length - 1;
+  let result = -1;
+
+  while (left <= right) {
+    const mid = Math.floor((left + right) / 2);
+    const value = samples[mid].timestampMs;
+    if (value <= cutoffMs) {
+      result = mid;
+      left = mid + 1;
+    } else {
+      right = mid - 1;
+    }
+  }
+
+  return result;
+}
+
 interface PlanetTrajectoryGroupProps {
-  bodyId: string;
   segments: any[]; // TrajectorySegment[]
   fullOrbitData?: any; // EphemerisTrajectory[]
   currentTime: Date;
 }
 
-/**
- * Isolated component for rendering a planet's orbit and trail.
- * Uses useMemo to avoid flattening trajectory segments every frame.
- */
-function PlanetTrajectoryGroup({ bodyId, segments, fullOrbitData, currentTime }: PlanetTrajectoryGroupProps) {
-  // Expensive flattening happens ONLY when segments change
+function PlanetTrajectoryGroup({ segments, fullOrbitData, currentTime }: PlanetTrajectoryGroupProps) {
   const allPoints = useMemo(() => flattenTrajectorySegments(segments), [segments]);
+
+  const samples = useMemo(() => {
+    return allPoints.map((p) => ({
+      timestampMs: parseTimestampMs(p.timestamp),
+      point: new THREE.Vector3(
+        p.position.x * KM_TO_UNIT,
+        p.position.y * KM_TO_UNIT,
+        p.position.z * KM_TO_UNIT
+      ),
+    }));
+  }, [allPoints]);
+
   const simTimeMs = currentTime.getTime();
-
-  // Filter for PAST points (from oldest up to current time) for the 'tail' effect
-  // This still runs every frame but on a pre-flattened array
   const pastPoints = useMemo(() => {
-    return allPoints
-      .filter((p) => {
-        const t = p.timestamp.includes("Z") ? p.timestamp : `${p.timestamp}Z`;
-        return new Date(t).getTime() <= simTimeMs + 3600000; // 1h grace
-      })
-      .map((p) => new THREE.Vector3(p.position.x * KM_TO_UNIT, p.position.y * KM_TO_UNIT, p.position.z * KM_TO_UNIT))
-      .reverse();
-  }, [allPoints, simTimeMs]);
+    if (samples.length < 2) return [];
 
-  const hasTrail = pastPoints.length > 2;
+    const cutoffMs = simTimeMs + TRAIL_GRACE_MS;
+    const lastVisibleIndex = findLastSampleIndex(samples, cutoffMs);
+    if (lastVisibleIndex < 1) return [];
+
+    const startIndex = Math.max(0, lastVisibleIndex - MAX_TRAIL_POINTS + 1);
+    const points: THREE.Vector3[] = [];
+    for (let i = lastVisibleIndex; i >= startIndex; i--) {
+      points.push(samples[i].point);
+    }
+    return points;
+  }, [samples, simTimeMs]);
 
   return (
     <group>
-      {/* The Full NASA Orbit Path (Background) */}
       {fullOrbitData && (
         <StaticOrbitLine
           trajectory={fullOrbitData}
@@ -148,13 +179,13 @@ function PlanetTrajectoryGroup({ bodyId, segments, fullOrbitData, currentTime }:
         />
       )}
 
-      {/* The Dynamic Comet Tail (Effect) */}
-      {hasTrail && (
+      {pastPoints.length > 2 && (
         <TrailLine
           points={pastPoints}
-          color="#ffffff"
+          color="#cfe6ff"
           fadeMode="tail"
-          opacity={0.8}
+          opacity={0.75}
+          lineWidth={1.0}
         />
       )}
     </group>
@@ -168,7 +199,7 @@ export function SceneContent({
   ephemerisData,
 }: SceneContentProps) {
   const { tier, settings } = useQualityTier();
-  
+
   const {
     currentDate,
     selectedPlanet,
@@ -363,8 +394,7 @@ export function SceneContent({
         if (!planet) return null;
         return (
           <PlanetTrajectoryGroup
-            key={`trajectory-${planet.bodyId}`}
-            bodyId={planet.bodyId}
+            key={`orbit-group-${planet.bodyId}`}
             segments={masterTrajectorySegments[planet.bodyId] || []}
             fullOrbitData={fullOrbits[planet.bodyId]}
             currentTime={currentTime}
@@ -392,17 +422,17 @@ export function SceneContent({
             >
               {PLANET_MOONS[planet.bodyId] &&
                 (selectedPlanet?.bodyId === planet.bodyId ||
-                 selectedPlanet?.parentId === planet.bodyId) && (
-                <MoonSystem
-                  parentId={planet.bodyId}
-                  parentClass={planet.bodyClass}
-                  parentPosition={[0, 0, 0]}
-                  worldParentPosition={planet.position}
-                  date={currentDate}
-                  viewMode={viewMode}
-                  tier={tier}
-                />
-              )}
+                  selectedPlanet?.parentId === planet.bodyId) && (
+                  <MoonSystem
+                    parentId={planet.bodyId}
+                    parentClass={planet.bodyClass}
+                    parentPosition={[0, 0, 0]}
+                    worldParentPosition={planet.position}
+                    date={currentDate}
+                    viewMode={viewMode}
+                    tier={tier}
+                  />
+                )}
               {selectedPlanetData?.bodyId === planet.bodyId && (
                 <SelectionRing
                   position={[0, 0, 0]}

@@ -110,11 +110,10 @@ function MoonMesh({
       const sampled = sampleTrajectoryAtTime(segments, simTime);
       if (sampled) {
         const { x, y, z } = sampled.position;
-        groupRef.current.position.set(
-          x * SCALE,
-          y * SCALE,
-          z * SCALE
-        );
+        const targetPos = new THREE.Vector3(x * SCALE, y * SCALE, z * SCALE);
+        
+        // Smoothly move the moon to its new interpolated position
+        groupRef.current.position.lerp(targetPos, 0.15); 
       }
     }
 

@@ -107,11 +107,11 @@ export function CelestialBody({
       const sampled = sampleTrajectoryAtTime(segments, simTime);
       if (sampled) {
         const { x, y, z } = sampled.position;
-        groupRef.current.position.set(
-          x * SCALE,
-          y * SCALE,
-          z * SCALE
-        );
+        const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);
+        
+        // Use LERP for visual smoothing (0.1 = 10% toward target per frame)
+        // This prevents 'teleporting' when segments change or jump.
+        groupRef.current.position.lerp(targetPos, 0.1);
       }
     }
 

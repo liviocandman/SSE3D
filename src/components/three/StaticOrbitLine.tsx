@@ -1,4 +1,5 @@
-import React, { useMemo, useEffect, useRef } from 'react';
+import React, { useMemo } from 'react';
+import { Line } from '@react-three/drei';
 import * as THREE from 'three';
 import { KM_TO_UNIT } from '@/lib/scales';
 import type { EphemerisTrajectory } from '@/lib/types';
@@ -10,55 +11,39 @@ interface StaticOrbitLineProps {
 }
 
 /**
- * High-performance solid orbit line using BufferGeometry and THREE.LineLoop.
- * Renders the full 360-degree orbital path based on NASA ephemeris.
+ * Full static orbit path rendered as a thin ghost line.
  */
 const StaticOrbitLine: React.FC<StaticOrbitLineProps> = ({ 
   trajectory, 
   color, 
-  opacity = 0.15 
+  opacity = 0.12 
 }) => {
-  const geometryRef = useRef<THREE.BufferGeometry>(null);
-  const materialRef = useRef<THREE.LineBasicMaterial>(null);
+  const points = useMemo(() => {
+    const converted = trajectory.map((p) => new THREE.Vector3(
+      p.position.x * KM_TO_UNIT,
+      p.position.y * KM_TO_UNIT,
+      p.position.z * KM_TO_UNIT
+    ));
 
-  // Convert trajectory to Float32Array positions
-  const positions = useMemo(() => {
-    const posArray = new Float32Array(trajectory.length * 3);
-    trajectory.forEach((p, i) => {
-      posArray[i * 3] = p.position.x * KM_TO_UNIT;
-      posArray[i * 3 + 1] = p.position.y * KM_TO_UNIT;
-      posArray[i * 3 + 2] = p.position.z * KM_TO_UNIT;
-    });
-    return posArray;
+    // Close the orbit loop for a seamless full-cycle path.
+    if (converted.length > 2) {
+      converted.push(converted[0].clone());
+    }
+
+    return converted;
   }, [trajectory]);
 
-  // Update geometry attributes
-  useEffect(() => {
-    if (geometryRef.current) {
-      geometryRef.current.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-      geometryRef.current.computeBoundingSphere();
-    }
-  }, [positions]);
-
-  // Clean up WebGL resources
-  useEffect(() => {
-    return () => {
-      if (geometryRef.current) geometryRef.current.dispose();
-      if (materialRef.current) materialRef.current.dispose();
-    };
-  }, []);
+  if (points.length < 2) return null;
 
   return (
-    <lineLoop>
-      <bufferGeometry ref={geometryRef} />
-      <lineBasicMaterial
-        ref={materialRef}
-        color={color}
-        transparent
-        opacity={opacity}
-        depthWrite={false}
-      />
-    </lineLoop>
+    <Line
+      points={points}
+      color={color}
+      lineWidth={1}
+      transparent
+      opacity={opacity}
+      depthWrite={false}
+    />
   );
 };
 

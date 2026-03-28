@@ -67,6 +67,7 @@ function parseLocalDate(date: string): Date {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FORWARD_REBASE_DAYS = 25;
+const BACKWARD_REBASE_DAYS = 5;
 const MAX_SEGMENTS_PER_BODY = 3;
 
 export const useSolarStore = create<SolarState>((set) => ({
@@ -94,8 +95,10 @@ export const useSolarStore = create<SolarState>((set) => ({
       const targetTime = newTime.getTime();
       const diffDays = (targetTime - currentBaseTime) / DAY_MS;
 
+      // Rebase only if we move far forward OR even slightly backward past a grace period.
+      // This prevents hammering the API when scrubbing small amounts.
       const shouldRebase =
-        targetTime < currentBaseTime || diffDays > FORWARD_REBASE_DAYS;
+        diffDays < -BACKWARD_REBASE_DAYS || diffDays > FORWARD_REBASE_DAYS;
 
       return {
         currentDate: date, 
