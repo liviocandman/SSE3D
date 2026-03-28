@@ -36,7 +36,7 @@ interface SolarState {
   // Actions
   setCurrentDate: (date: string) => void;
   setCurrentTime: (time: Date) => void;
-  setTimeMultiplier: () => void;
+  setTimeMultiplier: (multiplier: number) => void;
   setIsPlaying: (playing: boolean) => void;
   advanceTime: (deltaSeconds: number) => void;
   setSelectedPlanet: (planet: SelectedPlanet | null) => void;
@@ -107,7 +107,7 @@ export const useSolarStore = create<SolarState>((set) => ({
       currentDate: toUTCDateString(time),
     })),
 
-  setTimeMultiplier: () => set({ timeMultiplier: 1.0 }),
+  setTimeMultiplier: (multiplier) => set({ timeMultiplier: multiplier }),
   
   setIsPlaying: (playing) => set({ isPlaying: playing }),
 

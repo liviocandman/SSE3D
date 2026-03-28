@@ -140,6 +140,8 @@ interface PlanetTrajectoryGroupProps {
 }
 
 function PlanetTrajectoryGroup({ segments, fullOrbitData, currentTime }: PlanetTrajectoryGroupProps) {
+  const { tier } = useQualityTier();
+  const maxTrailPoints = tier === 'high' ? 240 : tier === 'mid' ? 120 : 60;
   const allPoints = useMemo(() => flattenTrajectorySegments(segments), [segments]);
 
   const samples = useMemo(() => {
@@ -161,7 +163,7 @@ function PlanetTrajectoryGroup({ segments, fullOrbitData, currentTime }: PlanetT
     const lastVisibleIndex = findLastSampleIndex(samples, cutoffMs);
     if (lastVisibleIndex < 1) return [];
 
-    const startIndex = Math.max(0, lastVisibleIndex - MAX_TRAIL_POINTS + 1);
+    const startIndex = Math.max(0, lastVisibleIndex - maxTrailPoints + 1);
     const points: THREE.Vector3[] = [];
     for (let i = lastVisibleIndex; i >= startIndex; i--) {
       points.push(samples[i].point);
@@ -360,15 +362,17 @@ export function SceneContent({
       <GlobalTimeController />
       <TrajectoryManager />
 
-      <EffectComposer>
-        <Bloom
-          intensity={2.5}
-          luminanceThreshold={0.6}
-          luminanceSmoothing={0.9}
-          mipmapBlur
-          color="#ffffffff"
-        />
-      </EffectComposer>
+      {tier !== 'low' && (
+        <EffectComposer enableNormalPass={false}>
+          <Bloom
+            intensity={tier === 'high' ? 2.5 : 1.5}
+            luminanceThreshold={0.6}
+            luminanceSmoothing={0.9}
+            mipmapBlur={tier === 'high'}
+            color="#ffffffff"
+          />
+        </EffectComposer>
+      )}
 
       <Stars
         radius={4000}
