@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useRef, useState, Suspense, useEffect } from 'react';
-import { useLoader, useFrame, ThreeEvent, useThree } from '@react-three/fiber';
+import { useMemo, useRef, useState, useEffect } from 'react';
+import { useFrame, ThreeEvent, useThree } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import { KTX2Loader } from 'three-stdlib';
 import * as THREE from 'three';
@@ -16,13 +16,14 @@ import {
 import {
   getMoonOrbitScale,
   getRadius,
-  scalePositionFromKm,
   type BodyClass,
   type ViewMode,
+  KM_TO_UNIT,
 } from '@/lib/scales';
 import { useSolarStore } from '@/store/solarStore';
 import { useShallow } from 'zustand/react/shallow';
 import { buildTrajectorySegment, sampleTrajectoryAtTime } from '@/lib/trajectoryEngine';
+import { SPHERE_MID, HITBOX_SPHERE } from '@/lib/geometryPool';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,21 +41,22 @@ interface MoonSystemProps {
 interface MoonMeshProps {
   bodyId: string;
   name: string;
-  initialPosition: [number, number, number];
   orbitScale: number;
   radius: number;
   textureUrl: string;
   rotationSpeed: number;
   fallbackColor: string;
   viewMode: ViewMode;
+  meanDistanceAU: number;
+  orbitalPeriod: number;
+  orbitalInclination?: number;
+  longAscNode?: number;
   onClick: () => void;
   onDoubleClick: () => void;
 }
 
-import { SPHERE_MID, HITBOX_SPHERE } from '@/lib/geometryPool';
-
 // ---------------------------------------------------------------------------
-// Shared Resources (Static)
+// Shared Resources & Loaders
 // ---------------------------------------------------------------------------
 
 const AU_TO_KM = 149_597_870.7;
@@ -64,6 +66,49 @@ function resolveTextureTier(tier: string): TextureTier {
   return 'mid';
 }
 
+// Global singleton to prevent recreating workers and to avoid React Suspense
+let globalKtx2Loader: KTX2Loader | null = null;
+function getKtx2Loader(gl: THREE.WebGLRenderer) {
+  if (!globalKtx2Loader) {
+    globalKtx2Loader = new KTX2Loader();
+    globalKtx2Loader.setTranscoderPath('/basis/');
+    globalKtx2Loader.detectSupport(gl);
+  }
+  return globalKtx2Loader;
+}
+
+/**
+ * Helper to calculate a 3D point on a Keplerian orbit using Euler Angles.
+ */
+function getCircularOrbitPoint(
+  simTime: number,
+  orbitalPeriod: number,
+  meanDistanceAU: number,
+  orbitScale: number,
+  inclinationDeg: number = 0,
+  longAscNodeDeg: number = 0,
+  target: THREE.Vector3
+): THREE.Vector3 {
+  const periodMs = (orbitalPeriod || 30) * 24 * 60 * 60 * 1000;
+  const distUnits = (meanDistanceAU * AU_TO_KM) * KM_TO_UNIT * orbitScale;
+  
+  // 1. Position in the base orbital plane (Flat Ecliptic XZ)
+  const angle = (simTime / periodMs) * Math.PI * 2;
+  target.set(distUnits * Math.cos(angle), 0, distUnits * Math.sin(angle));
+  
+  // 2. Pure Astronomical Orientation (Euler Angles)
+  // X axis tilts the orbit (Inclination)
+  // Y axis rotates to align with Galactic Compass (Ascending Node)
+  const i = THREE.MathUtils.degToRad(inclinationDeg);
+  const omega = THREE.MathUtils.degToRad(longAscNodeDeg);
+  
+  // YXZ Order: Apply Inclination (X) then rotation around the vertical (Y)
+  const euler = new THREE.Euler(i, omega, 0, 'YXZ');
+  target.applyEuler(euler);
+
+  return target;
+}
+
 // ---------------------------------------------------------------------------
 // MoonMesh
 // ---------------------------------------------------------------------------
@@ -71,13 +116,16 @@ function resolveTextureTier(tier: string): TextureTier {
 function MoonMesh({
   bodyId,
   name,
-  initialPosition,
   orbitScale,
   radius,
   textureUrl,
   rotationSpeed,
   fallbackColor,
   viewMode,
+  meanDistanceAU,
+  orbitalPeriod,
+  orbitalInclination,
+  longAscNode,
   onClick,
   onDoubleClick,
 }: MoonMeshProps) {
@@ -88,8 +136,12 @@ function MoonMesh({
   const [isHovered, setIsHovered] = useState(false);
   const tempVec = useRef(new THREE.Vector3());
 
+  // Non-suspending texture state
+  const [texture, setTexture] = useState<THREE.Texture | null>(null);
+
   // Subscribe only to this specific moon's trajectory
   const trajectory = useSolarStore(useShallow(state => state.masterTrajectory[bodyId] || []));
+  const masterSegments = useSolarStore(useShallow(state => state.masterTrajectorySegments[bodyId] || []));
   
   const fallbackSegments = useMemo(() => {
     if (!trajectory || trajectory.length === 0) return [];
@@ -97,13 +149,15 @@ function MoonMesh({
     return segment ? [segment] : [];
   }, [trajectory]);
 
-  // KTX2 VRAM Optimized Loader
-  const texture = useLoader(KTX2Loader, textureUrl, (loader) => {
-    loader.detectSupport(gl);
-    loader.setTranscoderPath('/basis/');
-  });
+  // Load texture asynchronously without triggering <Suspense>
+  useEffect(() => {
+    const loader = getKtx2Loader(gl);
+    loader.loadAsync(textureUrl)
+      .then(setTexture)
+      .catch((err) => console.error(`Failed to load moon texture: ${textureUrl}`, err));
+  }, [textureUrl, gl]);
 
-  // Dispose of material on unmount (geometry is shared)
+  // Dispose of material on unmount
   useEffect(() => {
     const currentMesh = meshRef.current;
     return () => {
@@ -119,28 +173,46 @@ function MoonMesh({
     const isPlaying = solarState.isPlaying;
     const timeMultiplier = solarState.timeMultiplier;
 
-    const segments = solarState.masterTrajectorySegments[bodyId] || fallbackSegments;
+    const segments = masterSegments.length > 0 ? masterSegments : fallbackSegments;
 
-    // 1. Interpolate position
-    if (segments.length > 0 && groupRef.current) {
-      const SCALE = (1 / 1_000_000) * orbitScale;
-      const sampled = sampleTrajectoryAtTime(segments, simTime);
-      if (sampled) {
-        const { x, y, z } = sampled.position;
-        const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);
-        
+    if (groupRef.current) {
+      // 1. Position calculation (Real data OR Math Fallback)
+      if (segments.length > 0) {
+        // We have real NASA data
+        const SCALE = (1 / 1_000_000) * orbitScale;
+        const sampled = sampleTrajectoryAtTime(segments, simTime);
+        if (sampled) {
+          const { x, y, z } = sampled.position;
+          const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);
+          
+          if (!isInitializedRef.current) {
+            groupRef.current.position.copy(targetPos);
+            isInitializedRef.current = true;
+          } else {
+            const lerpFactor = 1 - Math.exp(-10 * delta);
+            groupRef.current.position.lerp(targetPos, lerpFactor); 
+          }
+        }
+      } else {
+        // FALLBACK: Simulate Ecliptic-aligned circular orbit
+        const targetPos = getCircularOrbitPoint(
+          simTime,
+          orbitalPeriod,
+          meanDistanceAU,
+          orbitScale,
+          orbitalInclination,
+          longAscNode,
+          tempVec.current
+        );
+
         if (!isInitializedRef.current) {
           groupRef.current.position.copy(targetPos);
           isInitializedRef.current = true;
         } else {
-          // Use frame-rate independent LERP (approx 0.15 at 60fps)
           const lerpFactor = 1 - Math.exp(-10 * delta);
           groupRef.current.position.lerp(targetPos, lerpFactor); 
         }
       }
-    } else if (groupRef.current && !isInitializedRef.current) {
-      groupRef.current.position.set(...initialPosition);
-      isInitializedRef.current = true;
     }
 
     // 2. Rotation (Time-scaled)
@@ -150,11 +222,7 @@ function MoonMesh({
   });
 
   const fontSize = viewMode === 'didactic' ? radius * 0.8 : radius * 12;
-
-  const hitboxRadius = viewMode === 'realistic'
-    ? Math.max(radius * 20, 0.05)
-    : radius * 1.5;
-
+  const hitboxRadius = viewMode === 'realistic' ? Math.max(radius * 20, 0.05) : radius * 1.5;
   const labelY = isHovered ? radius * 1.8 : -radius * 1.8;
   const labelColor = isHovered ? '#ffffff' : '#8ab4d8';
   const labelAnchorY = isHovered ? 'bottom' : 'top';
@@ -257,9 +325,8 @@ export function MoonSystem({
 
   return (
     <group position={parentPosition}>
-      {/* 1. Orbit Lines (Consumes trajectories from master pool) */}
+      {/* 1. Orbit Lines */}
       {moonIds.map((moonId) => {
-        // Use individual hooks inside the map for selective updates
         return <MoonOrbitLine 
           key={`orbit-${moonId}`}
           moonId={moonId}
@@ -269,22 +336,20 @@ export function MoonSystem({
         />;
       })}
 
-      {/* 2. Moon Meshes (Consumes master pool) */}
+      {/* 2. Moon Meshes */}
       {moonIds.map((moonId) => {
         const config = getPlanetConfig(moonId);
         if (!config) return null;
 
-        // Note: Moon trajectory used here only for initial position, MoonMesh subscribes internally
-        const moonTrajectory = useSolarStore.getState().masterTrajectory[moonId];
-        if (!moonTrajectory || moonTrajectory.length === 0) return null;
-
-        const moon = moonTrajectory[0]; 
-
-        const moonPos = scalePositionFromKm(
-          moon.position.x,
-          moon.position.y,
-          moon.position.z
-        );
+        // HEURÍSTICA: Se a lua tem inclinação > 2 (ex: a nossa Lua da Terra com 5º), usamos a dela.
+        // Se for perto de zero (ex: Io, Europa), ela orbita o equador, logo herda a inclinação do Planeta.
+        const effInclination = config.orbitalInclination && config.orbitalInclination > 2 
+          ? config.orbitalInclination 
+          : (parentConfig?.axialTilt || 0);
+          
+        const effAscNode = config.longAscNode && config.longAscNode > 0 
+          ? config.longAscNode 
+          : (parentConfig?.longAscNode || 0);
 
         const orbitScale = getMoonOrbitScale(
           parentId,
@@ -293,31 +358,50 @@ export function MoonSystem({
           viewMode
         );
 
-        const scaledMoonPos: [number, number, number] = [
-          moonPos[0] * orbitScale,
-          moonPos[1] * orbitScale,
-          moonPos[2] * orbitScale,
-        ];
-
         const moonRadius = getRadius(moonId, 'MOON', viewMode);
-        const distanceToParentKm = Math.sqrt(
-          moon.position.x ** 2 + moon.position.y ** 2 + moon.position.z ** 2
+        
+        // Setup payload for UI selection (uses fallback values if real trajectory isn't ready)
+        const moonTrajectory = useSolarStore.getState().masterTrajectory[moonId];
+        
+        // "Ghost Click" Protection: Calculate physics-aligned coordinates for zoom
+        const simTime = useSolarStore.getState().currentTime.getTime();
+        const fallbackTarget = new THREE.Vector3();
+        getCircularOrbitPoint(
+          simTime,
+          config.orbitalPeriod,
+          config.meanDistanceAU,
+          orbitScale,
+          effInclination,
+          effAscNode,
+          fallbackTarget
         );
+        
+        const fallbackPos = { 
+          x: fallbackTarget.x / KM_TO_UNIT / orbitScale, // De-scale back to true KM
+          y: fallbackTarget.y / KM_TO_UNIT / orbitScale, 
+          z: fallbackTarget.z / KM_TO_UNIT / orbitScale 
+        };
+
+        const currentPos = moonTrajectory && moonTrajectory.length > 0 
+          ? moonTrajectory[0].position 
+          : fallbackPos;
 
         const baseWorldParentPos = worldParentPosition || parentPosition;
         const realisticWorldPos = {
-          x: baseWorldParentPos[0] + moonPos[0],
-          y: baseWorldParentPos[1] + moonPos[1],
-          z: baseWorldParentPos[2] + moonPos[2],
+          x: baseWorldParentPos[0] + (currentPos.x * KM_TO_UNIT),
+          y: baseWorldParentPos[1] + (currentPos.y * KM_TO_UNIT),
+          z: baseWorldParentPos[2] + (currentPos.z * KM_TO_UNIT),
         };
+
+        const distanceToParentKm = Math.sqrt(currentPos.x ** 2 + currentPos.y ** 2 + currentPos.z ** 2);
 
         const moonPayload = {
           bodyId: moonId,
           name: config.name,
           englishName: config.englishName,
-          position: moon.position,
-          velocity: moonTrajectory[0].velocity, 
-          trajectory: moonTrajectory,
+          position: currentPos,
+          velocity: moonTrajectory && moonTrajectory.length > 0 ? moonTrajectory[0].velocity : { x: 0, y: 0, z: 0 }, 
+          trajectory: moonTrajectory || [],
           radius: moonRadius,
           distanceFromSun: 0,
           parentId,
@@ -335,21 +419,23 @@ export function MoonSystem({
         };
 
         return (
-          <Suspense key={`moon-mesh-${moonId}`} fallback={null}>
-            <MoonMesh
-              bodyId={moonId}
-              name={config.englishName}
-              initialPosition={scaledMoonPos}
-              orbitScale={orbitScale}
-              radius={moonRadius}
-              textureUrl={getTexturePath(moonId, textureTier)}
-              rotationSpeed={config.rotationSpeed}
-              fallbackColor={config.fallbackColor}
-              viewMode={viewMode}
-              onClick={handleMoonClick}
-              onDoubleClick={handleMoonDoubleClick}
-            />
-          </Suspense>
+          <MoonMesh
+            key={`moon-mesh-${moonId}`}
+            bodyId={moonId}
+            name={config.englishName}
+            orbitScale={orbitScale}
+            radius={moonRadius}
+            textureUrl={getTexturePath(moonId, textureTier)}
+            rotationSpeed={config.rotationSpeed || 0.005}
+            fallbackColor={config.fallbackColor || '#888888'}
+            viewMode={viewMode}
+            meanDistanceAU={config.meanDistanceAU || 0.002}
+            orbitalPeriod={config.orbitalPeriod || 30}
+            orbitalInclination={effInclination}
+            longAscNode={effAscNode}
+            onClick={handleMoonClick}
+            onDoubleClick={handleMoonDoubleClick}
+          />
         );
       })}
     </group>
@@ -359,8 +445,9 @@ export function MoonSystem({
 function MoonOrbitLine({ moonId, parentId, parentClass, viewMode }: { moonId: string, parentId: string, parentClass: BodyClass, viewMode: ViewMode }) {
   const moonTrajectory = useSolarStore(useShallow(s => s.masterTrajectory[moonId]));
   const config = getPlanetConfig(moonId);
+  const parentConfig = getPlanetConfig(parentId);
 
-  if (!config || !moonTrajectory || moonTrajectory.length < 2) return null;
+  if (!config) return null;
 
   const orbitScale = getMoonOrbitScale(
     parentId,
@@ -368,6 +455,50 @@ function MoonOrbitLine({ moonId, parentId, parentClass, viewMode }: { moonId: st
     config.meanDistanceAU * AU_TO_KM,
     viewMode
   );
+
+  // INHERITANCE HEURISTIC
+  const effInclination = config.orbitalInclination && config.orbitalInclination > 2 
+    ? config.orbitalInclination 
+    : (parentConfig?.axialTilt || 0);
+    
+  const effAscNode = config.longAscNode && config.longAscNode > 0 
+    ? config.longAscNode 
+    : (parentConfig?.longAscNode || 0);
+
+  // Memoize fallback points to prevent CPU churn
+  const circlePoints = useMemo(() => {
+    const points: THREE.Vector3[] = [];
+    const segments = 128;
+    const tempTarget = new THREE.Vector3();
+    const periodMs = (config.orbitalPeriod || 30) * 24 * 60 * 60 * 1000;
+    
+    for (let i = 0; i <= segments; i++) {
+      const simTimeSample = (i / segments) * periodMs;
+      getCircularOrbitPoint(
+        simTimeSample,
+        config.orbitalPeriod,
+        config.meanDistanceAU,
+        orbitScale,
+        effInclination,
+        effAscNode,
+        tempTarget
+      );
+      points.push(tempTarget.clone());
+    }
+    return points;
+  }, [config, orbitScale, effInclination, effAscNode]);
+
+  // If no NASA data yet, render the inclined fallback ring
+  if (!moonTrajectory || moonTrajectory.length < 2) {
+    return (
+      <TrailLine
+        points={circlePoints}
+        color="#88aaff"
+        fadeMode="ring"
+        opacity={0.4}
+      />
+    );
+  }
 
   const SCALE = (1 / 1_000_000) * orbitScale;
 
@@ -413,7 +544,7 @@ function MoonOrbitLine({ moonId, parentId, parentClass, viewMode }: { moonId: st
       points={finalPoints}
       color="#88aaff"
       fadeMode="ring"
-      opacity={0.6}
+      opacity={0.4}
     />
   );
 }

@@ -2,6 +2,8 @@ from upstash_redis import AsyncRedis
 from app.models.schemas import EphemerisData
 from app.core.config import settings
 import json
+import zlib
+import base64
 
 _TTL = {
     frozenset({"599", "699", "799", "899"}): 86400,
@@ -55,3 +57,37 @@ async def set_bulk_cached(date: str, items: list[EphemerisData], center: str = "
             await redis.set(key, item.model_dump_json(by_alias=True), ex=ttl)
     except Exception as e:
         print(f"[Cache] Error writing to Redis: {e}")
+
+# --- Moon Year Cache (Compressed) ---
+async def get_moon_year_cached(body_id: str, year: int) -> EphemerisData | None:
+    try:
+        redis = AsyncRedis(
+            url=settings.upstash_redis_rest_url,
+            token=settings.upstash_redis_rest_token,
+        )
+        key = f"ephemeris:moon:{body_id}:year:{year}"
+        compressed_base64 = await redis.get(key)
+        if compressed_base64:
+            compressed_data = base64.b64decode(compressed_base64)
+            json_str = zlib.decompress(compressed_data).decode('utf-8')
+            return EphemerisData.model_validate(json.loads(json_str))
+        return None
+    except Exception as e:
+        print(f"[Cache] Error reading compressed moon year from Redis: {e}")
+        return None
+
+async def set_moon_year_cached(body_id: str, year: int, data: EphemerisData) -> None:
+    try:
+        redis = AsyncRedis(
+            url=settings.upstash_redis_rest_url,
+            token=settings.upstash_redis_rest_token,
+        )
+        key = f"ephemeris:moon:{body_id}:year:{year}"
+        json_str = data.model_dump_json(by_alias=True)
+        compressed_data = zlib.compress(json_str.encode('utf-8'))
+        compressed_base64 = base64.b64encode(compressed_data).decode('utf-8')
+        
+        # Cache for a very long time (e.g., 30 days) since it's a full year
+        await redis.set(key, compressed_base64, ex=2592000)
+    except Exception as e:
+        print(f"[Cache] Error writing compressed moon year to Redis: {e}")

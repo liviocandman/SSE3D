@@ -291,3 +291,48 @@ async def fetch_all_parallel(
                 await asyncio.sleep(0.8)
 
     return final_results
+
+MOON_STEP_SIZE = "4 h"
+
+async def fetch_moon_year(client: httpx.AsyncClient, moon_id: str, parent_id: str, year: int) -> Optional[EphemerisData]:
+    """
+    Fetches an entire year of high-granularity data for a moon to populate the Redis cache.
+    """
+    start_dt = datetime(year, 1, 1, 0, 0)
+    stop_dt = datetime(year + 1, 1, 1, 0, 0)
+    
+    horizons_start = start_dt.strftime("%Y-%m-%d %H:%M")
+    horizons_stop = stop_dt.strftime("%Y-%m-%d %H:%M")
+
+    params = {
+        "format": "json",
+        "COMMAND": f"'{moon_id}'",
+        "OBJ_DATA": "NO",
+        "MAKE_EPHEM": "YES",
+        "EPHEM_TYPE": "VECTORS",
+        "CENTER": f"'500@{parent_id}'",
+        "START_TIME": f"'{horizons_start}'",
+        "STOP_TIME": f"'{horizons_stop}'",
+        "STEP_SIZE": f"'{MOON_STEP_SIZE}'",
+        "VEC_TABLE": "'3'",
+        "REF_PLANE": "ECLIPTIC",
+        "OUT_UNITS": "'AU-D'",
+        "CSV_FORMAT": "YES",
+    }
+
+    logger.info(f"Fetching full year {year} for Moon {moon_id}...")
+    try:
+        response = await client.get(HORIZONS_URL, params=params, timeout=60.0)
+        response.raise_for_status()
+        data = response.json()
+        
+        parsed = _parse_horizons_csv(
+            data.get("result", ""),
+            moon_id,
+            start_dt.strftime("%Y-%m-%d"),
+            parent_id=parent_id,
+        )
+        return parsed
+    except Exception as e:
+        logger.error(f"Failed to fetch moon year {moon_id}: {e}")
+        return None
