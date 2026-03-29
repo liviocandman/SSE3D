@@ -46,6 +46,7 @@ next-env.d.ts
 
 # textures
 public/textures/*.webp
+public/textures/*.ktx2
 
 # python
 venv/

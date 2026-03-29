@@ -70,7 +70,12 @@ export function useTrajectoryWorker() {
       workerRef.current?.postMessage({
         type: 'FETCH',
         jobId,
-        params: { date, spanDays, ids },
+        params: { 
+          date, 
+          spanDays, 
+          ids,
+          origin: window.location.origin 
+        },
       });
     });
   }, []);

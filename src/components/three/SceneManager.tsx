@@ -29,7 +29,6 @@ import { TrajectoryManager } from './TrajectoryManager';
 import { KM_TO_UNIT } from '@/lib/scales';
 import StaticOrbitLine from './StaticOrbitLine';
 import DynamicTrailLine from './DynamicTrailLine';
-import { AsteroidBelt } from './AsteroidBelt';
 import { BODY_IDS } from '@/lib/types';
 
 // --- Types ---
@@ -369,8 +368,6 @@ export function SceneContent({
       />
 
       <Sun viewMode={viewMode} />
-
-      <AsteroidBelt count={tier === 'high' ? 8000 : tier === 'mid' ? 4000 : 2000} />
 
       {planetsToRender.map((planet) => {
         if (!planet) return null;

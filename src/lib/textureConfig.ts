@@ -47,9 +47,9 @@ const CDN_BASE = (
 
 function getTexturePaths(name: string): TexturePaths {
   return {
-    low: `${CDN_BASE}/${name}_low.webp`,
-    mid: `${CDN_BASE}/${name}_mid.webp`,
-    high: `${CDN_BASE}/${name}_high.webp`,
+    low: `${CDN_BASE}/${name}_low.ktx2`,
+    mid: `${CDN_BASE}/${name}_mid.ktx2`,
+    high: `${CDN_BASE}/${name}_high.ktx2`,
   };
 }
 

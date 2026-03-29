@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrame, useThree, ThreeEvent, useLoader } from "@react-three/fiber";
 import { Text, Billboard } from "@react-three/drei";
-import { TextureLoader } from "three";
+import { KTX2Loader } from "three-stdlib";
 import type { Mesh } from "three";
 import * as THREE from "three";
 import "../../app/globals.css";
@@ -67,10 +67,12 @@ export function CelestialBody({
 }: CelestialBodyProps) {
   const meshRef = useRef<Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
+  const gl = useThree((state) => state.gl);
 
-  // Use useLoader directly to have access to useLoader.clear() for global cache cleanup
-  const texture = useLoader(TextureLoader, textureUrl, (loader) => {
-    loader.setCrossOrigin("anonymous");
+  // KTX2 VRAM Optimized Loader
+  const texture = useLoader(KTX2Loader, textureUrl, (loader) => {
+    loader.detectSupport(gl);
+    loader.setTranscoderPath('/basis/');
   });
 
   const [fontSize, setFontSize] = useState(5);

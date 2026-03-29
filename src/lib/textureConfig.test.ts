@@ -33,7 +33,7 @@ describe('textureConfig', () => {
         const config = getPlanetConfig(moonId);
         expect(config).toBeDefined();
         expect(config?.fallbackColor).toMatch(/^#[0-9a-fA-F]{6}$/);
-        expect(config?.texturePaths.mid).toContain('.webp');
+        expect(config?.texturePaths.mid).toContain('.ktx2');
       });
     });
   });

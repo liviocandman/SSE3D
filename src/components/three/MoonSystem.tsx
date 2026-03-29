@@ -1,9 +1,9 @@
 'use client';
 
 import { useMemo, useRef, useState, Suspense, useEffect } from 'react';
-import { useLoader, useFrame, ThreeEvent } from '@react-three/fiber';
+import { useLoader, useFrame, ThreeEvent, useThree } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
-import { TextureLoader } from 'three';
+import { KTX2Loader } from 'three-stdlib';
 import * as THREE from 'three';
 import TrailLine from './TrailLine';
 
@@ -83,6 +83,7 @@ function MoonMesh({
 }: MoonMeshProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
+  const gl = useThree((state) => state.gl);
   const isInitializedRef = useRef(false);
   const [isHovered, setIsHovered] = useState(false);
   const tempVec = useRef(new THREE.Vector3());
@@ -96,8 +97,10 @@ function MoonMesh({
     return segment ? [segment] : [];
   }, [trajectory]);
 
-  const texture = useLoader(TextureLoader, textureUrl, (loader) => {
-    loader.setCrossOrigin('anonymous');
+  // KTX2 VRAM Optimized Loader
+  const texture = useLoader(KTX2Loader, textureUrl, (loader) => {
+    loader.detectSupport(gl);
+    loader.setTranscoderPath('/basis/');
   });
 
   // Dispose of material on unmount (geometry is shared)

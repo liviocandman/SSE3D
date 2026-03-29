@@ -35,8 +35,8 @@ async function exists(key) {
 }
 
 async function main() {
-  const files = fs.readdirSync(TEXTURES_DIR).filter((f) => f.endsWith(".webp"));
-  console.log(`Encontrados ${files.length} arquivos WebP\n`);
+  const files = fs.readdirSync(TEXTURES_DIR).filter((f) => f.endsWith(".ktx2"));
+  console.log(`Encontrados ${files.length} arquivos KTX2\n`);
 
   const uploaded = [];
   const forceInvalidation = process.argv.includes("--force-invalidation");
@@ -47,16 +47,17 @@ async function main() {
       continue;
     }
     const body = fs.readFileSync(path.join(TEXTURES_DIR, file));
+    
     await s3.send(
       new PutObjectCommand({
         Bucket: BUCKET,
         Key: file,
         Body: body,
-        ContentType: "image/webp",
+        ContentType: "image/ktx2",
         CacheControl: "public, max-age=31536000, immutable",
       }),
     );
-    console.log(`✓  ${file} — ${Math.round(body.length / 1024)} KB`);
+    console.log(`✓  ${file} — ${Math.round(body.length / 1024)} KB [image/ktx2]`);
     uploaded.push(file);
   }
 

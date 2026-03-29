@@ -41,7 +41,7 @@ self.onmessage = async (e: MessageEvent) => {
     const controller = new AbortController();
     activeJobs.set(jobId, controller);
 
-    const { date, spanDays, ids } = params;
+    const { date, spanDays, ids, origin } = params;
     const urlParams = new URLSearchParams({
       date,
       spanDays: spanDays.toString(),
@@ -49,7 +49,8 @@ self.onmessage = async (e: MessageEvent) => {
     });
 
     try {
-      const response = await fetch(`/api/ephemeris?${urlParams.toString()}`, {
+      const baseUrl = origin || '';
+      const response = await fetch(`${baseUrl}/api/ephemeris?${urlParams.toString()}`, {
         signal: controller.signal,
       });
 

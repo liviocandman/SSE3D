@@ -3,7 +3,7 @@
 import { useRef } from 'react';
 import { useFrame, useThree, useLoader } from '@react-three/fiber';
 import * as THREE from 'three';
-import { TextureLoader } from 'three';
+import { KTX2Loader } from 'three-stdlib';
 import { getRadius, ViewMode } from '@/lib/scales';
 import { getTexturePath, TextureTier } from '@/lib/textureConfig';
 import { useQualityTier } from '@/contexts/QualityTierContext';
@@ -27,12 +27,14 @@ export function Sun({
 }: SunProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const { tier } = useQualityTier();
-  const camera = useThree((state) => state.camera); // Acesso à câmera para calcular distância
+  const camera = useThree((state) => state.camera);
+  const gl = useThree((state) => state.gl);
 
-  // Carregar Textura do Sol
+  // Carregar Textura do Sol (KTX2 Optimized)
   const texturePath = getTexturePath(SUN_BODY_ID, tier as TextureTier);
-  const sunTexture = useLoader(TextureLoader, texturePath, (loader) => {
-    loader.setCrossOrigin("anonymous");
+  const sunTexture = useLoader(KTX2Loader, texturePath, (loader) => {
+    loader.detectSupport(gl);
+    loader.setTranscoderPath('/basis/');
   });
 
   // Tamanhos de referência
