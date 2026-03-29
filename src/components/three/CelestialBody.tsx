@@ -9,6 +9,7 @@ import * as THREE from "three";
 import "../../app/globals.css";
 import type { ViewMode } from "@/lib/scales";
 import { useSolarStore } from "@/store/solarStore";
+import { useShallow } from "zustand/react/shallow";
 import type { EphemerisTrajectory } from "@/lib/types";
 import { buildTrajectorySegment, sampleTrajectoryAtTime } from "@/lib/trajectoryEngine";
 import { calculateAbsoluteRotation } from "@/lib/rotationUtils";
@@ -40,6 +41,19 @@ const LABEL_COLOR = "#a3cffe";
 const MIN_FONT_SIZE = 2;
 const MAX_FONT_SIZE = 100;
 const THROTTLE_FRAMES = 10;
+
+// --- Shared Resources (Static) ---
+
+const GEOMETRY_CACHE: Record<number, THREE.SphereGeometry> = {};
+
+function getSharedSphereGeometry(segments: number): THREE.SphereGeometry {
+  if (!GEOMETRY_CACHE[segments]) {
+    GEOMETRY_CACHE[segments] = new THREE.SphereGeometry(1, segments, segments);
+  }
+  return GEOMETRY_CACHE[segments];
+}
+
+const HITBOX_GEOMETRY = new THREE.SphereGeometry(1, 16, 16);
 
 // --- Component ---
 
@@ -74,24 +88,24 @@ export function CelestialBody({
   const tempVec = useRef(new THREE.Vector3());
   const isInitializedRef = useRef(false);
   const frameCountRef = useRef(0);
+
+  // Selective subscription to this specific planet's segments
+  const masterSegments = useSolarStore(useShallow(state => state.masterTrajectorySegments[bodyId] || []));
+
   const fallbackSegments = useMemo(() => {
     if (!trajectory || trajectory.length === 0) return [];
     const segment = buildTrajectorySegment(trajectory);
     return segment ? [segment] : [];
   }, [trajectory]);
 
-  // Dispose of geometry and material on unmount to free GPU memory
+  // Dispose of material on unmount (geometry is shared)
   useEffect(() => {
-    const mesh = meshRef.current;
     return () => {
-      if (mesh) {
-        mesh.geometry.dispose();
-        if (mesh.material) {
-          if (Array.isArray(mesh.material)) {
-            mesh.material.forEach(m => m.dispose());
-          } else {
-            (mesh.material as THREE.Material).dispose();
-          }
+      if (meshRef.current?.material) {
+        if (Array.isArray(meshRef.current.material)) {
+          meshRef.current.material.forEach(m => m.dispose());
+        } else {
+          meshRef.current.material.dispose();
         }
       }
     };
@@ -102,13 +116,13 @@ export function CelestialBody({
     const solarState = useSolarStore.getState();
     const simTime = solarState.currentTime.getTime();
 
-    // Read segment-aware trajectory first; fallback to initial prop data.
-    const segments = solarState.masterTrajectorySegments[bodyId] || fallbackSegments;
+    // Use current segments from store, fallback to initial props
+    const currentSegments = masterSegments.length > 0 ? masterSegments : fallbackSegments;
 
     // 1. Interpolate position from trajectory if available
-    if (segments.length > 0 && groupRef.current) {
+    if (currentSegments.length > 0 && groupRef.current) {
       const SCALE = 1 / 1_000_000;
-      const sampled = sampleTrajectoryAtTime(segments, simTime);
+      const sampled = sampleTrajectoryAtTime(currentSegments, simTime);
       if (sampled) {
         const { x, y, z } = sampled.position;
         const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);
@@ -136,21 +150,14 @@ export function CelestialBody({
         meshRef.current.rotation.y = calculateAbsoluteRotation(dayLength, simTime);
       } else {
         // Didactic mode: absolute orientation (boosted) + real-time spin
-        // This ensures the planet "jumps" correctly during time travel
-        // but still feels "alive" when simulation is paused.
-
-        // 1. Physical base rotation (from dayLength, slightly boosted for visibility)
         const baseRotation = dayLength !== undefined
           ? calculateAbsoluteRotation(dayLength, simTime)
           : 0;
 
-        // 2. Visual "didactic" spin (constant rotation for feedback)
-        // Uses state.clock.elapsedTime (real world time)
         const direction = (dayLength !== undefined && dayLength < 0) ? -1 : 1;
         const speed = rotationSpeed ?? DEFAULT_ROTATION_SPEED;
         const visualSpin = state.clock.elapsedTime * speed * 60 * direction;
 
-        // Combine them
         meshRef.current.rotation.y = baseRotation + visualSpin;
       }
     }
@@ -224,8 +231,9 @@ export function CelestialBody({
         onPointerEnter={() => setIsHovered(true)}
         onPointerLeave={() => setIsHovered(false)}
         renderOrder={-1}
+        geometry={HITBOX_GEOMETRY}
+        scale={hitboxRadius}
       >
-        <sphereGeometry args={[hitboxRadius, 16, 16]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
@@ -238,8 +246,9 @@ export function CelestialBody({
           onDoubleClick={handleDoubleClick}
           onPointerEnter={() => setIsHovered(true)}
           onPointerLeave={() => setIsHovered(false)}
+          geometry={getSharedSphereGeometry(segments)}
+          scale={radius}
         >
-          <sphereGeometry args={[radius, segments, segments]} />
           <meshStandardMaterial
             map={texture}
             emissive={0x333333}

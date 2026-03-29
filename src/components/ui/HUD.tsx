@@ -66,10 +66,9 @@ export function HUD({
 }: HUDProps) {
   const isMobile = useIsMobile();
   
-  const { selectedPlanet, currentDate, viewMode, toggleViewMode } = useSolarStore(
+  const { selectedPlanet, viewMode, toggleViewMode } = useSolarStore(
     useShallow((state) => ({
       selectedPlanet: state.selectedPlanet,
-      currentDate: state.currentDate,
       viewMode: state.viewMode,
       toggleViewMode: state.toggleViewMode,
     }))
@@ -97,12 +96,59 @@ export function HUD({
     ? getPlanetAccentClass(selectedPlanet.bodyId)
     : "border-white/10 shadow-black/40";
 
+  const hudContent = (
+    <div className="space-y-6 pt-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={openFavorites}
+            className="relative p-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-md transition-colors group"
+            title="Favoritos"
+          >
+            <Heart className={`h-4 w-4 ${favorites.length > 0 ? 'text-red-500 fill-red-500' : 'text-zinc-400'}`} />
+            {favorites.length > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white">
+                {favorites.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={toggleViewMode}
+            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-md text-[10px] font-bold text-blue-400 uppercase transition-colors"
+            title={
+              viewMode === "didactic"
+                ? "Switch to realistic scale"
+                : "Switch to didactic scale"
+            }
+          >
+            <span>{viewMode === "didactic" ? "📐" : "🔭"}</span>
+            <span>
+              {viewMode === "didactic" ? "Didactic" : "Realistic"}
+            </span>
+          </button>
+        </div>
+        {isFallback && (
+          <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded-md text-[10px] font-bold text-yellow-500 uppercase">
+            <span>⚠️</span>
+            <span>Offline</span>
+          </div>
+        )}
+      </div>
+
+      {/* Planet Info */}
+      <PlanetInfo
+        planet={selectedPlanet}
+        earthPosition={earthPosition}
+        onAskAstronomer={() => setIsAstronomerOpen(true)}
+      />
+    </div>
+  );
+
   if (isMobile) {
     return (
       <>
         <div
           className={`fixed bottom-0 left-0 right-0 glass-panel rounded-t-2xl z-[100] transition-all duration-500 ease-in-out hardware-accel ${accentClass}`}
-          /* mobileSheetStyle */
           style={{ 
             height: isExpanded ? "55vh" : "max(64px, calc(64px + env(safe-area-inset-bottom)))",
             paddingBottom: isExpanded ? "env(safe-area-inset-bottom)" : "0"
@@ -117,18 +163,15 @@ export function HUD({
           {/* Drag handle area */}
           <div
             className="w-full h-8 flex items-center justify-center cursor-pointer"
-            /* dragHandleAreaStyle */
             onClick={toggleExpand}
           >
             <div className="w-10 h-1 bg-white/30 rounded-full" />
-            {/* dragHandleStyle */}
           </div>
 
           {/* Collapsed preview */}
           {!isExpanded && (
             <div
               className="px-6 pb-4 flex items-center justify-between cursor-pointer"
-              /* mobilePreviewStyle */
               onClick={toggleExpand}
             >
               <span className="font-semibold text-lg tracking-tight">
@@ -144,52 +187,7 @@ export function HUD({
           <div
             className={`px-6 pb-8 overflow-y-auto h-[calc(55vh-32px)] transition-opacity duration-300 ${isExpanded ? "opacity-100" : "opacity-0 pointer-events-none"}`}
           >
-            {/* expandedContentStyle */}
-            <div className="space-y-6 pt-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={openFavorites}
-                    className="relative p-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-md transition-colors group"
-                    title="Favoritos"
-                  >
-                    <Heart className={`h-4 w-4 ${favorites.length > 0 ? 'text-red-500 fill-red-500' : 'text-zinc-400'}`} />
-                    {favorites.length > 0 && (
-                      <span className="absolute -top-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white">
-                        {favorites.length}
-                      </span>
-                    )}
-                  </button>
-                  <button
-                    onClick={toggleViewMode}
-                    className="inline-flex items-center gap-1 px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-md text-[10px] font-bold text-blue-400 uppercase transition-colors"
-                    title={
-                      viewMode === "didactic"
-                        ? "Switch to realistic scale"
-                        : "Switch to didactic scale"
-                    }
-                  >
-                    <span>{viewMode === "didactic" ? "📐" : "🔭"}</span>
-                    <span>
-                      {viewMode === "didactic" ? "Didactic" : "Realistic"}
-                    </span>
-                  </button>
-                </div>
-                {isFallback && (
-                  <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded-md text-[10px] font-bold text-yellow-500 uppercase">
-                    <span>⚠️</span>
-                    <span>Offline</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Planet Info */}
-              <PlanetInfo
-                planet={selectedPlanet}
-                earthPosition={earthPosition}
-                onAskAstronomer={() => setIsAstronomerOpen(true)}
-              />
-            </div>
+            {hudContent}
           </div>
         </div>
         <TimeTravelControls />
@@ -197,7 +195,6 @@ export function HUD({
           isOpen={isAstronomerOpen}
           onClose={() => setIsAstronomerOpen(false)}
           planet={selectedPlanet}
-          currentDate={currentDate}
         />
         <AuthModal />
         <FavoritesModal />
@@ -270,15 +267,7 @@ export function HUD({
 
         {/* Content */}
         <div className="flex-1 p-6 overflow-y-auto scrollbar-hide">
-          {/* sidebarContentStyle */}
-          <div className="space-y-8">
-            {/* Planet Info */}
-            <PlanetInfo
-              planet={selectedPlanet}
-              earthPosition={earthPosition}
-              onAskAstronomer={() => setIsAstronomerOpen(true)}
-            />
-          </div>
+          {hudContent}
         </div>
 
         {/* Decorative footer element */}
@@ -289,7 +278,6 @@ export function HUD({
         isOpen={isAstronomerOpen}
         onClose={() => setIsAstronomerOpen(false)}
         planet={selectedPlanet}
-        currentDate={currentDate}
       />
       <AuthModal />
       <FavoritesModal />

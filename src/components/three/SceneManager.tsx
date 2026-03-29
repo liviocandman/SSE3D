@@ -22,13 +22,14 @@ import {
 } from '@/lib/textureConfig';
 import { getRadius, scalePositionFromKm } from '@/lib/scales';
 import { CameraController } from '@/hooks/useCameraAnimation';
-import TrailLine from './TrailLine';
 import * as THREE from 'three';
 import { useSolarStore } from '@/store/solarStore';
 import { useShallow } from 'zustand/react/shallow';
 import { TrajectoryManager } from './TrajectoryManager';
 import { KM_TO_UNIT } from '@/lib/scales';
-
+import StaticOrbitLine from './StaticOrbitLine';
+import DynamicTrailLine from './DynamicTrailLine';
+import { BODY_IDS } from '@/lib/types';
 
 // --- Types ---
 
@@ -44,6 +45,8 @@ interface SceneContentProps {
 
 // --- Helper Components ---
 
+const SELECTION_GEOMETRY = new THREE.TorusGeometry(1, 0.005, 16, 100);
+
 function SelectionRing({ position, radius }: { position: [number, number, number]; radius: number }) {
   const meshRef = useRef<THREE.Mesh>(null);
 
@@ -54,13 +57,12 @@ function SelectionRing({ position, radius }: { position: [number, number, number
     meshRef.current.rotation.z += 0.01;
 
     // Subtle pulse
-    const scale = 1 + Math.sin(state.clock.elapsedTime * 3) * 0.05;
+    const scale = (radius * 1.5) * (1 + Math.sin(state.clock.elapsedTime * 3) * 0.05);
     meshRef.current.scale.set(scale, scale, scale);
   });
 
   return (
-    <mesh ref={meshRef} position={position} rotation={[Math.PI / 2, 0, 0]}>
-      <torusGeometry args={[radius * 1.5, 0.05 * (radius / 10), 16, 100]} />
+    <mesh ref={meshRef} position={position} rotation={[Math.PI / 2, 0, 0]} geometry={SELECTION_GEOMETRY}>
       <meshBasicMaterial
         color="#ffffff"
         transparent
@@ -101,10 +103,6 @@ function calculateMillionKmFromSun(position: [number, number, number]): number {
   const [x, y, z] = position;
   return Math.sqrt(x * x + y * y + z * z);
 }
-
-import StaticOrbitLine from './StaticOrbitLine';
-import DynamicTrailLine from './DynamicTrailLine';
-import { BODY_IDS } from '@/lib/types';
 
 const ALL_PLANET_IDS = [
   BODY_IDS.MERCURY, BODY_IDS.VENUS, BODY_IDS.EARTH, BODY_IDS.MARS,
@@ -184,7 +182,6 @@ export function SceneContent({
   const { tier, settings } = useQualityTier();
 
   const {
-    currentDate,
     selectedPlanet,
     setSelectedPlanet,
     viewMode,
@@ -193,12 +190,10 @@ export function SceneContent({
     travelTargetRadius,
     setTravelTarget,
     masterTrajectorySegments,
-    currentTime,
     fullOrbits,
     appendFullOrbits,
   } = useSolarStore(
     useShallow((state) => ({
-      currentDate: state.currentDate,
       selectedPlanet: state.selectedPlanet,
       setSelectedPlanet: state.setSelectedPlanet,
       viewMode: state.viewMode,
@@ -415,7 +410,6 @@ export function SceneContent({
                     parentClass={planet.bodyClass}
                     parentPosition={[0, 0, 0]}
                     worldParentPosition={planet.position}
-                    date={currentDate}
                     viewMode={viewMode}
                     tier={tier}
                   />

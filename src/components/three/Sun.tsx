@@ -16,6 +16,9 @@ interface SunProps {
 const SUN_BODY_ID = '10';
 const DEFAULT_LIGHT_INTENSITY = 2.5;
 
+// --- Shared Resources (Static) ---
+const SUN_GEOMETRY = new THREE.SphereGeometry(1, 64, 64);
+
 export function Sun({
   lightIntensity = DEFAULT_LIGHT_INTENSITY,
   viewMode = 'didactic',
@@ -59,12 +62,9 @@ export function Sun({
       targetScale = Math.max(realisticRadius, visualScale);
     }
 
-    // --- O BUG ESTAVA NO LERP ACIMA ---
     const currentScale = meshRef.current.scale.x;
 
     // NOVA FÓRMULA SEGURA: 
-    // O Math.exp garante que, mesmo que o delta seja gigante (lag extremo), 
-    // o lerpFactor nunca, jamais, ultrapassará 1.0.
     const lerpFactor = 1 - Math.exp(-25 * delta);
     const smoothScale = THREE.MathUtils.lerp(currentScale, targetScale, lerpFactor);
 
@@ -78,8 +78,7 @@ export function Sun({
          Usamos meshBasicMaterial com cor > 1.0 para forçar o Bloom (Brilho Neon)
          sem depender de luzes externas.
       */}
-      <mesh ref={meshRef}>
-        <sphereGeometry args={[1, 64, 64]} />
+      <mesh ref={meshRef} geometry={SUN_GEOMETRY}>
         <meshBasicMaterial
           map={sunTexture}
           color={[3, 2.4, 1.5]} // Multiplicador de HDR (Intensidade do brilho)

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState, Suspense } from 'react';
+import { useMemo, useRef, useState, Suspense, useEffect } from 'react';
 import { useLoader, useFrame, ThreeEvent } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import { TextureLoader } from 'three';
@@ -34,7 +34,6 @@ interface MoonSystemProps {
   parentClass: BodyClass;
   parentPosition: [number, number, number];
   worldParentPosition?: [number, number, number];
-  date: string;
   viewMode: ViewMode;
   tier: string;
 }
@@ -43,7 +42,6 @@ interface MoonMeshProps {
   bodyId: string;
   name: string;
   initialPosition: [number, number, number];
-  trajectory?: EphemerisTrajectory[];
   orbitScale: number;
   radius: number;
   textureUrl: string;
@@ -55,10 +53,12 @@ interface MoonMeshProps {
 }
 
 // ---------------------------------------------------------------------------
-// Constants
+// Shared Resources (Static)
 // ---------------------------------------------------------------------------
 
 const AU_TO_KM = 149_597_870.7;
+const SHARED_GEOMETRY = new THREE.SphereGeometry(1, 24, 24);
+const HITBOX_GEOMETRY = new THREE.SphereGeometry(1, 8, 8);
 
 function resolveTextureTier(tier: string): TextureTier {
   if (tier === 'low' || tier === 'high') return tier;
@@ -73,7 +73,6 @@ function MoonMesh({
   bodyId,
   name,
   initialPosition,
-  trajectory,
   orbitScale,
   radius,
   textureUrl,
@@ -87,6 +86,11 @@ function MoonMesh({
   const groupRef = useRef<THREE.Group>(null);
   const isInitializedRef = useRef(false);
   const [isHovered, setIsHovered] = useState(false);
+  const tempVec = useRef(new THREE.Vector3());
+
+  // Subscribe only to this specific moon's trajectory
+  const trajectory = useSolarStore(useShallow(state => state.masterTrajectory[bodyId] || []));
+  
   const fallbackSegments = useMemo(() => {
     if (!trajectory || trajectory.length === 0) return [];
     const segment = buildTrajectorySegment(trajectory);
@@ -96,6 +100,15 @@ function MoonMesh({
   const texture = useLoader(TextureLoader, textureUrl, (loader) => {
     loader.setCrossOrigin('anonymous');
   });
+
+  // Dispose of material on unmount (geometry is shared)
+  useEffect(() => {
+    return () => {
+      if (meshRef.current?.material) {
+        (meshRef.current.material as THREE.Material).dispose();
+      }
+    };
+  }, []);
 
   useFrame((_, delta) => {
     const solarState = useSolarStore.getState();
@@ -111,7 +124,7 @@ function MoonMesh({
       const sampled = sampleTrajectoryAtTime(segments, simTime);
       if (sampled) {
         const { x, y, z } = sampled.position;
-        const targetPos = new THREE.Vector3(x * SCALE, y * SCALE, z * SCALE);
+        const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);
         
         if (!isInitializedRef.current) {
           groupRef.current.position.copy(targetPos);
@@ -170,13 +183,11 @@ function MoonMesh({
 
   return (
     <group name={name} ref={groupRef}>
-      <mesh {...events} renderOrder={-1}>
-        <sphereGeometry args={[hitboxRadius, 8, 8]} />
+      <mesh {...events} geometry={HITBOX_GEOMETRY} scale={hitboxRadius} renderOrder={-1}>
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      <mesh ref={meshRef} {...events}>
-        <sphereGeometry args={[radius, 24, 24]} />
+      <mesh ref={meshRef} {...events} geometry={SHARED_GEOMETRY} scale={radius}>
         <meshLambertMaterial
           map={texture || null}
           color={texture ? '#ffffff' : fallbackColor}
@@ -227,12 +238,11 @@ export function MoonSystem({
   const moonIds = PLANET_MOONS[parentId] ?? [];
   const hasMoons = moonIds.length > 0;
 
-  const { setSelectedPlanet, setViewMode, setTravelTarget, masterTrajectory } = useSolarStore(
+  const { setSelectedPlanet, setViewMode, setTravelTarget } = useSolarStore(
     useShallow((s) => ({
       setSelectedPlanet: s.setSelectedPlanet,
       setViewMode: s.setViewMode,
       setTravelTarget: s.setTravelTarget,
-      masterTrajectory: s.masterTrajectory,
     }))
   );
 
@@ -246,79 +256,26 @@ export function MoonSystem({
     <group position={parentPosition}>
       {/* 1. Orbit Lines (Consumes trajectories from master pool) */}
       {moonIds.map((moonId) => {
-        const moonTrajectory = masterTrajectory[moonId];
-        const config = getPlanetConfig(moonId);
-
-        if (!config || !moonTrajectory || moonTrajectory.length < 2) return null;
-
-        const orbitScale = getMoonOrbitScale(
-          parentId,
-          parentClass,
-          config.meanDistanceAU * AU_TO_KM,
-          viewMode
-        );
-
-        const SCALE = (1 / 1_000_000) * orbitScale;
-
-        // Unify the line into a single, smooth orbit tracking exactly 1 period
-        const orbitalPeriodMs = (config.orbitalPeriod || 30) * 24 * 60 * 60 * 1000;
-        const startTime = new Date(moonTrajectory[0].timestamp).getTime();
-
-        const rawPoints: THREE.Vector3[] = [];
-        for (const t of moonTrajectory) {
-          const tMs = new Date(t.timestamp).getTime();
-          rawPoints.push(new THREE.Vector3(t.position.x * SCALE, t.position.y * SCALE, t.position.z * SCALE));
-          // Break once we have covered a full orbital period or end of buffer
-          if (tMs - startTime >= orbitalPeriodMs) break;
-        }
-
-        // 1. COORDINATE SHIELD (Prevents iOS "Spider Web" artifacts)
-        const safeRawPoints = rawPoints.filter((p, i, arr) => {
-          // Remove invalid math results that crash the GPU buffers on WebKit
-          if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) return false;
-          
-          // Remove duplicate points that cause division-by-zero during 
-          // curve interpolation (critical for iOS stability)
-          if (i > 0 && p.distanceToSquared(arr[i - 1]) < 0.000001) return false;
-          
-          return true;
-        });
-
-        // Use CatmullRomCurve3 to smooth out sparse JPL Horizons steps into a perfect ring.
-        // Only set 'closed: true' if the data actually covers nearly the full period to avoid shortcuts.
-        const totalTimeMs =
-          new Date(moonTrajectory[moonTrajectory.length - 1].timestamp).getTime() -
-          startTime;
-        const coverageRatio = orbitalPeriodMs > 0 ? totalTimeMs / orbitalPeriodMs : 0;
-        const isClosed = coverageRatio >= 0.95;
-
-        let finalPoints = safeRawPoints;
-        if (safeRawPoints.length >= 3) {
-          // 2. iOS-SAFE CURVE GENERATION
-          // We only interpolate if we have enough points and no duplicates
-          const curve = new THREE.CatmullRomCurve3(safeRawPoints, isClosed);
-          finalPoints = curve.getPoints(128); // 128 segments for smoothness
-        }
-
-        return (
-          <TrailLine
-            key={`orbit-${moonId}`}
-            points={finalPoints}
-            color="#88aaff"
-            fadeMode="ring"
-            opacity={0.6}
-          />
-        );
+        // Use individual hooks inside the map for selective updates
+        return <MoonOrbitLine 
+          key={`orbit-${moonId}`}
+          moonId={moonId}
+          parentId={parentId}
+          parentClass={parentClass}
+          viewMode={viewMode}
+        />;
       })}
 
       {/* 2. Moon Meshes (Consumes master pool) */}
       {moonIds.map((moonId) => {
-        const moonTrajectory = masterTrajectory[moonId];
-        if (!moonTrajectory || moonTrajectory.length === 0) return null;
-
-        const moon = moonTrajectory[0]; // Reference for initial stats
         const config = getPlanetConfig(moonId);
         if (!config) return null;
+
+        // Note: Moon trajectory used here only for initial position, MoonMesh subscribes internally
+        const moonTrajectory = useSolarStore.getState().masterTrajectory[moonId];
+        if (!moonTrajectory || moonTrajectory.length === 0) return null;
+
+        const moon = moonTrajectory[0]; 
 
         const moonPos = scalePositionFromKm(
           moon.position.x,
@@ -356,7 +313,7 @@ export function MoonSystem({
           name: config.name,
           englishName: config.englishName,
           position: moon.position,
-          velocity: moonTrajectory[0].velocity, // Using first point for velocity ref
+          velocity: moonTrajectory[0].velocity, 
           trajectory: moonTrajectory,
           radius: moonRadius,
           distanceFromSun: 0,
@@ -380,7 +337,6 @@ export function MoonSystem({
               bodyId={moonId}
               name={config.englishName}
               initialPosition={scaledMoonPos}
-              trajectory={moonTrajectory}
               orbitScale={orbitScale}
               radius={moonRadius}
               textureUrl={getTexturePath(moonId, textureTier)}
@@ -394,5 +350,67 @@ export function MoonSystem({
         );
       })}
     </group>
+  );
+}
+
+function MoonOrbitLine({ moonId, parentId, parentClass, viewMode }: { moonId: string, parentId: string, parentClass: BodyClass, viewMode: ViewMode }) {
+  const moonTrajectory = useSolarStore(useShallow(s => s.masterTrajectory[moonId]));
+  const config = getPlanetConfig(moonId);
+
+  if (!config || !moonTrajectory || moonTrajectory.length < 2) return null;
+
+  const orbitScale = getMoonOrbitScale(
+    parentId,
+    parentClass,
+    config.meanDistanceAU * AU_TO_KM,
+    viewMode
+  );
+
+  const SCALE = (1 / 1_000_000) * orbitScale;
+
+  // Unify the line into a single, smooth orbit tracking exactly 1 period
+  const orbitalPeriodMs = (config.orbitalPeriod || 30) * 24 * 60 * 60 * 1000;
+  const startTime = new Date(moonTrajectory[0].timestamp).getTime();
+
+  const rawPoints: THREE.Vector3[] = [];
+  for (const t of moonTrajectory) {
+    const tMs = new Date(t.timestamp).getTime();
+    rawPoints.push(new THREE.Vector3(t.position.x * SCALE, t.position.y * SCALE, t.position.z * SCALE));
+    // Break once we have covered a full orbital period or end of buffer
+    if (tMs - startTime >= orbitalPeriodMs) break;
+  }
+
+  // 1. COORDINATE SHIELD (Prevents iOS "Spider Web" artifacts)
+  const safeRawPoints = rawPoints.filter((p, i, arr) => {
+    // Remove invalid math results that crash the GPU buffers on WebKit
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) return false;
+    
+    // Remove duplicate points that cause division-by-zero during 
+    // curve interpolation (critical for iOS stability)
+    if (i > 0 && p.distanceToSquared(arr[i - 1]) < 0.000001) return false;
+    
+    return true;
+  });
+
+  // Use CatmullRomCurve3 to smooth out sparse JPL Horizons steps into a perfect ring.
+  const totalTimeMs =
+    new Date(moonTrajectory[moonTrajectory.length - 1].timestamp).getTime() -
+    startTime;
+  const coverageRatio = orbitalPeriodMs > 0 ? totalTimeMs / orbitalPeriodMs : 0;
+  const isClosed = coverageRatio >= 0.95;
+
+  let finalPoints = safeRawPoints;
+  if (safeRawPoints.length >= 3) {
+    const curve = new THREE.CatmullRomCurve3(safeRawPoints, isClosed);
+    finalPoints = curve.getPoints(128); // 128 segments for smoothness
+  }
+
+  return (
+    <TrailLine
+      points={finalPoints}
+      color="#88aaff"
+      fadeMode="ring"
+      opacity={0.6}
+    />
   );
 }

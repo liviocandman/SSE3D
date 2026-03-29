@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { useSolarStore } from '@/store/solarStore';
 import { useAstronomer, AstronomerError } from '@/hooks/useAstronomer';
 import type { SelectedPlanet } from '@/lib/types';
 import { FavoriteButton } from './FavoriteButton';
 import { getSessionItem, setSessionItem, removeSessionItem } from '@/lib/sessionStorage';
-import { Trash2 } from 'lucide-react';
+import { Trash2, X, RotateCcw, Send } from 'lucide-react';
 
 interface AstronomerModalProps {
   isOpen: boolean;
@@ -33,14 +34,22 @@ export function AstronomerModal({
   isOpen,
   onClose,
   planet,
-  currentDate,
-}: AstronomerModalProps) {
+}: Omit<AstronomerModalProps, 'currentDate'>) {
   const [inputValue, setInputValue] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const { mutateAsync, isPending } = useAstronomer();
+  
+  // Internal subscription to date
+  const currentDate = useSolarStore(state => state.currentDate);
 
   const storageKey = planet ? `sse3d:astronomer:${planet.bodyId}` : null;
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isPending]);
 
   useEffect(() => {
     if (isOpen) {
