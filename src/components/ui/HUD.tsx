@@ -101,9 +101,18 @@ export function HUD({
     return (
       <>
         <div
-          className={`fixed bottom-0 left-0 right-0 glass-panel rounded-t-2xl z-100 transition-all duration-500 ease-in-out hardware-accel ${accentClass}`}
+          className={`fixed bottom-0 left-0 right-0 glass-panel rounded-t-2xl z-[100] transition-all duration-500 ease-in-out hardware-accel ${accentClass}`}
           /* mobileSheetStyle */
-          style={{ height: isExpanded ? "55vh" : "64px" }}
+          style={{ 
+            height: isExpanded ? "55vh" : "max(64px, calc(64px + env(safe-area-inset-bottom)))",
+            paddingBottom: isExpanded ? "env(safe-area-inset-bottom)" : "0"
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerMove={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
         >
           {/* Drag handle area */}
           <div
