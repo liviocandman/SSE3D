@@ -16,8 +16,10 @@ interface SunProps {
 const SUN_BODY_ID = '10';
 const DEFAULT_LIGHT_INTENSITY = 2.5;
 
+import { SPHERE_HIGH } from '@/lib/geometryPool';
+
 // --- Shared Resources (Static) ---
-const SUN_GEOMETRY = new THREE.SphereGeometry(1, 64, 64);
+// (Removed localized constant as it is now in geometryPool)
 
 export function Sun({
   lightIntensity = DEFAULT_LIGHT_INTENSITY,
@@ -78,7 +80,7 @@ export function Sun({
          Usamos meshBasicMaterial com cor > 1.0 para forçar o Bloom (Brilho Neon)
          sem depender de luzes externas.
       */}
-      <mesh ref={meshRef} geometry={SUN_GEOMETRY}>
+      <mesh ref={meshRef} geometry={SPHERE_HIGH} dispose={null}>
         <meshBasicMaterial
           map={sunTexture}
           color={[3, 2.4, 1.5]} // Multiplicador de HDR (Intensidade do brilho)

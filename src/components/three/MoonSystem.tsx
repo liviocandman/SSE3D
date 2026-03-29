@@ -51,13 +51,13 @@ interface MoonMeshProps {
   onDoubleClick: () => void;
 }
 
+import { SPHERE_MID, HITBOX_SPHERE } from '@/lib/geometryPool';
+
 // ---------------------------------------------------------------------------
 // Shared Resources (Static)
 // ---------------------------------------------------------------------------
 
 const AU_TO_KM = 149_597_870.7;
-const SHARED_GEOMETRY = new THREE.SphereGeometry(1, 24, 24);
-const HITBOX_GEOMETRY = new THREE.SphereGeometry(1, 8, 8);
 
 function resolveTextureTier(tier: string): TextureTier {
   if (tier === 'low' || tier === 'high') return tier;
@@ -183,11 +183,11 @@ function MoonMesh({
 
   return (
     <group name={name} ref={groupRef}>
-      <mesh {...events} geometry={HITBOX_GEOMETRY} scale={hitboxRadius} renderOrder={-1}>
+      <mesh {...events} geometry={HITBOX_SPHERE} scale={hitboxRadius} renderOrder={-1} dispose={null}>
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      <mesh ref={meshRef} {...events} geometry={SHARED_GEOMETRY} scale={radius}>
+      <mesh ref={meshRef} {...events} geometry={SPHERE_MID} scale={radius} dispose={null}>
         <meshLambertMaterial
           map={texture || null}
           color={texture ? '#ffffff' : fallbackColor}

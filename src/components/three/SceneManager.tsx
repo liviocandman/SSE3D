@@ -29,6 +29,7 @@ import { TrajectoryManager } from './TrajectoryManager';
 import { KM_TO_UNIT } from '@/lib/scales';
 import StaticOrbitLine from './StaticOrbitLine';
 import DynamicTrailLine from './DynamicTrailLine';
+import { AsteroidBelt } from './AsteroidBelt';
 import { BODY_IDS } from '@/lib/types';
 
 // --- Types ---
@@ -43,9 +44,7 @@ interface SceneContentProps {
   ephemerisData?: EphemerisData[];
 }
 
-// --- Helper Components ---
-
-const SELECTION_GEOMETRY = new THREE.TorusGeometry(1, 0.005, 16, 100);
+import { TORUS_SELECTION } from '@/lib/geometryPool';
 
 function SelectionRing({ position, radius }: { position: [number, number, number]; radius: number }) {
   const meshRef = useRef<THREE.Mesh>(null);
@@ -62,7 +61,7 @@ function SelectionRing({ position, radius }: { position: [number, number, number
   });
 
   return (
-    <mesh ref={meshRef} position={position} rotation={[Math.PI / 2, 0, 0]} geometry={SELECTION_GEOMETRY}>
+    <mesh ref={meshRef} position={position} rotation={[Math.PI / 2, 0, 0]} geometry={TORUS_SELECTION} dispose={null}>
       <meshBasicMaterial
         color="#ffffff"
         transparent
@@ -370,6 +369,8 @@ export function SceneContent({
       />
 
       <Sun viewMode={viewMode} />
+
+      <AsteroidBelt count={tier === 'high' ? 8000 : tier === 'mid' ? 4000 : 2000} />
 
       {planetsToRender.map((planet) => {
         if (!planet) return null;

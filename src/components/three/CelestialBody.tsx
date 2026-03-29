@@ -42,18 +42,10 @@ const MIN_FONT_SIZE = 2;
 const MAX_FONT_SIZE = 100;
 const THROTTLE_FRAMES = 10;
 
+import { SPHERE_HIGH, SPHERE_MID, SPHERE_LOW, HITBOX_SPHERE } from '@/lib/geometryPool';
+
 // --- Shared Resources (Static) ---
-
-const GEOMETRY_CACHE: Record<number, THREE.SphereGeometry> = {};
-
-function getSharedSphereGeometry(segments: number): THREE.SphereGeometry {
-  if (!GEOMETRY_CACHE[segments]) {
-    GEOMETRY_CACHE[segments] = new THREE.SphereGeometry(1, segments, segments);
-  }
-  return GEOMETRY_CACHE[segments];
-}
-
-const HITBOX_GEOMETRY = new THREE.SphereGeometry(1, 16, 16);
+// (Removed localized constants as they are now in geometryPool)
 
 // --- Component ---
 
@@ -111,6 +103,13 @@ export function CelestialBody({
       }
     };
   }, []);
+
+  // Selection of shared geometry based on requested segments
+  const sharedGeometry = useMemo(() => {
+    if (segments >= 64) return SPHERE_HIGH;
+    if (segments >= 32) return SPHERE_MID;
+    return SPHERE_LOW;
+  }, [segments]);
 
   // Animation loop
   useFrame((state, delta) => {
@@ -232,8 +231,9 @@ export function CelestialBody({
         onPointerEnter={() => setIsHovered(true)}
         onPointerLeave={() => setIsHovered(false)}
         renderOrder={-1}
-        geometry={HITBOX_GEOMETRY}
+        geometry={HITBOX_SPHERE}
         scale={hitboxRadius}
+        dispose={null}
       >
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
@@ -247,8 +247,9 @@ export function CelestialBody({
           onDoubleClick={handleDoubleClick}
           onPointerEnter={() => setIsHovered(true)}
           onPointerLeave={() => setIsHovered(false)}
-          geometry={getSharedSphereGeometry(segments)}
+          geometry={sharedGeometry}
           scale={radius}
+          dispose={null}
         >
           <meshStandardMaterial
             map={texture}
