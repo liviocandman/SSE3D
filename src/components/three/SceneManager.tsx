@@ -103,6 +103,7 @@ function calculateMillionKmFromSun(position: [number, number, number]): number {
 }
 
 import StaticOrbitLine from './StaticOrbitLine';
+import DynamicTrailLine from './DynamicTrailLine';
 import { BODY_IDS } from '@/lib/types';
 
 const ALL_PLANET_IDS = [
@@ -118,33 +119,13 @@ function parseTimestampMs(timestamp: string): number {
   return new Date(utcString).getTime();
 }
 
-function findLastSampleIndex(samples: { timestampMs: number }[], cutoffMs: number): number {
-  let left = 0;
-  let right = samples.length - 1;
-  let result = -1;
-
-  while (left <= right) {
-    const mid = Math.floor((left + right) / 2);
-    const value = samples[mid].timestampMs;
-    if (value <= cutoffMs) {
-      result = mid;
-      left = mid + 1;
-    } else {
-      right = mid - 1;
-    }
-  }
-
-  return result;
-}
-
 interface PlanetTrajectoryGroupProps {
   segments: TrajectorySegment[];
   fullOrbitData?: EphemerisTrajectory[];
-  currentTime: Date;
 }
 
 
-function PlanetTrajectoryGroup({ segments, fullOrbitData, currentTime }: PlanetTrajectoryGroupProps) {
+function PlanetTrajectoryGroup({ segments, fullOrbitData }: PlanetTrajectoryGroupProps) {
   const { tier } = useQualityTier();
   const maxTrailPoints = tier === 'high' ? 240 : tier === 'mid' ? 120 : 60;
   const allPoints = useMemo(() => flattenTrajectorySegments(segments), [segments]);
@@ -157,25 +138,17 @@ function PlanetTrajectoryGroup({ segments, fullOrbitData, currentTime }: PlanetT
         p.position.y * KM_TO_UNIT,
         p.position.z * KM_TO_UNIT
       ),
-    }));
+    })).filter((s, i, arr) => {
+      // Anti-NaN & Duplicate Shield (from TrailLine logic)
+      if (!Number.isFinite(s.point.x) || !Number.isFinite(s.point.y) || !Number.isFinite(s.point.z)) {
+        return false;
+      }
+      if (i > 0 && s.point.distanceToSquared(arr[i - 1].point) < 0.000001) {
+        return false;
+      }
+      return true;
+    });
   }, [allPoints]);
-
-  const simTimeMs = currentTime.getTime();
-  const pastPoints = useMemo(() => {
-    if (samples.length < 2) return [];
-
-    const cutoffMs = simTimeMs + TRAIL_GRACE_MS;
-    const lastVisibleIndex = findLastSampleIndex(samples, cutoffMs);
-    if (lastVisibleIndex < 1) return [];
-
-    const startIndex = Math.max(0, lastVisibleIndex - maxTrailPoints + 1);
-    const points: THREE.Vector3[] = [];
-    for (let i = lastVisibleIndex; i >= startIndex; i--) {
-      points.push(samples[i].point);
-    }
-    return points;
-  }, [samples, simTimeMs, maxTrailPoints]);
-
 
   return (
     <group>
@@ -188,11 +161,12 @@ function PlanetTrajectoryGroup({ segments, fullOrbitData, currentTime }: PlanetT
         />
       )}
 
-      {pastPoints.length > 2 && (
-        <TrailLine
-          points={pastPoints}
+      {samples.length > 2 && (
+        <DynamicTrailLine
+          samples={samples}
+          maxTrailPoints={maxTrailPoints}
+          graceMs={TRAIL_GRACE_MS}
           color="#a3cffe"
-          fadeMode="tail"
           opacity={0.8}
           lineWidth={1.5}
         />
@@ -233,7 +207,6 @@ export function SceneContent({
       travelTargetRadius: state.travelTargetRadius,
       setTravelTarget: state.setTravelTarget,
       masterTrajectorySegments: state.masterTrajectorySegments,
-      currentTime: state.currentTime,
       fullOrbits: state.fullOrbits,
       appendFullOrbits: state.appendFullOrbits,
     }))
@@ -410,7 +383,6 @@ export function SceneContent({
             key={`orbit-group-${planet.bodyId}`}
             segments={masterTrajectorySegments[planet.bodyId] || []}
             fullOrbitData={fullOrbits[planet.bodyId]}
-            currentTime={currentTime}
           />
         );
       })}

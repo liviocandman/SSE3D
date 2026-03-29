@@ -12,16 +12,37 @@ import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 
+function ClockDisplay() {
+  const [timeStr, setTimeStr] = useState('');
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const updateTime = () => {
+      setTimeStr(format(useSolarStore.getState().currentTime, 'yyyy-MM-dd HH:mm'));
+    };
+    updateTime(); // Initial update
+    const interval = setInterval(updateTime, 500);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (!mounted) return <span className="font-mono text-sm tracking-wider">Loading...</span>;
+
+  return (
+    <span className="font-mono text-sm tracking-wider">
+      {timeStr}
+    </span>
+  );
+}
+
 export function TimeTravelControls() {
   const { 
     currentDate, 
-    currentTime,
     isPlaying, 
     setIsPlaying, 
     setCurrentDate
   } = useSolarStore(useShallow(s => ({
     currentDate: s.currentDate,
-    currentTime: s.currentTime,
     isPlaying: s.isPlaying,
     setIsPlaying: s.setIsPlaying,
     setCurrentDate: s.setCurrentDate,
@@ -58,9 +79,7 @@ export function TimeTravelControls() {
       <div className="glass-panel px-4 py-2 flex items-center gap-4 text-white/90 animate-in fade-in slide-in-from-bottom-4">
         <div className="flex items-center gap-2">
           <Calendar className="w-4 h-4 text-blue-400" />
-          <span className="font-mono text-sm tracking-wider">
-            {format(currentTime, 'yyyy-MM-dd HH:mm')}
-          </span>
+          <ClockDisplay />
         </div>
       </div>
 
