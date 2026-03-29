@@ -60,9 +60,10 @@ export function TrajectoryManager() {
   const loadingRef = useRef<Set<string>>(new Set());
   const frameCountRef = useRef(0);
   const lastFetchRef = useRef<string | null>(null);
+  const jumpAbortControllerRef = useRef<AbortController | null>(null);
 
   const fetchBlock = useCallback(
-    async (date: string, spanDays: number, specificIds?: string[]) => {
+    async (date: string, spanDays: number, specificIds?: string[], signal?: AbortSignal) => {
       const liveSelectedBodyId = useSolarStore.getState().selectedPlanet?.bodyId;
       const ids =
         specificIds && specificIds.length > 0
@@ -86,7 +87,7 @@ export function TrajectoryManager() {
           ids: ids.join(","),
         });
 
-        const response = await fetch(`/api/ephemeris?${params.toString()}`);
+        const response = await fetch(`/api/ephemeris?${params.toString()}`, { signal });
         if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
 
         const payload = await response.json();
@@ -95,10 +96,14 @@ export function TrajectoryManager() {
           `[TrajectoryManager] Block starting at ${date} appended successfully.`,
         );
       } catch (err) {
-        console.error(
-          `[TrajectoryManager] Failed to fetch block at ${date}:`,
-          err,
-        );
+        if (err instanceof Error && err.name === 'AbortError') {
+          console.log(`[TrajectoryManager] Fetch aborted for ${date}`);
+        } else {
+          console.error(
+            `[TrajectoryManager] Failed to fetch block at ${date}:`,
+            err,
+          );
+        }
       } finally {
         setTimeout(() => loadingRef.current.delete(blockCacheKey), 5000);
       }
@@ -111,30 +116,45 @@ export function TrajectoryManager() {
     // Only trigger if we haven't fetched this base date recently
     if (lastFetchRef.current === currentDate) return;
 
-    const bodyIds = buildFetchBodyIds(selectedPlanet?.bodyId);
-    const timeMs = currentTime.getTime();
-    const { fetchSpanDays } = getDynamicBufferParams();
+    // DEBOUNCE: Wait 300ms before firing a "jump" fetch to handle rapid scrubbing
+    const debounceTimeout = setTimeout(() => {
+      const bodyIds = buildFetchBodyIds(selectedPlanet?.bodyId);
+      const timeMs = currentTime.getTime();
+      const { fetchSpanDays } = getDynamicBufferParams();
 
-    const missingIds = bodyIds.filter((id) => {
-      const segments = masterTrajectorySegments[id] || [];
-      return !hasCoverageNearTime(segments, timeMs, COVERAGE_TOLERANCE_MS);
-    });
+      const missingIds = bodyIds.filter((id) => {
+        const segments = masterTrajectorySegments[id] || [];
+        return !hasCoverageNearTime(segments, timeMs, COVERAGE_TOLERANCE_MS);
+      });
 
-    if (missingIds.length > 0) {
-      const cacheKey = `jump_${currentDate}_${fetchSpanDays}_${missingIds.join(",")}`;
+      if (missingIds.length > 0) {
+        const cacheKey = `jump_${currentDate}_${fetchSpanDays}_${missingIds.join(",")}`;
 
-      if (!loadingRef.current.has(cacheKey)) {
-        loadingRef.current.add(cacheKey);
-        
-        console.log(
-          `[TrajectoryManager] Fetching missing data for ${missingIds.length} bodies at ${currentDate}`,
-        );
-        fetchBlock(currentDate, fetchSpanDays, missingIds);
-        lastFetchRef.current = currentDate;
+        if (!loadingRef.current.has(cacheKey)) {
+          // Cancel previous jump request if it's still in flight
+          if (jumpAbortControllerRef.current) {
+            jumpAbortControllerRef.current.abort();
+          }
+          jumpAbortControllerRef.current = new AbortController();
 
-        setTimeout(() => loadingRef.current.delete(cacheKey), 5000);
+          loadingRef.current.add(cacheKey);
+          
+          console.log(
+            `[TrajectoryManager] Fetching missing data for ${missingIds.length} bodies at ${currentDate}`,
+          );
+          fetchBlock(currentDate, fetchSpanDays, missingIds, jumpAbortControllerRef.current.signal);
+          lastFetchRef.current = currentDate;
+
+          setTimeout(() => loadingRef.current.delete(cacheKey), 5000);
+        }
       }
-    }
+    }, 300);
+
+    return () => {
+      clearTimeout(debounceTimeout);
+      // Optional: don't abort on every minor scrub if we want to keep some background noise, 
+      // but for "jump" (main data), aborting is safer to prioritize the latest target.
+    };
   }, [
     currentDate,
     currentTime,
