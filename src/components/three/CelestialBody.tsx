@@ -100,12 +100,13 @@ export function CelestialBody({
 
   // Dispose of material on unmount (geometry is shared)
   useEffect(() => {
+    const currentMesh = meshRef.current;
     return () => {
-      if (meshRef.current?.material) {
-        if (Array.isArray(meshRef.current.material)) {
-          meshRef.current.material.forEach(m => m.dispose());
+      if (currentMesh?.material) {
+        if (Array.isArray(currentMesh.material)) {
+          currentMesh.material.forEach(m => m.dispose());
         } else {
-          meshRef.current.material.dispose();
+          currentMesh.material.dispose();
         }
       }
     };

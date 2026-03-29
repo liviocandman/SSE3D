@@ -57,9 +57,9 @@ describe('useSolarStore', () => {
     
     const state = useSolarStore.getState();
     expect(state.currentDate).toBe('2026-04-01');
-    expect(state.currentTime.getFullYear()).toBe(2026);
-    expect(state.currentTime.getMonth()).toBe(3); // April is 3
-    expect(state.currentTime.getDate()).toBe(1);
+    expect(state.currentTime.getUTCFullYear()).toBe(2026);
+    expect(state.currentTime.getUTCMonth()).toBe(3); // April is 3
+    expect(state.currentTime.getUTCDate()).toBe(1);
   });
 
   it('should NOT update trajectoryBaseDate if moving forward within 25 days', () => {
@@ -92,14 +92,14 @@ describe('useSolarStore', () => {
     expect(state.trajectoryBaseDate).toBe('2026-03-20');
   });
 
-  it('should set currentTime to local midnight regardless of timezone', () => {
+  it('should set currentTime to UTC midnight regardless of timezone', () => {
     const { setCurrentDate } = useSolarStore.getState();
     
     setCurrentDate('2026-03-26');
     
     const state = useSolarStore.getState();
-    // In local time, hours should be 0
-    expect(state.currentTime.getHours()).toBe(0);
+    // In UTC, hours should be 0
+    expect(state.currentTime.getUTCHours()).toBe(0);
   });
 
   it('should keep at most 3 trajectory segments per body', () => {

@@ -322,7 +322,7 @@ export function SceneContent({
   return (
     <Canvas
       camera={CAMERA_CONFIG}
-      dpr={settings.devicePixelRatio}
+      dpr={[1, settings.devicePixelRatio]}
       gl={{
         antialias: settings.antialias,
         powerPreference: tier === 'low' ? 'low-power' : 'high-performance',

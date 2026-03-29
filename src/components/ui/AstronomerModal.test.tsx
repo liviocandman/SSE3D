@@ -3,6 +3,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { AstronomerModal } from './AstronomerModal';
 import type { SelectedPlanet } from '@/lib/types';
 
+// Mock scrollIntoView
+window.HTMLElement.prototype.scrollIntoView = vi.fn();
+
 // Mock dependencies
 vi.mock('lucide-react', () => ({
   X: () => <div data-testid="x-icon" />,

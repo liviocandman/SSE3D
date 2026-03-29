@@ -7,7 +7,7 @@ import { useAstronomer, AstronomerError } from '@/hooks/useAstronomer';
 import type { SelectedPlanet } from '@/lib/types';
 import { FavoriteButton } from './FavoriteButton';
 import { getSessionItem, setSessionItem, removeSessionItem } from '@/lib/sessionStorage';
-import { Trash2, X, RotateCcw, Send } from 'lucide-react';
+import { Trash2, X, Loader2, Send } from 'lucide-react';
 
 interface AstronomerModalProps {
   isOpen: boolean;
@@ -193,7 +193,7 @@ export function AstronomerModal({
               className="text-white/60 hover:text-white transition-colors text-sm"
               aria-label="Fechar"
             >
-              ✕
+              <X size={20} />
             </button>
           </div>
         </div>
@@ -234,8 +234,9 @@ export function AstronomerModal({
           ))}
 
           {isPending && (
-            <div className="rounded-xl px-4 py-3 text-sm text-white/60 bg-white/5 border border-white/10 animate-pulse self-start mr-12">
-              Gerando resposta...
+            <div className="rounded-xl px-4 py-3 text-sm text-white/60 bg-white/5 border border-white/10 flex items-center gap-2 self-start mr-12">
+              <Loader2 size={14} className="animate-spin" />
+              <span>Gerando resposta...</span>
             </div>
           )}
           <div ref={messagesEndRef} />
@@ -254,12 +255,13 @@ export function AstronomerModal({
           <button
             onClick={handleSend}
             disabled={!inputValue.trim() || isPending}
-            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${!inputValue.trim() || isPending
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${!inputValue.trim() || isPending
                 ? 'bg-white/10 text-white/40 cursor-not-allowed'
                 : 'bg-blue-500/30 text-blue-100 hover:bg-blue-500/40'
               }`}
           >
-            Enviar
+            {isPending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+            <span>Enviar</span>
           </button>
         </div>
       </div>

@@ -6,6 +6,7 @@ import { useSolarStore } from "@/store/solarStore";
 import { useShallow } from "zustand/react/shallow";
 import { PLANET_MOONS } from "@/lib/textureConfig";
 import { computeBufferPlan, hasCoverageNearTime } from "@/lib/trajectoryEngine";
+import { useTrajectoryWorker } from "@/hooks/useTrajectoryWorker";
 
 const COVERAGE_TOLERANCE_MS = 48 * 60 * 60 * 1000; // Increased to 48h to avoid flickering at segment boundaries
 const CORE_PLANET_IDS = [
@@ -57,6 +58,7 @@ export function TrajectoryManager() {
     })),
   );
 
+  const { fetchTrajectory } = useTrajectoryWorker();
   const loadingRef = useRef<Set<string>>(new Set());
   const frameCountRef = useRef(0);
   const lastFetchRef = useRef<string | null>(null);
@@ -77,26 +79,18 @@ export function TrajectoryManager() {
 
       loadingRef.current.add(blockCacheKey);
       console.log(
-        `[TrajectoryManager] Ghost Loading block starting at ${date} (span: ${spanDays}d) for ${ids.length} bodies...`,
+        `[TrajectoryManager] Worker-powered Loading block starting at ${date} (span: ${spanDays}d) for ${ids.length} bodies...`,
       );
 
       try {
-        const params = new URLSearchParams({
-          date,
-          spanDays: spanDays.toString(),
-          ids: ids.join(","),
-        });
-
-        const response = await fetch(`/api/ephemeris?${params.toString()}`, { signal });
-        if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
-
-        const payload = await response.json();
-        appendTrajectoryData(payload.data);
+        const data = await fetchTrajectory(date, spanDays, ids, signal);
+        appendTrajectoryData(data);
         console.log(
-          `[TrajectoryManager] Block starting at ${date} appended successfully.`,
+          `[TrajectoryManager] Block starting at ${date} processed by worker and appended successfully.`,
         );
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') {
+      } catch (err: unknown) {
+        const error = err as Error;
+        if (error.message === 'AbortError') {
           console.log(`[TrajectoryManager] Fetch aborted for ${date}`);
         } else {
           console.error(
@@ -108,7 +102,7 @@ export function TrajectoryManager() {
         setTimeout(() => loadingRef.current.delete(blockCacheKey), 5000);
       }
     },
-    [appendTrajectoryData],
+    [appendTrajectoryData, fetchTrajectory],
   );
 
   // 1. Initial / Jump Fetch - triggered ONLY when currentDate changes significantly

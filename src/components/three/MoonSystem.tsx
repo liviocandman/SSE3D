@@ -20,7 +20,6 @@ import {
   type BodyClass,
   type ViewMode,
 } from '@/lib/scales';
-import type { EphemerisTrajectory } from '@/lib/types';
 import { useSolarStore } from '@/store/solarStore';
 import { useShallow } from 'zustand/react/shallow';
 import { buildTrajectorySegment, sampleTrajectoryAtTime } from '@/lib/trajectoryEngine';
@@ -103,9 +102,10 @@ function MoonMesh({
 
   // Dispose of material on unmount (geometry is shared)
   useEffect(() => {
+    const currentMesh = meshRef.current;
     return () => {
-      if (meshRef.current?.material) {
-        (meshRef.current.material as THREE.Material).dispose();
+      if (currentMesh?.material) {
+        (currentMesh.material as THREE.Material).dispose();
       }
     };
   }, []);

@@ -14,6 +14,12 @@ interface DynamicTrailLineProps {
   graceMs?: number;
 }
 
+// @react-three/drei's Line uses a custom material/geometry. 
+// We cast the ref to a generic THREE.Mesh to access geometry and computeLineDistances.
+type LineMesh = THREE.Mesh<THREE.BufferGeometry, THREE.Material> & {
+  computeLineDistances: () => void;
+};
+
 export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
   samples,
   maxTrailPoints,
@@ -22,7 +28,7 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
   lineWidth = 1.5,
   graceMs = 12 * 60 * 60 * 1000,
 }) => {
-  const lineRef = useRef<any>(null);
+  const lineRef = useRef<LineMesh>(null);
   const baseColor = useMemo(() => new THREE.Color(color), [color]);
   const fadeColor = useMemo(() => new THREE.Color(0x000000), []);
 
@@ -89,19 +95,20 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
     }
 
     // Direct mutation without triggering React renders
-    // We update the geometry with the current segment of the trail
-    lineRef.current.geometry.setPositions(positions);
-    lineRef.current.geometry.setColors(colors);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const geometry = lineRef.current.geometry as any; // LineGeometry doesn't have public TS defs for setPositions
+    if (geometry.setPositions) {
+      geometry.setPositions(positions);
+      geometry.setColors(colors);
+    }
     
-    // Important: LineGeometry doesn't use setDrawRange in the same way as BufferGeometry
-    // but setPositions/setColors will update the internal buffers correctly.
-    // If the count changed, we might need to tell Three.js to re-evaluate the bounding box
     lineRef.current.computeLineDistances();
   });
 
   return (
     <Line
-      ref={lineRef}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ref={lineRef as any}
       points={initialPoints} 
       vertexColors={initialColors}
       transparent
