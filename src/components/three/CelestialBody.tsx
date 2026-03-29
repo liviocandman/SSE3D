@@ -11,6 +11,7 @@ import type { ViewMode } from "@/lib/scales";
 import { useSolarStore } from "@/store/solarStore";
 import type { EphemerisTrajectory } from "@/lib/types";
 import { buildTrajectorySegment, sampleTrajectoryAtTime } from "@/lib/trajectoryEngine";
+import { calculateAbsoluteRotation } from "@/lib/rotationUtils";
 
 // --- Types ---
 
@@ -23,6 +24,8 @@ interface CelestialBodyProps {
   radius: number;
   textureUrl: string;
   rotationSpeed?: number;
+  axialTilt?: number;
+  dayLength?: number;
   segments?: number;
   onClick?: (bodyId: string) => void;
   onDoubleClick?: (bodyId: string) => void;
@@ -47,7 +50,9 @@ export function CelestialBody({
   trajectory,
   radius,
   textureUrl,
-  rotationSpeed = DEFAULT_ROTATION_SPEED,
+  rotationSpeed,
+  axialTilt = 0,
+  dayLength,
   segments = 64,
   onClick,
   onDoubleClick,
@@ -56,7 +61,7 @@ export function CelestialBody({
 }: CelestialBodyProps) {
   const meshRef = useRef<Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
-  
+
   // Use useLoader directly to have access to useLoader.clear() for global cache cleanup
   const texture = useLoader(TextureLoader, textureUrl, (loader) => {
     loader.setCrossOrigin("anonymous");
@@ -67,6 +72,7 @@ export function CelestialBody({
   const { camera } = useThree();
 
   const tempVec = useRef(new THREE.Vector3());
+  const isInitializedRef = useRef(false);
   const frameCountRef = useRef(0);
   const fallbackSegments = useMemo(() => {
     if (!trajectory || trajectory.length === 0) return [];
@@ -92,12 +98,10 @@ export function CelestialBody({
   }, []);
 
   // Animation loop
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     const solarState = useSolarStore.getState();
     const simTime = solarState.currentTime.getTime();
-    const isPlaying = solarState.isPlaying;
-    const timeMultiplier = solarState.timeMultiplier;
-    
+
     // Read segment-aware trajectory first; fallback to initial prop data.
     const segments = solarState.masterTrajectorySegments[bodyId] || fallbackSegments;
 
@@ -107,17 +111,48 @@ export function CelestialBody({
       const sampled = sampleTrajectoryAtTime(segments, simTime);
       if (sampled) {
         const { x, y, z } = sampled.position;
-        groupRef.current.position.set(
-          x * SCALE,
-          y * SCALE,
-          z * SCALE
-        );
+        const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);
+
+        if (!isInitializedRef.current) {
+          // Snap to first valid position to avoid flying from origin
+          groupRef.current.position.copy(targetPos);
+          isInitializedRef.current = true;
+        } else {
+          // Use frame-rate independent LERP (approx 0.1 at 60fps)
+          const lerpFactor = 1 - Math.exp(-6 * delta);
+          groupRef.current.position.lerp(targetPos, lerpFactor);
+        }
       }
+    } else if (groupRef.current && !isInitializedRef.current) {
+      // Fallback: use static prop position once if no trajectory is ready
+      groupRef.current.position.set(...initialPosition);
+      isInitializedRef.current = true;
     }
 
-    // 2. Planet rotation (Time-scaled axial rotation)
+    // 2. Planet rotation (Absolute orientation + Optional didactic spin)
     if (meshRef.current) {
-      meshRef.current.rotation.y += rotationSpeed * 60 * delta * (isPlaying ? timeMultiplier : 1);
+      if (viewMode === "realistic" && dayLength !== undefined) {
+        // Realistic mode: strictly physical orientation based on timestamp
+        meshRef.current.rotation.y = calculateAbsoluteRotation(dayLength, simTime);
+      } else {
+        // Didactic mode: absolute orientation (boosted) + real-time spin
+        // This ensures the planet "jumps" correctly during time travel
+        // but still feels "alive" when simulation is paused.
+
+        // 1. Physical base rotation (from dayLength, slightly boosted for visibility)
+        const baseRotation = dayLength !== undefined
+          ? calculateAbsoluteRotation(dayLength, simTime)
+          : 0;
+
+        // 2. Visual "didactic" spin (constant rotation for feedback)
+        // Uses state.clock.elapsedTime (real world time)
+        const direction = (dayLength !== undefined && dayLength < 0) ? -1 : 1;
+        const speed = rotationSpeed ?? DEFAULT_ROTATION_SPEED;
+        const visualSpin = state.clock.elapsedTime * speed * 60 * direction;
+
+        // Combine them
+        meshRef.current.rotation.y = baseRotation + visualSpin;
+      }
     }
 
     // 3. Throttled calculations for UI/Labels
@@ -181,7 +216,7 @@ export function CelestialBody({
   const labelAnchorY = isHovered ? "bottom" : "top";
 
   return (
-    <group name={englishName} ref={groupRef} position={initialPosition}>
+    <group name={englishName} ref={groupRef}>
       {/* Invisible hitbox for interaction - always large enough to click */}
       <mesh
         onClick={handleClick}
@@ -194,21 +229,25 @@ export function CelestialBody({
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {/* Visible planet mesh */}
-      <mesh
-        ref={meshRef}
-        onClick={handleClick}
-        onDoubleClick={handleDoubleClick}
-        onPointerEnter={() => setIsHovered(true)}
-        onPointerLeave={() => setIsHovered(false)}
-      >
-        <sphereGeometry args={[radius, segments, segments]} />
-        <meshStandardMaterial
-          map={texture}
-          emissive={0x333333}
-          emissiveIntensity={0.05}
-        />
-      </mesh>
+      {/* Axial Tilt Pivot Group */}
+      <group rotation={[0, 0, THREE.MathUtils.degToRad(axialTilt)]}>
+        {/* Visible planet mesh */}
+        <mesh
+          ref={meshRef}
+          onClick={handleClick}
+          onDoubleClick={handleDoubleClick}
+          onPointerEnter={() => setIsHovered(true)}
+          onPointerLeave={() => setIsHovered(false)}
+        >
+          <sphereGeometry args={[radius, segments, segments]} />
+          <meshStandardMaterial
+            map={texture}
+            emissive={0x333333}
+            emissiveIntensity={0.05}
+          />
+        </mesh>
+        {/* Future Rings will go here to stay tilted with planet */}
+      </group>
 
       {/* Hover Ring - white elliptical border around planet */}
       {isHovered && (

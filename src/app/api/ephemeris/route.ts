@@ -12,13 +12,14 @@ export async function GET(request: NextRequest) {
   const force = searchParams.get('force') === 'true';
   const idsParam = searchParams.get('ids');
   const centerBody = searchParams.get('center_body') ?? '10';
+  const fullOrbit = searchParams.get('fullOrbit') === 'true';
   
   const bodyIds = idsParam 
     ? idsParam.split(',').map(id => id.trim()) 
     : ALL_PLANET_IDS;
 
-  // Include spanDays in the cache key to match backend strategy and avoid collisions
-  const cacheKeyDate = `${date}_${spanDays}`;
+  // Include spanDays and fullOrbit in the cache key
+  const cacheKeyDate = fullOrbit ? 'FULL_ORBIT' : `${date}_${spanDays}`;
 
   if (!force) {
     const cacheResult = await getCachedBulkEphemeris(bodyIds, cacheKeyDate, centerBody);
@@ -39,9 +40,10 @@ export async function GET(request: NextRequest) {
   const idsQuery = idsParam ? `&ids=${idsParam}` : '';
   const forceQuery = force ? '&force=true' : '';
   const centerQuery = centerBody !== '10' ? `&center_body=${centerBody}` : '';
+  const fullOrbitQuery = fullOrbit ? '&fullOrbit=true' : '';
   const spanQuery = `&spanDays=${spanDays}`;
   const pythonUrl = process.env.PYTHON_API_URL || API_BASE_URL;
-  const apiUrl = `${pythonUrl}/api/ephemeris?date=${date}${idsQuery}${centerQuery}${forceQuery}${spanQuery}`;
+  const apiUrl = `${pythonUrl}/api/ephemeris?date=${date}${idsQuery}${centerQuery}${forceQuery}${spanQuery}${fullOrbitQuery}`;
 
   try {
     const response = await fetch(apiUrl, { next: { revalidate: 0 } });
