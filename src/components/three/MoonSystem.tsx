@@ -56,11 +56,13 @@ interface MoonMeshProps {
 // ---------------------------------------------------------------------------
 
 const AU_TO_KM = 149_597_870.7;
-
-function resolveTextureTier(tier: string): TextureTier {
-  if (tier === 'low' || tier === 'high') return tier;
-  return 'mid';
-}
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FALLBACK_SPAN_DAYS = 30;
+const MIN_CLOSED_ORBIT_COVERAGE = 0.9;
+const MIN_FAST_MOON_ORBIT_POINTS = 8;
+const MIN_SMOOTHING_POINTS = 6;
+const MIN_CURVE_SAMPLES = 128;
+const MAX_CURVE_SAMPLES = 256;
 
 // Global singleton to prevent recreating workers and to avoid React Suspense
 let globalKtx2Loader: KTX2Loader | null = null;
@@ -71,6 +73,47 @@ function getKtx2Loader(gl: THREE.WebGLRenderer) {
     globalKtx2Loader.detectSupport(gl);
   }
   return globalKtx2Loader;
+}
+
+function parseUtcTimestampMs(timestamp: string): number {
+  if (!timestamp) return Number.NaN;
+  const utcString = timestamp.includes('Z') ? timestamp : `${timestamp}Z`;
+  return new Date(utcString).getTime();
+}
+
+function getTrajectorySpanDays(
+  trajectory: Array<{ timestamp: string }>,
+): number {
+  if (trajectory.length < 2) return 0;
+
+  const startMs = parseUtcTimestampMs(trajectory[0].timestamp);
+  const endMs = parseUtcTimestampMs(trajectory[trajectory.length - 1].timestamp);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return 0;
+  }
+
+  return (endMs - startMs) / DAY_MS;
+}
+
+function estimateMeanRadius(points: THREE.Vector3[]): number {
+  if (points.length === 0) return 0;
+
+  const center = new THREE.Vector3();
+  for (const point of points) {
+    center.add(point);
+  }
+  center.divideScalar(points.length);
+
+  let radiusSum = 0;
+  for (const point of points) {
+    radiusSum += point.distanceTo(center);
+  }
+  return radiusSum / points.length;
+}
+
+function resolveTextureTier(tier: string): TextureTier {
+  if (tier === 'low' || tier === 'high') return tier;
+  return 'mid';
 }
 
 // ---------------------------------------------------------------------------
@@ -101,7 +144,7 @@ function MoonMesh({
 
   // Subscribe only to this specific moon's trajectory
   const masterSegments = useSolarStore(useShallow(state => state.masterTrajectorySegments[bodyId] || []));
-  
+
   // Load texture asynchronously
   useEffect(() => {
     const loader = getKtx2Loader(gl);
@@ -129,16 +172,16 @@ function MoonMesh({
     if (groupRef.current && masterSegments.length > 0) {
       const SCALE = (1 / 1_000_000) * orbitScale;
       const sampled = sampleTrajectoryAtTime(masterSegments, simTime);
-      
+
       if (sampled) {
         const { x, y, z } = sampled.position;
         const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);
-        
+
         if (!isInitializedRef.current) {
           groupRef.current.position.copy(targetPos);
           isInitializedRef.current = true;
         } else {
-          groupRef.current.position.lerp(targetPos, 1 - Math.exp(-10 * delta)); 
+          groupRef.current.position.lerp(targetPos, 1 - Math.exp(-10 * delta));
         }
       }
     }
@@ -258,7 +301,7 @@ export function MoonSystem({
     <group position={parentPosition}>
       {/* 1. Orbit Lines */}
       {moonIds.map((moonId) => {
-        return <MoonOrbitLine 
+        return <MoonOrbitLine
           key={`orbit-${moonId}`}
           moonId={moonId}
           parentId={parentId}
@@ -281,9 +324,9 @@ export function MoonSystem({
 
         const moonRadius = getRadius(moonId, 'MOON', viewMode);
         const moonTrajectory = useSolarStore.getState().masterTrajectory[moonId];
-        
-        const currentPos = moonTrajectory && moonTrajectory.length > 0 
-          ? moonTrajectory[0].position 
+
+        const currentPos = moonTrajectory && moonTrajectory.length > 0
+          ? moonTrajectory[0].position
           : { x: 0, y: 0, z: 0 };
 
         const baseWorldParentPos = worldParentPosition || parentPosition;
@@ -300,7 +343,7 @@ export function MoonSystem({
           name: config.name,
           englishName: config.englishName,
           position: currentPos,
-          velocity: moonTrajectory && moonTrajectory.length > 0 ? moonTrajectory[0].velocity : { x: 0, y: 0, z: 0 }, 
+          velocity: moonTrajectory && moonTrajectory.length > 0 ? moonTrajectory[0].velocity : { x: 0, y: 0, z: 0 },
           trajectory: moonTrajectory || [],
           radius: moonRadius,
           distanceFromSun: 0,
@@ -339,61 +382,84 @@ export function MoonSystem({
 }
 
 function MoonOrbitLine({ moonId, parentId, parentClass, viewMode }: { moonId: string, parentId: string, parentClass: BodyClass, viewMode: ViewMode }) {
-  const moonTrajectory = useSolarStore(useShallow(s => s.masterTrajectory[moonId]));
+  const moonTrajectory = useSolarStore(useShallow((s) => s.masterTrajectory[moonId]));
   const config = getPlanetConfig(moonId);
 
-  // Sem dados da NASA? Não desenha a linha (a transição de 20ms que criámos)
+  // No trajectory data yet: skip rendering until data arrives.
   if (!config || !moonTrajectory || moonTrajectory.length < 2) return null;
 
   const orbitScale = getMoonOrbitScale(parentId, parentClass, config.meanDistanceAU * AU_TO_KM, viewMode);
   const SCALE = (1 / 1_000_000) * orbitScale;
 
-  // 1. A Matemática da Fração
-  const trajectorySpanDays = 30; // O Backend devolve blocos de 30 dias
-  const orbitalPeriodDays = config.orbitalPeriod || 30;
-  
-  // Quantas voltas esta lua dá em 30 dias?
-  const orbitsInSpan = trajectorySpanDays / orbitalPeriodDays;
-  
+  // Compute orbit coverage from real timestamps instead of assuming a fixed 30-day window.
+  const observedSpanDays = getTrajectorySpanDays(moonTrajectory);
+  const orbitalPeriodDays = Math.max(config.orbitalPeriod || FALLBACK_SPAN_DAYS, 1e-6);
+  const spanDays = observedSpanDays > 0 ? observedSpanDays : FALLBACK_SPAN_DAYS;
+  const orbitsInSpan = spanDays / orbitalPeriodDays;
+
   let pointsToTake = moonTrajectory.length;
   let isClosed = false;
 
-  if (orbitsInSpan >= 1.0) {
-    // A lua completa pelo menos 1 volta. 
-    // Pegamos EXATAMENTE os pontos de 1 volta (100%), sem excessos.
-    const orbitFraction = 1 / orbitsInSpan;
-    pointsToTake = Math.ceil(moonTrajectory.length * orbitFraction);
-    
-    // Como temos dados suficientes, fechamos o anel no Three.js
-    isClosed = true; 
+  if (orbitsInSpan >= MIN_CLOSED_ORBIT_COVERAGE) {
+    // For full/near-full coverage, draw a closed loop.
+    isClosed = true;
+
+    // Keep approximately one revolution, but never below a minimum point budget.
+    const desiredPointsPerOrbit = Math.ceil(moonTrajectory.length / Math.max(orbitsInSpan, 1));
+    const minOrbitPoints = Math.min(moonTrajectory.length, MIN_FAST_MOON_ORBIT_POINTS);
+    pointsToTake = Math.min(
+      moonTrajectory.length,
+      Math.max(desiredPointsPerOrbit, minOrbitPoints),
+    );
   } else {
-    // A lua é muito lenta (ex: Iapetus demora 79 dias).
-    // Vai desenhar apenas o arco parcial dos 30 dias que temos na RAM.
-    isClosed = false; 
+    // Slow moons with partial coverage remain open arcs.
+    isClosed = false;
   }
 
   const rawPoints: THREE.Vector3[] = [];
   for (let i = 0; i < pointsToTake; i++) {
     const t = moonTrajectory[i];
     const p = new THREE.Vector3(t.position.x * SCALE, t.position.y * SCALE, t.position.z * SCALE);
-    
-    // ESCUDO DE COORDENADAS: Evita colisões de cálculo na GPU
+
+    // Coordinate safety filter for GPU stability.
     if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) continue;
-    if (rawPoints.length > 0 && p.distanceToSquared(rawPoints[rawPoints.length - 1]) < 0.000001) continue;
-    
+    if (rawPoints.length > 0 && p.distanceToSquared(rawPoints[rawPoints.length - 1]) < 1e-10) continue;
+
     rawPoints.push(p);
   }
 
-  // 2. SUAVIZAÇÃO ALGORÍTMICA (O fim dos nós)
+  // If closure gap is too large relative to orbit radius, keep it open to avoid "spider web" artifacts.
+  if (isClosed && rawPoints.length >= 3) {
+    const first = rawPoints[0];
+    const last = rawPoints[rawPoints.length - 1];
+    const closureGap = first.distanceTo(last);
+    const meanRadius = estimateMeanRadius(rawPoints);
+    if (meanRadius > 0 && closureGap > meanRadius * 0.75) {
+      isClosed = false;
+    }
+  }
+
+  // Smooth orbit lines when enough points exist.
   let finalPoints = rawPoints;
-  // Segurança: CatmullRom precisa de pelo menos 2 pontos (linha) ou 4 pontos (Spline fechada)
-  if (rawPoints.length >= 4) {
+  if (rawPoints.length >= MIN_SMOOTHING_POINTS) {
     try {
       const curve = new THREE.CatmullRomCurve3(rawPoints, isClosed);
-      // Mantemos a alta definição. 256 pontos é barato para GPU e resolve luas grandes.
-      finalPoints = curve.getPoints(256); 
+      const sampleCount = Math.min(
+        MAX_CURVE_SAMPLES,
+        Math.max(MIN_CURVE_SAMPLES, rawPoints.length * 24),
+      );
+      finalPoints = curve.getPoints(sampleCount);
     } catch {
       console.warn(`[MoonOrbitLine] Curve generation failed for ${moonId}, using raw points.`);
+    }
+  }
+
+  // Ensure closed loops are explicitly closed when Catmull-Rom is not used.
+  if (isClosed && finalPoints.length >= 2) {
+    const first = finalPoints[0];
+    const last = finalPoints[finalPoints.length - 1];
+    if (first.distanceToSquared(last) > 1e-12) {
+      finalPoints = [...finalPoints, first.clone()];
     }
   }
 
