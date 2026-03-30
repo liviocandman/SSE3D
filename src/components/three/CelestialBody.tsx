@@ -47,7 +47,7 @@ import { SPHERE_HIGH, SPHERE_MID, SPHERE_LOW, HITBOX_SPHERE } from '@/lib/geomet
 // --- Shared Resources (Static) ---
 // (Removed localized constants as they are now in geometryPool)
 
-// --- Component ---
+import { SingletonKTX2Loader, getSharedKTX2Loader } from "@/lib/SingletonKTX2Loader";
 
 export function CelestialBody({
   englishName,
@@ -70,9 +70,8 @@ export function CelestialBody({
   const gl = useThree((state) => state.gl);
 
   // KTX2 VRAM Optimized Loader
-  const texture = useLoader(KTX2Loader, textureUrl, (loader) => {
-    loader.detectSupport(gl);
-    loader.setTranscoderPath('/basis/');
+  const texture = useLoader(SingletonKTX2Loader as any, textureUrl, () => {
+    getSharedKTX2Loader(gl);
   });
 
   const [fontSize, setFontSize] = useState(5);

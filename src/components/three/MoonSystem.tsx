@@ -3,8 +3,8 @@
 import { useRef, useState, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
-import { KTX2Loader } from 'three-stdlib';
 import * as THREE from 'three';
+import { getSharedKTX2Loader } from '@/lib/SingletonKTX2Loader';
 import TrailLine from './TrailLine';
 
 import {
@@ -65,15 +65,7 @@ const MIN_CURVE_SAMPLES = 128;
 const MAX_CURVE_SAMPLES = 256;
 
 // Global singleton to prevent recreating workers and to avoid React Suspense
-let globalKtx2Loader: KTX2Loader | null = null;
-function getKtx2Loader(gl: THREE.WebGLRenderer) {
-  if (!globalKtx2Loader) {
-    globalKtx2Loader = new KTX2Loader();
-    globalKtx2Loader.setTranscoderPath('/basis/');
-    globalKtx2Loader.detectSupport(gl);
-  }
-  return globalKtx2Loader;
-}
+// (Removed local globalKtx2Loader and getKtx2Loader, now using getSharedKTX2Loader)
 
 function parseUtcTimestampMs(timestamp: string): number {
   if (!timestamp) return Number.NaN;
@@ -147,7 +139,7 @@ function MoonMesh({
 
   // Load texture asynchronously
   useEffect(() => {
-    const loader = getKtx2Loader(gl);
+    const loader = getSharedKTX2Loader(gl);
     loader.loadAsync(textureUrl)
       .then(setTexture)
       .catch((err) => console.error(`Failed to load moon texture: ${textureUrl}`, err));

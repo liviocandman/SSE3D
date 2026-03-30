@@ -3,10 +3,11 @@
 import { useRef } from 'react';
 import { useFrame, useThree, useLoader } from '@react-three/fiber';
 import * as THREE from 'three';
-import { KTX2Loader } from 'three-stdlib';
+import { SingletonKTX2Loader, getSharedKTX2Loader } from '@/lib/SingletonKTX2Loader';
 import { getRadius, ViewMode } from '@/lib/scales';
 import { getTexturePath, TextureTier } from '@/lib/textureConfig';
 import { useQualityTier } from '@/contexts/QualityTierContext';
+import { SPHERE_HIGH } from '@/lib/geometryPool';
 
 interface SunProps {
   lightIntensity?: number;
@@ -15,11 +16,6 @@ interface SunProps {
 
 const SUN_BODY_ID = '10';
 const DEFAULT_LIGHT_INTENSITY = 2.5;
-
-import { SPHERE_HIGH } from '@/lib/geometryPool';
-
-// --- Shared Resources (Static) ---
-// (Removed localized constant as it is now in geometryPool)
 
 export function Sun({
   lightIntensity = DEFAULT_LIGHT_INTENSITY,
@@ -32,9 +28,8 @@ export function Sun({
 
   // Carregar Textura do Sol (KTX2 Optimized)
   const texturePath = getTexturePath(SUN_BODY_ID, tier as TextureTier);
-  const sunTexture = useLoader(KTX2Loader, texturePath, (loader) => {
-    loader.detectSupport(gl);
-    loader.setTranscoderPath('/basis/');
+  const sunTexture = useLoader(SingletonKTX2Loader as any, texturePath, () => {
+    getSharedKTX2Loader(gl);
   });
 
   // Tamanhos de referência
