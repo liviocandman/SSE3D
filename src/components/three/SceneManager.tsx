@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, ReactNode, useRef, useMemo, useEffect } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Stars } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import { QualityTierProvider, useQualityTier } from '@/contexts/QualityTierContext';
@@ -90,6 +90,26 @@ const CAMERA_CONFIG = {
 };
 
 const SUN_BODY_ID = '10';
+
+function CameraDepthOptimizer() {
+  const { camera } = useThree();
+  const viewMode = useSolarStore(state => state.viewMode);
+
+  useEffect(() => {
+    if (viewMode === 'didactic') {
+      // In didactic mode, objects are large (inflated). 
+      // A slightly higher near plane significantly improves depth buffer precision
+      // for large spheres, fixing the "see-through" and flickering glitches.
+      camera.near = 0.005;
+    } else {
+      // In realistic mode, restore the tiny near plane for small moons.
+      camera.near = 0.00001;
+    }
+    camera.updateProjectionMatrix();
+  }, [viewMode, camera]);
+
+  return null;
+}
 
 const SEGMENTS_BY_TIER: Record<string, number> = {
   high: 64,
@@ -331,6 +351,7 @@ export function SceneContent({
       }}
     >
       <ambientLight intensity={0.25} color="#b0b0b0" />
+      <CameraDepthOptimizer />
       <GlobalTimeController />
       <TrajectoryManager />
 

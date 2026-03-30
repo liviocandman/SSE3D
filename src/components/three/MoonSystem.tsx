@@ -1,10 +1,10 @@
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
-import { useFrame, useThree } from '@react-three/fiber';
+import { useRef, useState, useEffect, Suspense } from 'react';
+import { useFrame, useThree, useLoader } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import * as THREE from 'three';
-import { getSharedKTX2Loader } from '@/lib/SingletonKTX2Loader';
+import { SingletonKTX2Loader, getSharedKTX2Loader } from '@/lib/SingletonKTX2Loader';
 import TrailLine from './TrailLine';
 
 import {
@@ -131,19 +131,23 @@ function MoonMesh({
   const [isHovered, setIsHovered] = useState(false);
   const tempVec = useRef(new THREE.Vector3());
 
-  // Non-suspending texture state
-  const [texture, setTexture] = useState<THREE.Texture | null>(null);
+  // Use idiomatic useLoader with the singleton.
+  // This will suspend MoonMesh until the texture is loaded.
+  // We wrap MoonMesh in a Suspense component in the MoonSystem to avoid blocking the scene.
+  const texture = useLoader(SingletonKTX2Loader as any, textureUrl, () => {
+    getSharedKTX2Loader(gl);
+  });
+
+  // Correct color space for SRGB textures loaded via KTX2
+  useEffect(() => {
+    if (texture) {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.needsUpdate = true;
+    }
+  }, [texture]);
 
   // Subscribe only to this specific moon's trajectory
   const masterSegments = useSolarStore(useShallow(state => state.masterTrajectorySegments[bodyId] || []));
-
-  // Load texture asynchronously
-  useEffect(() => {
-    const loader = getSharedKTX2Loader(gl);
-    loader.loadAsync(textureUrl)
-      .then(setTexture)
-      .catch((err) => console.error(`Failed to load moon texture: ${textureUrl}`, err));
-  }, [textureUrl, gl]);
 
   // Dispose of material on unmount
   useEffect(() => {
@@ -221,9 +225,11 @@ function MoonMesh({
       </mesh>
 
       <mesh ref={meshRef} {...events} geometry={SPHERE_MID} scale={currentRadius} dispose={null}>
-        <meshLambertMaterial
+        <meshStandardMaterial
           map={texture || null}
-          color={texture ? '#ffffff' : fallbackColor}
+          color="#ffffff"
+          emissive={texture ? 0x000000 : fallbackColor}
+          emissiveIntensity={texture ? 0 : 0.5}
           transparent={isDataLoading}
           opacity={isDataLoading ? 0 : 1}
         />
@@ -354,19 +360,20 @@ export function MoonSystem({
         };
 
         return (
-          <MoonMesh
-            key={`moon-mesh-${moonId}`}
-            bodyId={moonId}
-            name={config.englishName}
-            orbitScale={orbitScale}
-            radius={moonRadius}
-            textureUrl={getTexturePath(moonId, textureTier)}
-            rotationSpeed={config.rotationSpeed || 0.005}
-            fallbackColor={config.fallbackColor || '#888888'}
-            viewMode={viewMode}
-            onClick={handleMoonClick}
-            onDoubleClick={handleMoonDoubleClick}
-          />
+          <Suspense key={`moon-suspense-${moonId}`} fallback={null}>
+            <MoonMesh
+              bodyId={moonId}
+              name={config.englishName}
+              orbitScale={orbitScale}
+              radius={moonRadius}
+              textureUrl={getTexturePath(moonId, textureTier)}
+              rotationSpeed={config.rotationSpeed || 0.005}
+              fallbackColor={config.fallbackColor || '#888888'}
+              viewMode={viewMode}
+              onClick={handleMoonClick}
+              onDoubleClick={handleMoonDoubleClick}
+            />
+          </Suspense>
         );
       })}
     </group>
