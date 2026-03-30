@@ -20,6 +20,7 @@ interface SolarState {
   timeMultiplier: number; // 1 = 1 day per real-world second (standard)
   isPlaying: boolean;
   selectedPlanet: SelectedPlanet | null;
+  hoveredPlanetId: string | null;
   viewMode: ViewMode;
   travelTarget: TravelTarget | null;
   travelTargetRadius?: number;
@@ -40,6 +41,7 @@ interface SolarState {
   setIsPlaying: (playing: boolean) => void;
   advanceTime: (deltaSeconds: number) => void;
   setSelectedPlanet: (planet: SelectedPlanet | null) => void;
+  setHoveredPlanetId: (id: string | null) => void;
   appendTrajectoryData: (data: EphemerisData[]) => void;
   appendFullOrbits: (data: EphemerisData[]) => void;
   setViewMode: (mode: ViewMode) => void;
@@ -74,6 +76,7 @@ export const useSolarStore = create<SolarState>((set) => ({
   timeMultiplier: 1.0,
   isPlaying: false,
   selectedPlanet: null,
+  hoveredPlanetId: null,
   viewMode: 'didactic',
   travelTarget: null,
   travelTargetRadius: undefined,
@@ -163,6 +166,7 @@ export const useSolarStore = create<SolarState>((set) => ({
     }),
 
   setSelectedPlanet: (planet) => set(() => ({ selectedPlanet: planet })),
+  setHoveredPlanetId: (id) => set(() => ({ hoveredPlanetId: id })),
   setViewMode: (mode) => set(() => ({ viewMode: mode })),
   toggleViewMode: () =>
     set((state) => ({ viewMode: state.viewMode === 'didactic' ? 'realistic' : 'didactic' })),

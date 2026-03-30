@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useFrame, useThree, ThreeEvent, useLoader } from "@react-three/fiber";
+import { useFrame, useThree, useLoader } from "@react-three/fiber";
 import { Text, Billboard } from "@react-three/drei";
 import { KTX2Loader } from "three-stdlib";
 import type { Mesh } from "three";
@@ -82,6 +82,9 @@ export function CelestialBody({
   const tempVec = useRef(new THREE.Vector3());
   const isInitializedRef = useRef(false);
   const frameCountRef = useRef(0);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const setHoveredPlanetId = useSolarStore(state => state.setHoveredPlanetId);
 
   // Selective subscription to this specific planet's segments
   const masterSegments = useSolarStore(useShallow(state => state.masterTrajectorySegments[bodyId] || []));
@@ -197,15 +200,29 @@ export function CelestialBody({
   });
 
   // Click handler - show info only (no travel)
-  const handleClick = (event: ThreeEvent<MouseEvent>) => {
-    event.stopPropagation();
+  const handleClick = () => {
     onClick?.(bodyId);
   };
 
   // Double-click handler - travel to planet
-  const handleDoubleClick = (event: ThreeEvent<MouseEvent>) => {
-    event.stopPropagation();
+  const handleDoubleClick = () => {
     onDoubleClick?.(bodyId);
+  };
+
+  const handlePointerEnter = () => {
+    setIsHovered(true);
+    // Micro-debounce to prevent 'mouse sweep' spam
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredPlanetId(bodyId);
+    }, 100);
+  };
+
+  const handlePointerLeave = () => {
+    setIsHovered(false);
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    setHoveredPlanetId(null);
   };
 
   // In realistic mode, planets are very small - use a minimum hitbox size for interaction
@@ -230,8 +247,8 @@ export function CelestialBody({
       <mesh
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
-        onPointerEnter={() => setIsHovered(true)}
-        onPointerLeave={() => setIsHovered(false)}
+        onPointerEnter={handlePointerEnter}
+        onPointerLeave={handlePointerLeave}
         renderOrder={-1}
         geometry={HITBOX_SPHERE}
         scale={hitboxRadius}
@@ -247,8 +264,8 @@ export function CelestialBody({
           ref={meshRef}
           onClick={handleClick}
           onDoubleClick={handleDoubleClick}
-          onPointerEnter={() => setIsHovered(true)}
-          onPointerLeave={() => setIsHovered(false)}
+          onPointerEnter={handlePointerEnter}
+          onPointerLeave={handlePointerLeave}
           geometry={sharedGeometry}
           scale={radius}
           dispose={null}

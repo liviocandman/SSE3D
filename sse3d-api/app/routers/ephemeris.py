@@ -71,72 +71,78 @@ async def get_ephemeris(
     full_orbit: bool = Query(default=False, alias="fullOrbit"),
     force: bool = Query(default=False),
 ):
-    actual_date = target_date if target_date else date.today()
-    
-    # Coarsen date for normal trajectories to 3-day blocks. 
-    # This dramatically increases cache hits during timeline scrubbing.
-    if not full_orbit:
-        days_since_epoch = (actual_date - date(2000, 1, 1)).days
-        rounded_days = (days_since_epoch // 3) * 3
-        actual_date = date(2000, 1, 1) + timedelta(days=rounded_days)
+    try:
+        actual_date = target_date if target_date else date.today()
+        
+        # Coarsen date for normal trajectories to 3-day blocks. 
+        # This dramatically increases cache hits during timeline scrubbing.
+        if not full_orbit:
+            days_since_epoch = (actual_date - date(2000, 1, 1)).days
+            rounded_days = (days_since_epoch // 3) * 3
+            actual_date = date(2000, 1, 1) + timedelta(days=rounded_days)
 
-    date_str = actual_date.isoformat()
-    body_ids = [i.strip() for i in ids.split(",")] if ids else ALL_BODY_IDS
+        date_str = actual_date.isoformat()
+        body_ids = [i.strip() for i in ids.split(",")] if ids else ALL_BODY_IDS
 
-    # Separate moons and planets
-    moon_ids = [bid for bid in body_ids if bid in MOON_PARENTS]
-    planet_ids = [bid for bid in body_ids if bid not in MOON_PARENTS]
+        # Separate moons and planets
+        moon_ids = [bid for bid in body_ids if bid in MOON_PARENTS]
+        planet_ids = [bid for bid in body_ids if bid not in MOON_PARENTS]
 
-    cached = []
-    missing_planets = planet_ids
+        cached = []
+        missing_planets = planet_ids
 
-    # Handle Planets
-    if not force and planet_ids:
-        # Full orbits use a static cache key independent of the target date
-        cache_key = "FULL_ORBIT" if full_orbit else f"{date_str}_{span_days}"
-        cached_planets, missing_planets = await get_bulk_cached(planet_ids, cache_key, center=center_body)
-        cached.extend(cached_planets)
+        # Handle Planets
+        if not force and planet_ids:
+            # Full orbits use a static cache key independent of the target date
+            cache_key = "FULL_ORBIT" if full_orbit else f"{date_str}_{span_days}"
+            cached_planets, missing_planets = await get_bulk_cached(planet_ids, cache_key, center=center_body)
+            cached.extend(cached_planets)
 
-    # Handle Moons
-    if moon_ids:
-        moon_tasks = [process_moon_request(mid, actual_date, span_days) for mid in moon_ids]
-        moon_results = await asyncio.gather(*moon_tasks)
-        for res in moon_results:
-            if res:
-                cached.append(res)
+        # Handle Moons
+        if moon_ids:
+            moon_tasks = [process_moon_request(mid, actual_date, span_days) for mid in moon_ids]
+            moon_results = await asyncio.gather(*moon_tasks)
+            for res in moon_results:
+                if res:
+                    cached.append(res)
 
-    if not missing_planets:
+        if not missing_planets:
+            return EphemerisResponse(
+                data=cached,
+                meta=EphemerisMeta(
+                    source="CACHE_HIT",
+                    timestamp=date.today().isoformat(),
+                    requested_date=date_str,
+                    cache_hits=len(cached),
+                    cache_misses=0,
+                ),
+            )
+
+        fresh = await fetch_all_parallel(missing_planets, date_str, center_body=center_body, span_days=span_days, full_orbit=full_orbit)
+
+        fetched_ids = {item.body_id for item in fresh}
+        for bid in missing_planets:
+            if bid not in fetched_ids:
+                fallback_item = load_fallback(bid)
+                if fallback_item:
+                    fresh.append(fallback_item)
+
+        if fresh:
+            cache_key = "FULL_ORBIT" if full_orbit else f"{date_str}_{span_days}"
+            await set_bulk_cached(cache_key, fresh, center=center_body)
+
         return EphemerisResponse(
-            data=cached,
+            data=cached + fresh,
             meta=EphemerisMeta(
-                source="CACHE_HIT",
+                source="NASA_LIVE_AND_CACHE",
                 timestamp=date.today().isoformat(),
                 requested_date=date_str,
                 cache_hits=len(cached),
-                cache_misses=0,
+                cache_misses=len(missing_planets),
             ),
         )
-
-    fresh = await fetch_all_parallel(missing_planets, date_str, center_body=center_body, span_days=span_days, full_orbit=full_orbit)
-
-    fetched_ids = {item.body_id for item in fresh}
-    for bid in missing_planets:
-        if bid not in fetched_ids:
-            fallback_item = load_fallback(bid)
-            if fallback_item:
-                fresh.append(fallback_item)
-
-    if fresh:
-        cache_key = "FULL_ORBIT" if full_orbit else f"{date_str}_{span_days}"
-        await set_bulk_cached(cache_key, fresh, center=center_body)
-
-    return EphemerisResponse(
-        data=cached + fresh,
-        meta=EphemerisMeta(
-            source="NASA_LIVE_AND_CACHE",
-            timestamp=date.today().isoformat(),
-            requested_date=date_str,
-            cache_hits=len(cached),
-            cache_misses=len(missing_planets),
-        ),
-    )
+    except Exception as e:
+        import traceback
+        logger.error(f"[Ephemeris Router] Critical error: {str(e)}\n{traceback.format_exc()}")
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=str(e))

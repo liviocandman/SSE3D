@@ -11,9 +11,13 @@ _TTL = {
 }
 
 def _get_ttl(body_id: str, date_str: str = "") -> int:
-    # Trajectories (30-day blocks) should last longer
+    # Full static orbits should last 30 days
+    if date_str == "FULL_ORBIT":
+        return 2592000
+    
+    # Trajectories (30-day blocks) should last 48 hours
     if "_" in date_str:
-        return 172800  # 48 hours
+        return 172800 
     
     for ids, ttl in _TTL.items():
         if body_id in ids:
