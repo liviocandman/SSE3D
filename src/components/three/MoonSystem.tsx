@@ -149,7 +149,7 @@ function MoonMesh({
   });
 
   const fontSize = viewMode === 'didactic' ? radius * 0.8 : radius * 12;
-  const hitboxRadius = viewMode === 'realistic' ? Math.max(radius * 20, 0.05) : radius * 1.5;
+  const hitboxRadius = viewMode === 'realistic' ? Math.max(radius * 40, 0.1) : radius * 1.5;
   const labelY = isHovered ? radius * 1.8 : -radius * 1.8;
   const labelColor = isHovered ? '#ffffff' : '#8ab4d8';
   const labelAnchorY = isHovered ? 'bottom' : 'top';
@@ -315,7 +315,7 @@ export function MoonSystem({
           setSelectedPlanet(moonPayload);
           setViewMode('realistic');
           const realisticRadius = getRadius(moonId, 'MOON', 'realistic');
-          setTravelTarget(realisticWorldPos, Math.max(realisticRadius * 50, 0.005));
+          setTravelTarget(realisticWorldPos, realisticRadius * 8);
         };
 
         return (

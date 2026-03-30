@@ -85,7 +85,7 @@ function GlobalTimeController() {
 const CAMERA_CONFIG = {
   position: [0, 200, 500] as [number, number, number],
   fov: 45,
-  near: 0.01,
+  near: 0.00001,
   far: 50000,
 };
 
@@ -359,7 +359,7 @@ export function SceneContent({
         makeDefault
         enableDamping
         dampingFactor={0.05}
-        minDistance={0.001}
+        minDistance={0.00001}
         maxDistance={12000}
         enablePan
         panSpeed={1}

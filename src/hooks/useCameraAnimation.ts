@@ -42,6 +42,7 @@ const DEFAULT_DURATION = 1.5; // seconds
 const DEFAULT_OFFSET_DISTANCE = 80; // units from target
 const DEFAULT_CAMERA_POSITION = new THREE.Vector3(0, 50, 150);
 const DEFAULT_LOOK_AT = new THREE.Vector3(0, 0, 0);
+const MIN_FOCUS_OFFSET = 0.00005;
 
 // Smooth easing function (ease-out cubic)
 const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
@@ -156,7 +157,7 @@ export function useCameraAnimation(
     }
 
     // Calculate offset distance based on planet radius
-    const dynamicOffset = radius ? Math.max(0.03, radius * 3) : offsetDistance;
+    const dynamicOffset = radius ? Math.max(MIN_FOCUS_OFFSET, radius * 3) : offsetDistance;
 
     // Calculate camera position
     const currentCameraDir = camera.position.clone().normalize();
