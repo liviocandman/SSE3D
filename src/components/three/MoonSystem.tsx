@@ -348,17 +348,29 @@ function MoonOrbitLine({ moonId, parentId, parentClass, viewMode }: { moonId: st
   const orbitScale = getMoonOrbitScale(parentId, parentClass, config.meanDistanceAU * AU_TO_KM, viewMode);
   const SCALE = (1 / 1_000_000) * orbitScale;
 
-  // 1. BYPASS DE PARSING DE DATA (A Cura para a Teia de Aranha)
-  // Assumimos que a NASA nos devolveu o bloco padrão de 30 dias da API.
-  const trajectorySpanDays = 30; 
+  // 1. A Matemática da Fração
+  const trajectorySpanDays = 30; // O Backend devolve blocos de 30 dias
   const orbitalPeriodDays = config.orbitalPeriod || 30;
   
-  // Descobre que percentagem do array equivale a 1 única volta perfeita
-  const orbitFraction = Math.min(orbitalPeriodDays / trajectorySpanDays, 1);
-  const pointsInOneOrbit = Math.ceil(moonTrajectory.length * orbitFraction);
+  // Quantas voltas esta lua dá em 30 dias?
+  const orbitsInSpan = trajectorySpanDays / orbitalPeriodDays;
   
-  // Apanha 5% extra para garantir que o anel se cruza e pode ser fechado sem frestas
-  const pointsToTake = Math.min(moonTrajectory.length, Math.ceil(pointsInOneOrbit * 1.05));
+  let pointsToTake = moonTrajectory.length;
+  let isClosed = false;
+
+  if (orbitsInSpan >= 1.0) {
+    // A lua completa pelo menos 1 volta. 
+    // Pegamos EXATAMENTE os pontos de 1 volta (100%), sem excessos.
+    const orbitFraction = 1 / orbitsInSpan;
+    pointsToTake = Math.ceil(moonTrajectory.length * orbitFraction);
+    
+    // Como temos dados suficientes, fechamos o anel no Three.js
+    isClosed = true; 
+  } else {
+    // A lua é muito lenta (ex: Iapetus demora 79 dias).
+    // Vai desenhar apenas o arco parcial dos 30 dias que temos na RAM.
+    isClosed = false; 
+  }
 
   const rawPoints: THREE.Vector3[] = [];
   for (let i = 0; i < pointsToTake; i++) {
@@ -374,13 +386,11 @@ function MoonOrbitLine({ moonId, parentId, parentClass, viewMode }: { moonId: st
 
   // 2. SUAVIZAÇÃO ALGORÍTMICA (O fim dos nós)
   let finalPoints = rawPoints;
-  if (rawPoints.length >= 3) {
+  // Segurança: CatmullRom precisa de pelo menos 2 pontos (linha) ou 4 pontos (Spline fechada)
+  if (rawPoints.length >= 4) {
     try {
-      // Se a lua demora quase o bloco todo ou mais, tratamos como órbita aberta/parcial
-      const isClosed = orbitFraction < 0.95; 
       const curve = new THREE.CatmullRomCurve3(rawPoints, isClosed);
-      
-      // Aumentado para 256: Garante uma curva de altíssima definição
+      // Mantemos a alta definição. 256 pontos é barato para GPU e resolve luas grandes.
       finalPoints = curve.getPoints(256); 
     } catch {
       console.warn(`[MoonOrbitLine] Curve generation failed for ${moonId}, using raw points.`);

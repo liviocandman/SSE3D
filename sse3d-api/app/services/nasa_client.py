@@ -292,7 +292,7 @@ async def fetch_all_parallel(
 
     return final_results
 
-MOON_STEP_SIZE = "4 h"
+MOON_STEP_SIZE = "1 h"
 
 async def fetch_moon_year(client: httpx.AsyncClient, moon_id: str, parent_id: str, year: int) -> Optional[EphemerisData]:
     """
@@ -322,7 +322,7 @@ async def fetch_moon_year(client: httpx.AsyncClient, moon_id: str, parent_id: st
 
     logger.info(f"Fetching full year {year} for Moon {moon_id}...")
     try:
-        response = await client.get(HORIZONS_URL, params=params, timeout=60.0)
+        response = await client.get(HORIZONS_URL, params=params, timeout=120.0)
         response.raise_for_status()
         data = response.json()
         
