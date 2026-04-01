@@ -5,7 +5,9 @@ from app.services.nasa_client import fetch_all_parallel, MOON_PARENTS
 from app.services.cache_service import get_bulk_cached, set_bulk_cached, get_moon_year_cached, set_moon_year_cached
 from app.data.fallback import load_fallback
 import asyncio
+import logging
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ephemeris", tags=["Ephemeris"])
 
 ALL_BODY_IDS = ["10", "199", "299", "399", "499", "599", "699", "799", "899"]

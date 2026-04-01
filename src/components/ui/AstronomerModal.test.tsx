@@ -50,7 +50,6 @@ describe('AstronomerModal', () => {
         isOpen={true}
         onClose={() => {}}
         planet={mockPlanet}
-        currentDate="2026-03-25"
       />
     );
 
@@ -70,7 +69,6 @@ describe('AstronomerModal', () => {
         isOpen={true}
         onClose={() => {}}
         planet={mockMoon}
-        currentDate="2026-03-25"
       />
     );
 

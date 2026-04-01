@@ -24,7 +24,7 @@ async def test_ephemeris_returns_data(client):
     assert response.status_code == 200
     data = response.json()
     assert len(data["data"]) == 1
-    assert data["meta"]["source"] == "NASA_LIVE"
+    assert data["meta"]["source"] == "NASA_LIVE_AND_CACHE"
 
 @pytest.mark.asyncio
 async def test_ephemeris_cache_hit(client):
@@ -41,20 +41,20 @@ async def test_ephemeris_cache_hit(client):
 @pytest.mark.asyncio
 async def test_ephemeris_with_center_body(client):
     with patch("app.routers.ephemeris.get_bulk_cached",
-               return_value=([], ["501"])) as mock_cache_get:
+               return_value=([], ["199"])) as mock_cache_get:
         with patch("app.routers.ephemeris.fetch_all_parallel",
                    new_callable=AsyncMock,
-                   return_value=[_mock_planet("501")]) as mock_fetch:
+                   return_value=[_mock_planet("199")]) as mock_fetch:
             with patch("app.routers.ephemeris.set_bulk_cached",
                        new_callable=AsyncMock) as mock_cache_set:
                 response = await client.get(
-                    "/api/ephemeris?date=2024-01-01&ids=501&center_body=599"
+                    "/api/ephemeris?date=2024-01-01&ids=199&center_body=599"
                 )
 
     assert response.status_code == 200
-    mock_cache_get.assert_called_once_with(["501"], "2024-01-01_30", center="599")
+    mock_cache_get.assert_called_once_with(["199"], "2024-01-01_30", center="599")
     mock_fetch.assert_called_once_with(
-        ["501"], "2024-01-01", center_body="599", span_days=30, full_orbit=False
+        ["199"], "2024-01-01", center_body="599", span_days=30, full_orbit=False
     )
     mock_cache_set.assert_called_once()
 
