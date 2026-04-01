@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrame, useThree, useLoader } from "@react-three/fiber";
 import { Text, Billboard } from "@react-three/drei";
-import { KTX2Loader } from "three-stdlib";
+
 import type { Mesh } from "three";
 import * as THREE from "three";
 import "../../app/globals.css";
@@ -70,6 +70,7 @@ export function CelestialBody({
   const gl = useThree((state) => state.gl);
 
   // KTX2 VRAM Optimized Loader
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const texture = useLoader(SingletonKTX2Loader as any, textureUrl, () => {
     getSharedKTX2Loader(gl);
   });

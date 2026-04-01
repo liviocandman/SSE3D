@@ -134,6 +134,7 @@ function MoonMesh({
   // Use idiomatic useLoader with the singleton.
   // This will suspend MoonMesh until the texture is loaded.
   // We wrap MoonMesh in a Suspense component in the MoonSystem to avoid blocking the scene.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const texture = useLoader(SingletonKTX2Loader as any, textureUrl, () => {
     getSharedKTX2Loader(gl);
   });

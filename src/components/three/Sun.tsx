@@ -28,6 +28,7 @@ export function Sun({
 
   // Carregar Textura do Sol (KTX2 Optimized)
   const texturePath = getTexturePath(SUN_BODY_ID, tier as TextureTier);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sunTexture = useLoader(SingletonKTX2Loader as any, texturePath, () => {
     getSharedKTX2Loader(gl);
   });

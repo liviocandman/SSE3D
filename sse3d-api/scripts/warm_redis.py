@@ -1,7 +1,7 @@
 import sys
 import os
 import asyncio
-from datetime import datetime, timedelta
+
 import httpx
 from loguru import logger
 from dotenv import load_dotenv
@@ -10,10 +10,9 @@ from dotenv import load_dotenv
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
 
-from app.models.schemas import EphemerisData
-from app.services.nasa_client import fetch_moon_year, MOON_PARENTS, _fetch_single
-from app.services.cache_service import set_moon_year_cached, set_bulk_cached
-from app.core.config import settings
+from app.services.nasa_client import fetch_moon_year, MOON_PARENTS, _fetch_single  # noqa: E402
+from app.services.cache_service import set_moon_year_cached, set_bulk_cached  # noqa: E402
+from app.core.config import settings  # noqa: E402
 
 # 2026 as the base year for the cache
 WARM_YEAR = 2026
