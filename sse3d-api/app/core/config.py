@@ -22,8 +22,15 @@ class Settings(BaseSettings):
     spice_strict_kernels: bool = False
     spice_kernel_dir: str = "kernels"
     spice_lsk_file: str = "lsk/naif0012.tls"
-    spice_planetary_spk_file: str = "spk/de440s.bsp"
-    spice_moon_spk_files: Union[list[str], str] = ["spk/sse3d_moons_1849_2150.bsp"]
+    spice_planetary_spk_file: str = "spk/de440.bsp"
+    spice_moon_spk_files: Union[list[str], str] = [
+        "spk/mar099_min.bsp",
+        "spk/jup365_min.bsp",
+        "spk/sat441_min.bsp",
+        "spk/ura111_min.bsp",
+        "spk/nep081_min.bsp",
+        "spk/plu060_min.bsp",
+    ]
 
     @field_validator("database_url", mode="before")
     @classmethod

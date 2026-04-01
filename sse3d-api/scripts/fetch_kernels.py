@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import os
+import ssl
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -43,8 +44,8 @@ DEFAULT_KERNELS = [
         required=True,
     ),
     KernelFile(
-        relative_path="spk/de440s.bsp",
-        url=f"{NAIF_BASE}/spk/planets/de440s.bsp",
+        relative_path="spk/de440.bsp",
+        url=f"{NAIF_BASE}/spk/planets/de440.bsp",
         required=True,
     ),
 ]
@@ -105,7 +106,12 @@ def download_file(url: str, dest: Path, force: bool) -> None:
 
     ensure_dir(dest.parent)
     print(f"[download] {url} -> {dest}")
-    with urlopen(url) as response, dest.open("wb") as output:
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    with urlopen(url, context=ctx) as response, dest.open("wb") as output:
         while True:
             chunk = response.read(1024 * 1024)
             if not chunk:

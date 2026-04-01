@@ -156,9 +156,15 @@ def compute_ephemeris(
     start_dt, end_dt, steps = _resolve_window(
         body_id, target_date, span_days, full_orbit=full_orbit
     )
+    #Barycenter correction for outer planets (Avoid time limit for moons)
+    target_id = body_id
+    # If it's a full orbit and it's Uranus, Neptune, or Pluto
+    if full_orbit and body_id in ["599", "699", "799", "899", "999"]:
+        # Extract only the first digit: "799" -> "7", "899" -> "8"
+        target_id = body_id[0]
 
     trajectory, first_pos, first_vel = _build_trajectory(
-        body_id, observer_id, start_dt, end_dt, steps
+        target_id, observer_id, start_dt, end_dt, steps
     )
     if not trajectory or first_pos is None:
         return None
