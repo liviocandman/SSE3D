@@ -35,7 +35,7 @@ export const TrailLine: React.FC<TrailLineProps> = ({
       if (i > 0) {
         const prev = arr[i - 1];
         const distSq = p.distanceToSquared(prev);
-        if (distSq < 0.000001) return false;
+        if (distSq < 1e-10) return false;
       }
 
       return true;

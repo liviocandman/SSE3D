@@ -33,7 +33,7 @@ async def test_cache_failure_fail_open(client):
             response = await client.get("/api/ephemeris?date=2024-01-01&ids=399")
 
     assert response.status_code == 200
-    assert response.json()["meta"]["source"] == "NASA_LIVE"
+    assert response.json()["meta"]["source"] == "NASA_LIVE_AND_CACHE"
     assert len(response.json()["data"]) == 1
 
 @pytest.mark.asyncio

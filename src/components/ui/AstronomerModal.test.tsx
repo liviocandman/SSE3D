@@ -3,6 +3,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { AstronomerModal } from './AstronomerModal';
 import type { SelectedPlanet } from '@/lib/types';
 
+// Mock scrollIntoView
+window.HTMLElement.prototype.scrollIntoView = vi.fn();
+
 // Mock dependencies
 vi.mock('lucide-react', () => ({
   X: () => <div data-testid="x-icon" />,
@@ -47,7 +50,6 @@ describe('AstronomerModal', () => {
         isOpen={true}
         onClose={() => {}}
         planet={mockPlanet}
-        currentDate="2026-03-25"
       />
     );
 
@@ -67,7 +69,6 @@ describe('AstronomerModal', () => {
         isOpen={true}
         onClose={() => {}}
         planet={mockMoon}
-        currentDate="2026-03-25"
       />
     );
 

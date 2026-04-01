@@ -125,7 +125,15 @@ export function PlanetInfo({ planet, earthPosition, onAskAstronomer }: PlanetInf
   const gravityG = config ? (config.surfaceGravity / 9.81).toFixed(2) : null;
 
   return (
-    <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
+    <div 
+      className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500"
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerMove={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
+    >
       {/* Header */}
       <div className="flex items-center gap-3 mb-2">
         <div

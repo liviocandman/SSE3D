@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useFrame, useThree, ThreeEvent, useLoader } from "@react-three/fiber";
+import { useFrame, useThree, useLoader } from "@react-three/fiber";
 import { Text, Billboard } from "@react-three/drei";
-import { TextureLoader } from "three";
+
 import type { Mesh } from "three";
 import * as THREE from "three";
 import "../../app/globals.css";
 import type { ViewMode } from "@/lib/scales";
 import { useSolarStore } from "@/store/solarStore";
+import { useShallow } from "zustand/react/shallow";
 import type { EphemerisTrajectory } from "@/lib/types";
 import { buildTrajectorySegment, sampleTrajectoryAtTime } from "@/lib/trajectoryEngine";
 import { calculateAbsoluteRotation } from "@/lib/rotationUtils";
@@ -41,7 +42,12 @@ const MIN_FONT_SIZE = 2;
 const MAX_FONT_SIZE = 100;
 const THROTTLE_FRAMES = 10;
 
-// --- Component ---
+import { SPHERE_HIGH, SPHERE_MID, SPHERE_LOW, HITBOX_SPHERE } from '@/lib/geometryPool';
+
+// --- Shared Resources (Static) ---
+// (Removed localized constants as they are now in geometryPool)
+
+import { SingletonKTX2Loader, getSharedKTX2Loader } from "@/lib/SingletonKTX2Loader";
 
 export function CelestialBody({
   englishName,
@@ -61,10 +67,12 @@ export function CelestialBody({
 }: CelestialBodyProps) {
   const meshRef = useRef<Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
+  const gl = useThree((state) => state.gl);
 
-  // Use useLoader directly to have access to useLoader.clear() for global cache cleanup
-  const texture = useLoader(TextureLoader, textureUrl, (loader) => {
-    loader.setCrossOrigin("anonymous");
+  // KTX2 VRAM Optimized Loader
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const texture = useLoader(SingletonKTX2Loader as any, textureUrl, () => {
+    getSharedKTX2Loader(gl);
   });
 
   const [fontSize, setFontSize] = useState(5);
@@ -74,41 +82,52 @@ export function CelestialBody({
   const tempVec = useRef(new THREE.Vector3());
   const isInitializedRef = useRef(false);
   const frameCountRef = useRef(0);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const setHoveredPlanetId = useSolarStore(state => state.setHoveredPlanetId);
+
+  // Selective subscription to this specific planet's segments
+  const masterSegments = useSolarStore(useShallow(state => state.masterTrajectorySegments[bodyId] || []));
+
   const fallbackSegments = useMemo(() => {
     if (!trajectory || trajectory.length === 0) return [];
     const segment = buildTrajectorySegment(trajectory);
     return segment ? [segment] : [];
   }, [trajectory]);
 
-  // Dispose of geometry and material on unmount to free GPU memory
+  // Dispose of material on unmount (geometry is shared)
   useEffect(() => {
-    const mesh = meshRef.current;
+    const currentMesh = meshRef.current;
     return () => {
-      if (mesh) {
-        mesh.geometry.dispose();
-        if (mesh.material) {
-          if (Array.isArray(mesh.material)) {
-            mesh.material.forEach(m => m.dispose());
-          } else {
-            (mesh.material as THREE.Material).dispose();
-          }
+      if (currentMesh?.material) {
+        if (Array.isArray(currentMesh.material)) {
+          currentMesh.material.forEach(m => m.dispose());
+        } else {
+          currentMesh.material.dispose();
         }
       }
     };
   }, []);
+
+  // Selection of shared geometry based on requested segments
+  const sharedGeometry = useMemo(() => {
+    if (segments >= 64) return SPHERE_HIGH;
+    if (segments >= 32) return SPHERE_MID;
+    return SPHERE_LOW;
+  }, [segments]);
 
   // Animation loop
   useFrame((state, delta) => {
     const solarState = useSolarStore.getState();
     const simTime = solarState.currentTime.getTime();
 
-    // Read segment-aware trajectory first; fallback to initial prop data.
-    const segments = solarState.masterTrajectorySegments[bodyId] || fallbackSegments;
+    // Use current segments from store, fallback to initial props
+    const currentSegments = masterSegments.length > 0 ? masterSegments : fallbackSegments;
 
     // 1. Interpolate position from trajectory if available
-    if (segments.length > 0 && groupRef.current) {
+    if (currentSegments.length > 0 && groupRef.current) {
       const SCALE = 1 / 1_000_000;
-      const sampled = sampleTrajectoryAtTime(segments, simTime);
+      const sampled = sampleTrajectoryAtTime(currentSegments, simTime);
       if (sampled) {
         const { x, y, z } = sampled.position;
         const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);
@@ -136,21 +155,14 @@ export function CelestialBody({
         meshRef.current.rotation.y = calculateAbsoluteRotation(dayLength, simTime);
       } else {
         // Didactic mode: absolute orientation (boosted) + real-time spin
-        // This ensures the planet "jumps" correctly during time travel
-        // but still feels "alive" when simulation is paused.
-
-        // 1. Physical base rotation (from dayLength, slightly boosted for visibility)
         const baseRotation = dayLength !== undefined
           ? calculateAbsoluteRotation(dayLength, simTime)
           : 0;
 
-        // 2. Visual "didactic" spin (constant rotation for feedback)
-        // Uses state.clock.elapsedTime (real world time)
         const direction = (dayLength !== undefined && dayLength < 0) ? -1 : 1;
         const speed = rotationSpeed ?? DEFAULT_ROTATION_SPEED;
         const visualSpin = state.clock.elapsedTime * speed * 60 * direction;
 
-        // Combine them
         meshRef.current.rotation.y = baseRotation + visualSpin;
       }
     }
@@ -188,15 +200,29 @@ export function CelestialBody({
   });
 
   // Click handler - show info only (no travel)
-  const handleClick = (event: ThreeEvent<MouseEvent>) => {
-    event.stopPropagation();
+  const handleClick = () => {
     onClick?.(bodyId);
   };
 
   // Double-click handler - travel to planet
-  const handleDoubleClick = (event: ThreeEvent<MouseEvent>) => {
-    event.stopPropagation();
+  const handleDoubleClick = () => {
     onDoubleClick?.(bodyId);
+  };
+
+  const handlePointerEnter = () => {
+    setIsHovered(true);
+    // Micro-debounce to prevent 'mouse sweep' spam
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredPlanetId(bodyId);
+    }, 100);
+  };
+
+  const handlePointerLeave = () => {
+    setIsHovered(false);
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    setHoveredPlanetId(null);
   };
 
   // In realistic mode, planets are very small - use a minimum hitbox size for interaction
@@ -221,11 +247,13 @@ export function CelestialBody({
       <mesh
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
-        onPointerEnter={() => setIsHovered(true)}
-        onPointerLeave={() => setIsHovered(false)}
+        onPointerEnter={handlePointerEnter}
+        onPointerLeave={handlePointerLeave}
         renderOrder={-1}
+        geometry={HITBOX_SPHERE}
+        scale={hitboxRadius}
+        dispose={null}
       >
-        <sphereGeometry args={[hitboxRadius, 16, 16]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
@@ -236,10 +264,12 @@ export function CelestialBody({
           ref={meshRef}
           onClick={handleClick}
           onDoubleClick={handleDoubleClick}
-          onPointerEnter={() => setIsHovered(true)}
-          onPointerLeave={() => setIsHovered(false)}
+          onPointerEnter={handlePointerEnter}
+          onPointerLeave={handlePointerLeave}
+          geometry={sharedGeometry}
+          scale={radius}
+          dispose={null}
         >
-          <sphereGeometry args={[radius, segments, segments]} />
           <meshStandardMaterial
             map={texture}
             emissive={0x333333}

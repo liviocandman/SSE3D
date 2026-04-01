@@ -3,10 +3,11 @@
 import { useRef } from 'react';
 import { useFrame, useThree, useLoader } from '@react-three/fiber';
 import * as THREE from 'three';
-import { TextureLoader } from 'three';
+import { SingletonKTX2Loader, getSharedKTX2Loader } from '@/lib/SingletonKTX2Loader';
 import { getRadius, ViewMode } from '@/lib/scales';
 import { getTexturePath, TextureTier } from '@/lib/textureConfig';
 import { useQualityTier } from '@/contexts/QualityTierContext';
+import { SPHERE_HIGH } from '@/lib/geometryPool';
 
 interface SunProps {
   lightIntensity?: number;
@@ -22,12 +23,14 @@ export function Sun({
 }: SunProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const { tier } = useQualityTier();
-  const camera = useThree((state) => state.camera); // Acesso à câmera para calcular distância
+  const camera = useThree((state) => state.camera);
+  const gl = useThree((state) => state.gl);
 
-  // Carregar Textura do Sol
+  // Carregar Textura do Sol (KTX2 Optimized)
   const texturePath = getTexturePath(SUN_BODY_ID, tier as TextureTier);
-  const sunTexture = useLoader(TextureLoader, texturePath, (loader) => {
-    loader.setCrossOrigin("anonymous");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sunTexture = useLoader(SingletonKTX2Loader as any, texturePath, () => {
+    getSharedKTX2Loader(gl);
   });
 
   // Tamanhos de referência
@@ -59,12 +62,9 @@ export function Sun({
       targetScale = Math.max(realisticRadius, visualScale);
     }
 
-    // --- O BUG ESTAVA NO LERP ACIMA ---
     const currentScale = meshRef.current.scale.x;
 
     // NOVA FÓRMULA SEGURA: 
-    // O Math.exp garante que, mesmo que o delta seja gigante (lag extremo), 
-    // o lerpFactor nunca, jamais, ultrapassará 1.0.
     const lerpFactor = 1 - Math.exp(-25 * delta);
     const smoothScale = THREE.MathUtils.lerp(currentScale, targetScale, lerpFactor);
 
@@ -78,8 +78,7 @@ export function Sun({
          Usamos meshBasicMaterial com cor > 1.0 para forçar o Bloom (Brilho Neon)
          sem depender de luzes externas.
       */}
-      <mesh ref={meshRef}>
-        <sphereGeometry args={[1, 64, 64]} />
+      <mesh ref={meshRef} geometry={SPHERE_HIGH} dispose={null}>
         <meshBasicMaterial
           map={sunTexture}
           color={[3, 2.4, 1.5]} // Multiplicador de HDR (Intensidade do brilho)

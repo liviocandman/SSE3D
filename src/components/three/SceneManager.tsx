@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, ReactNode, useRef, useMemo, useEffect } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Stars } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import { QualityTierProvider, useQualityTier } from '@/contexts/QualityTierContext';
@@ -22,13 +22,14 @@ import {
 } from '@/lib/textureConfig';
 import { getRadius, scalePositionFromKm } from '@/lib/scales';
 import { CameraController } from '@/hooks/useCameraAnimation';
-import TrailLine from './TrailLine';
 import * as THREE from 'three';
 import { useSolarStore } from '@/store/solarStore';
 import { useShallow } from 'zustand/react/shallow';
 import { TrajectoryManager } from './TrajectoryManager';
 import { KM_TO_UNIT } from '@/lib/scales';
-
+import StaticOrbitLine from './StaticOrbitLine';
+import DynamicTrailLine from './DynamicTrailLine';
+import { BODY_IDS } from '@/lib/types';
 
 // --- Types ---
 
@@ -42,7 +43,7 @@ interface SceneContentProps {
   ephemerisData?: EphemerisData[];
 }
 
-// --- Helper Components ---
+import { TORUS_SELECTION } from '@/lib/geometryPool';
 
 function SelectionRing({ position, radius }: { position: [number, number, number]; radius: number }) {
   const meshRef = useRef<THREE.Mesh>(null);
@@ -54,13 +55,12 @@ function SelectionRing({ position, radius }: { position: [number, number, number
     meshRef.current.rotation.z += 0.01;
 
     // Subtle pulse
-    const scale = 1 + Math.sin(state.clock.elapsedTime * 3) * 0.05;
+    const scale = (radius * 1.5) * (1 + Math.sin(state.clock.elapsedTime * 3) * 0.05);
     meshRef.current.scale.set(scale, scale, scale);
   });
 
   return (
-    <mesh ref={meshRef} position={position} rotation={[Math.PI / 2, 0, 0]}>
-      <torusGeometry args={[radius * 1.5, 0.05 * (radius / 10), 16, 100]} />
+    <mesh ref={meshRef} position={position} rotation={[Math.PI / 2, 0, 0]} geometry={TORUS_SELECTION} dispose={null}>
       <meshBasicMaterial
         color="#ffffff"
         transparent
@@ -85,11 +85,31 @@ function GlobalTimeController() {
 const CAMERA_CONFIG = {
   position: [0, 200, 500] as [number, number, number],
   fov: 45,
-  near: 0.01,
+  near: 0.00001,
   far: 50000,
 };
 
 const SUN_BODY_ID = '10';
+
+function CameraDepthOptimizer() {
+  const { camera } = useThree();
+  const viewMode = useSolarStore(state => state.viewMode);
+
+  useEffect(() => {
+    if (viewMode === 'didactic') {
+      // In didactic mode, objects are large (inflated). 
+      // A slightly higher near plane significantly improves depth buffer precision
+      // for large spheres, fixing the "see-through" and flickering glitches.
+      camera.near = 0.005;
+    } else {
+      // In realistic mode, restore the tiny near plane for small moons.
+      camera.near = 0.00001;
+    }
+    camera.updateProjectionMatrix();
+  }, [viewMode, camera]);
+
+  return null;
+}
 
 const SEGMENTS_BY_TIER: Record<string, number> = {
   high: 64,
@@ -101,9 +121,6 @@ function calculateMillionKmFromSun(position: [number, number, number]): number {
   const [x, y, z] = position;
   return Math.sqrt(x * x + y * y + z * z);
 }
-
-import StaticOrbitLine from './StaticOrbitLine';
-import { BODY_IDS } from '@/lib/types';
 
 const ALL_PLANET_IDS = [
   BODY_IDS.MERCURY, BODY_IDS.VENUS, BODY_IDS.EARTH, BODY_IDS.MARS,
@@ -118,33 +135,13 @@ function parseTimestampMs(timestamp: string): number {
   return new Date(utcString).getTime();
 }
 
-function findLastSampleIndex(samples: { timestampMs: number }[], cutoffMs: number): number {
-  let left = 0;
-  let right = samples.length - 1;
-  let result = -1;
-
-  while (left <= right) {
-    const mid = Math.floor((left + right) / 2);
-    const value = samples[mid].timestampMs;
-    if (value <= cutoffMs) {
-      result = mid;
-      left = mid + 1;
-    } else {
-      right = mid - 1;
-    }
-  }
-
-  return result;
-}
-
 interface PlanetTrajectoryGroupProps {
   segments: TrajectorySegment[];
   fullOrbitData?: EphemerisTrajectory[];
-  currentTime: Date;
 }
 
 
-function PlanetTrajectoryGroup({ segments, fullOrbitData, currentTime }: PlanetTrajectoryGroupProps) {
+function PlanetTrajectoryGroup({ segments, fullOrbitData }: PlanetTrajectoryGroupProps) {
   const { tier } = useQualityTier();
   const maxTrailPoints = tier === 'high' ? 240 : tier === 'mid' ? 120 : 60;
   const allPoints = useMemo(() => flattenTrajectorySegments(segments), [segments]);
@@ -157,25 +154,17 @@ function PlanetTrajectoryGroup({ segments, fullOrbitData, currentTime }: PlanetT
         p.position.y * KM_TO_UNIT,
         p.position.z * KM_TO_UNIT
       ),
-    }));
+    })).filter((s, i, arr) => {
+      // Anti-NaN & Duplicate Shield (from TrailLine logic)
+      if (!Number.isFinite(s.point.x) || !Number.isFinite(s.point.y) || !Number.isFinite(s.point.z)) {
+        return false;
+      }
+      if (i > 0 && s.point.distanceToSquared(arr[i - 1].point) < 0.000001) {
+        return false;
+      }
+      return true;
+    });
   }, [allPoints]);
-
-  const simTimeMs = currentTime.getTime();
-  const pastPoints = useMemo(() => {
-    if (samples.length < 2) return [];
-
-    const cutoffMs = simTimeMs + TRAIL_GRACE_MS;
-    const lastVisibleIndex = findLastSampleIndex(samples, cutoffMs);
-    if (lastVisibleIndex < 1) return [];
-
-    const startIndex = Math.max(0, lastVisibleIndex - maxTrailPoints + 1);
-    const points: THREE.Vector3[] = [];
-    for (let i = lastVisibleIndex; i >= startIndex; i--) {
-      points.push(samples[i].point);
-    }
-    return points;
-  }, [samples, simTimeMs, maxTrailPoints]);
-
 
   return (
     <group>
@@ -188,11 +177,12 @@ function PlanetTrajectoryGroup({ segments, fullOrbitData, currentTime }: PlanetT
         />
       )}
 
-      {pastPoints.length > 2 && (
-        <TrailLine
-          points={pastPoints}
+      {samples.length > 2 && (
+        <DynamicTrailLine
+          samples={samples}
+          maxTrailPoints={maxTrailPoints}
+          graceMs={TRAIL_GRACE_MS}
           color="#a3cffe"
-          fadeMode="tail"
           opacity={0.8}
           lineWidth={1.5}
         />
@@ -210,7 +200,6 @@ export function SceneContent({
   const { tier, settings } = useQualityTier();
 
   const {
-    currentDate,
     selectedPlanet,
     setSelectedPlanet,
     viewMode,
@@ -219,12 +208,10 @@ export function SceneContent({
     travelTargetRadius,
     setTravelTarget,
     masterTrajectorySegments,
-    currentTime,
     fullOrbits,
     appendFullOrbits,
   } = useSolarStore(
     useShallow((state) => ({
-      currentDate: state.currentDate,
       selectedPlanet: state.selectedPlanet,
       setSelectedPlanet: state.setSelectedPlanet,
       viewMode: state.viewMode,
@@ -233,7 +220,6 @@ export function SceneContent({
       travelTargetRadius: state.travelTargetRadius,
       setTravelTarget: state.setTravelTarget,
       masterTrajectorySegments: state.masterTrajectorySegments,
-      currentTime: state.currentTime,
       fullOrbits: state.fullOrbits,
       appendFullOrbits: state.appendFullOrbits,
     }))
@@ -354,7 +340,7 @@ export function SceneContent({
   return (
     <Canvas
       camera={CAMERA_CONFIG}
-      dpr={settings.devicePixelRatio}
+      dpr={[1, settings.devicePixelRatio]}
       gl={{
         antialias: settings.antialias,
         powerPreference: tier === 'low' ? 'low-power' : 'high-performance',
@@ -365,6 +351,7 @@ export function SceneContent({
       }}
     >
       <ambientLight intensity={0.25} color="#b0b0b0" />
+      <CameraDepthOptimizer />
       <GlobalTimeController />
       <TrajectoryManager />
 
@@ -393,7 +380,7 @@ export function SceneContent({
         makeDefault
         enableDamping
         dampingFactor={0.05}
-        minDistance={0.001}
+        minDistance={0.00001}
         maxDistance={12000}
         enablePan
         panSpeed={1}
@@ -410,7 +397,6 @@ export function SceneContent({
             key={`orbit-group-${planet.bodyId}`}
             segments={masterTrajectorySegments[planet.bodyId] || []}
             fullOrbitData={fullOrbits[planet.bodyId]}
-            currentTime={currentTime}
           />
         );
       })}
@@ -443,7 +429,6 @@ export function SceneContent({
                     parentClass={planet.bodyClass}
                     parentPosition={[0, 0, 0]}
                     worldParentPosition={planet.position}
-                    date={currentDate}
                     viewMode={viewMode}
                     tier={tier}
                   />

@@ -36,22 +36,36 @@ vi.mock('framer-motion', () => ({
 }));
 
 // Mock hooks and stores
-const mockSolarState = {
-  selectedPlanet: { bodyId: '399', englishName: 'Earth' },
-  currentDate: '2026-03-26',
-  currentTime: new Date('2026-03-26T00:00:00.000Z'),
-  viewMode: 'didactic' as const,
-  timeMultiplier: 1,
-  isPlaying: false,
-  toggleViewMode: vi.fn(),
-  setIsPlaying: vi.fn(),
-  setTimeMultiplier: vi.fn(),
-  setCurrentDate: vi.fn(),
-};
+const { useSolarStoreMock } = vi.hoisted(() => {
+  const state = {
+    selectedPlanet: { bodyId: '399', englishName: 'Earth' },
+    currentDate: '2026-03-26',
+    currentTime: new Date('2026-03-26T00:00:00.000Z'),
+    viewMode: 'didactic' as const,
+    timeMultiplier: 1,
+    isPlaying: false,
+    toggleViewMode: vi.fn(),
+    setIsPlaying: vi.fn(),
+    setTimeMultiplier: vi.fn(),
+    setCurrentDate: vi.fn(),
+    advanceTime: vi.fn(),
+    masterTrajectorySegments: {},
+    fullOrbits: {},
+    appendTrajectoryData: vi.fn(),
+    appendFullOrbits: vi.fn(),
+  };
+
+  const mock = vi.fn((selector?: (s: typeof state) => unknown) =>
+    selector ? selector(state) : state
+  );
+  // @ts-expect-error - Mocking the store object
+  mock.getState = vi.fn(() => state);
+
+  return { useSolarStoreMock: mock };
+});
 
 vi.mock('@/store/solarStore', () => ({
-  useSolarStore: (selector?: (state: typeof mockSolarState) => unknown) =>
-    selector ? selector(mockSolarState) : mockSolarState,
+  useSolarStore: useSolarStoreMock,
 }));
 
 const mockUIState = {

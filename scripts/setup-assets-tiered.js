@@ -5,16 +5,27 @@
 // ==============================================================================
 // Downloads high-resolution textures from official NASA/scientific sources
 // and generates Low (1k), Mid (2k) and High (4k+) tiers automatically.
+// Supports WebP (Fallback) and KTX2 (VRAM Optimized) via toktx CLI.
 // ==============================================================================
 
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { execSync } from "child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const TARGET_DIR = path.join(PROJECT_ROOT, "public", "textures");
+
+// --- Tooling Check ---
+let hasToktx = false;
+try {
+  execSync("toktx --version", { stdio: "ignore" });
+  hasToktx = true;
+} catch {
+  // Will log warning in main
+}
 
 const colors = {
   reset: "\x1b[0m",
@@ -34,7 +45,6 @@ const colors = {
 
 const TEXTURE_SOURCES = {
   sun: {
-    // NASA SDO (Solar Dynamics Observatory)
     urls: [
       "https://www.solarsystemscope.com/textures/download/2k_sun.jpg",
       "https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/frames/5760x2880_16x9_30p/BlackMarble_2016_928m_africa_s.jpg",
@@ -43,7 +53,6 @@ const TEXTURE_SOURCES = {
       "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/sun.jpg",
   },
   mercury: {
-    // NASA MESSENGER mission data
     urls: [
       "https://www.solarsystemscope.com/textures/download/2k_mercury.jpg",
       "https://svs.gsfc.nasa.gov/vis/a000000/a003900/a003935/mercury_messanger_8192x4096.jpg",
@@ -52,16 +61,13 @@ const TEXTURE_SOURCES = {
       "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/mercury.jpg",
   },
   venus: {
-    // NASA Magellan mission radar data
     urls: [
       "https://www.solarsystemscope.com/textures/download/2k_venus_surface.jpg",
-      "https://www.jpl.nasa.gov/images/pia00104-venus-centered-at-180-degrees-east-longitude",
     ],
     fallback:
       "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/venus.jpg",
   },
   earth: {
-    // NASA Blue Marble - official Earth texture
     urls: [
       "https://eoimages.gsfc.nasa.gov/images/imagerecords/74000/74393/world.200412.3x5400x2700.jpg",
       "https://www.solarsystemscope.com/textures/download/2k_earth_daymap.jpg",
@@ -70,16 +76,13 @@ const TEXTURE_SOURCES = {
       "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg",
   },
   mars: {
-    // NASA Mars Viking/MGS data
     urls: [
       "https://www.solarsystemscope.com/textures/download/2k_mars.jpg",
-      "https://astrogeology.usgs.gov/cache/images/7cf0379df3e7e3b8e3b2d78a8c2c9b30_mars_viking_merged_color_global.jpg",
     ],
     fallback:
       "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/mars_1024.jpg",
   },
   jupiter: {
-    // NASA Cassini/Juno data
     urls: [
       "https://www.solarsystemscope.com/textures/download/2k_jupiter.jpg",
       "https://svs.gsfc.nasa.gov/vis/a000000/a003900/a003936/jupiter_4096x2048.jpg",
@@ -88,7 +91,6 @@ const TEXTURE_SOURCES = {
       "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/jupiter.jpg",
   },
   saturn: {
-    // NASA Cassini mission
     urls: [
       "https://www.solarsystemscope.com/textures/download/2k_saturn.jpg",
       "https://svs.gsfc.nasa.gov/vis/a000000/a003900/a003937/saturn_4096x2048.jpg",
@@ -97,13 +99,11 @@ const TEXTURE_SOURCES = {
       "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/saturn.jpg",
   },
   uranus: {
-    // NASA Voyager 2 data
     urls: ["https://www.solarsystemscope.com/textures/download/2k_uranus.jpg"],
     fallback:
       "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/uranus.jpg",
   },
   neptune: {
-    // NASA Voyager 2 data
     urls: ["https://www.solarsystemscope.com/textures/download/2k_neptune.jpg"],
     fallback:
       "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/neptune.jpg",
@@ -121,10 +121,7 @@ const TEXTURE_SOURCES = {
   },
   europa: {
     urls: [
-      // Celestia Project (GitHub)
       "https://raw.githubusercontent.com/CelestiaProject/CelestiaContent/master/textures/medres/europa.jpg",
-      "https://raw.githubusercontent.com/CelestiaProject/CelestiaContent/master/textures/medres/europa.png",
-      "https://raw.githubusercontent.com/CelestiaProject/CelestiaContent/master/textures/hires/europa.jpg",
     ],
     fallback: "https://www.solarsystemscope.com/textures/download/2k_moon.jpg",
   },
@@ -143,29 +140,24 @@ const TEXTURE_SOURCES = {
   titan: {
     urls: [
       "https://raw.githubusercontent.com/CelestiaProject/CelestiaContent/master/textures/hires/titan.jpg",
-      "https://raw.githubusercontent.com/CelestiaProject/CelestiaContent/master/textures/hires/titan.png",
     ],
     fallback: "https://www.solarsystemscope.com/textures/download/2k_moon.jpg",
   },
   enceladus: {
     urls: [
       "https://raw.githubusercontent.com/CelestiaProject/CelestiaContent/master/textures/hires/enceladus.jpg",
-      "https://raw.githubusercontent.com/CelestiaProject/CelestiaContent/master/textures/hires/enceladus.png",
     ],
     fallback: "https://www.solarsystemscope.com/textures/download/2k_moon.jpg",
   },
   triton: {
     urls: [
       "https://raw.githubusercontent.com/CelestiaProject/CelestiaContent/master/textures/hires/triton.jpg",
-      "https://raw.githubusercontent.com/CelestiaProject/CelestiaContent/master/textures/hires/triton.png",
     ],
     fallback: "https://www.solarsystemscope.com/textures/download/2k_moon.jpg",
   },
   generic_moon: {
     urls: [
       "https://raw.githubusercontent.com/CelestiaProject/CelestiaContent/master/textures/hires/rhea.jpg",
-      "https://raw.githubusercontent.com/CelestiaProject/CelestiaContent/master/textures/hires/mimas.jpg",
-      "https://raw.githubusercontent.com/CelestiaProject/CelestiaContent/master/textures/hires/dione.jpg",
     ],
     fallback: "https://www.solarsystemscope.com/textures/download/2k_moon.jpg",
   },
@@ -191,11 +183,34 @@ const TIERS = [
 // ==============================================================================
 // HELPER FUNCTIONS
 // ==============================================================================
+async function generateKTX2(inputPath, outputPath, isDataMap = false) {
+  if (!hasToktx) return false;
+
+  try {
+    // Flag selection based on map type
+    const colorSpaceFlags = isDataMap
+      ? "--assign_oetf linear"
+      : "--assign_oetf srgb --assign_primaries srgb";
+
+    // Modern toktx flags: --encode uastc + --zcmp for high quality
+    // --genmipmap for mipmaps
+    // --lower_left_maps_to_s0t0 to match Three.js/OpenGL orientation (fixes upside down issue)
+    const cmd = `toktx --t2 --genmipmap --lower_left_maps_to_s0t0 --encode uastc --zcmp 3 ${colorSpaceFlags} "${outputPath}" "${inputPath}"`;
+    execSync(cmd);
+    return true;
+  } catch (error) {
+    const stderr = error.stderr ? error.stderr.toString() : "";
+    const stdout = error.stdout ? error.stdout.toString() : "";
+    console.error(`\n    -> ⚠️ [KTX2 Error] ${error.message}`);
+    if (stderr) console.error(`       Stderr: ${stderr.trim()}`);
+    if (stdout) console.error(`       Stdout: ${stdout.trim()}`);
+    return false;
+  }
+}
 
 async function downloadFile(url, dest) {
   const response = await fetch(url, {
     headers: {
-      // A Wikimedia exige identificação real do projeto. Disfarces geram bloqueios (403).
       "User-Agent":
         "SolarExplorer3D-AssetBuilder/1.0 (https://github.com/liviocandman/sse3d)",
       Accept: "image/jpeg, image/png, image/webp, */*",
@@ -206,26 +221,21 @@ async function downloadFile(url, dest) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
 
-  // Converte a resposta num Buffer e escreve no disco
   const arrayBuffer = await response.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
   fs.writeFileSync(dest, buffer);
 }
 
-// 2. A função tryDownload atualizada para não ocultar os erros
 async function tryDownload(urls, outputPath, fallback) {
-  // Tentar cada URL primária
   for (const url of urls) {
     try {
       await downloadFile(url, outputPath);
       return { success: true, source: "primary" };
     } catch (err) {
-      // Agora o terminal vai avisar-nos EXATAMENTE do porquê da NASA/Wiki falhar
       console.log(`\n    -> ⚠️ [Aviso] Falha na URL primária: ${err.message}`);
     }
   }
 
-  // Tentar o fallback caso todas as primárias falhem
   if (fallback) {
     try {
       await downloadFile(fallback, outputPath);
@@ -238,7 +248,7 @@ async function tryDownload(urls, outputPath, fallback) {
   return { success: false, error: "All sources failed" };
 }
 
-async function generateTiers(inputPath, baseName, sharp, isRing = false) {
+async function generateTiers(inputPath, baseName, sharp) {
   const results = [];
 
   try {
@@ -246,31 +256,25 @@ async function generateTiers(inputPath, baseName, sharp, isRing = false) {
     const originalWidth = metadata.width || 2048;
 
     for (const tier of TIERS) {
-      const outputPath = path.join(TARGET_DIR, `${baseName}_${tier.name}.webp`);
+      const ktx2Path = path.join(TARGET_DIR, `${baseName}_${tier.name}.ktx2`);
 
-      // Skip if already exists
-      if (fs.existsSync(outputPath)) {
-        continue;
+      // Generate KTX2 (VRAM Optimized)
+      if (hasToktx && !fs.existsSync(ktx2Path)) {
+        const tempResized = path.join(TARGET_DIR, `${baseName}_${tier.name}_temp.png`);
+        
+        let pipeline = sharp(inputPath);
+        if (tier.width && originalWidth > tier.width) {
+          pipeline = pipeline.resize({ width: tier.width });
+        }
+        
+        await pipeline.png().toFile(tempResized);
+        
+        const isDataMap = baseName.includes('_normal') || baseName.includes('_roughness');
+        const success = await generateKTX2(tempResized, ktx2Path, isDataMap);
+        
+        if (fs.existsSync(tempResized)) fs.unlinkSync(tempResized);
+        if (success) results.push(`${tier.name}(ktx2)`);
       }
-
-      let pipeline = sharp(inputPath);
-
-      // Only downscale, never upscale
-      if (tier.width && originalWidth > tier.width) {
-        pipeline = pipeline.resize({ width: tier.width });
-      }
-
-      // Use appropriate format
-      if (isRing) {
-        // Preserve alpha for rings
-        await pipeline
-          .webp({ quality: tier.quality, alphaQuality: 90 })
-          .toFile(outputPath);
-      } else {
-        await pipeline.webp({ quality: tier.quality }).toFile(outputPath);
-      }
-
-      results.push(tier.name);
     }
   } catch (error) {
     console.error(
@@ -298,18 +302,29 @@ async function main() {
     `${colors.blue}║  🪐 Solar Explorer 3D - Tiered Texture Generator             ║${colors.reset}`,
   );
   console.log(
-    `${colors.blue}║  NASA & Scientific Sources | Low/Mid/High Quality Tiers      ║${colors.reset}`,
+    `${colors.blue}║  NASA & Scientific Sources | KTX2 VRAM Optimization          ║${colors.reset}`,
   );
   console.log(
     `${colors.blue}╚══════════════════════════════════════════════════════════════╝${colors.reset}\n`,
   );
 
-  // Create directory
+  if (!hasToktx) {
+    console.log(
+      `${colors.yellow}⚠️  toktx (KTX-Software) not found in PATH.${colors.reset}`,
+    );
+    console.log(
+      `${colors.dim}   KTX2 generation will be skipped. Only WebP will be generated.${colors.reset}\n`,
+    );
+  } else {
+    console.log(
+      `${colors.green}✓ toktx CLI found. KTX2 hardware-native textures will be generated.${colors.reset}\n`,
+    );
+  }
+
   if (!fs.existsSync(TARGET_DIR)) {
     fs.mkdirSync(TARGET_DIR, { recursive: true });
   }
 
-  // Check Sharp
   let sharp;
   try {
     sharp = (await import("sharp")).default;
@@ -327,12 +342,12 @@ async function main() {
 
   for (const [name, config] of Object.entries(TEXTURE_SOURCES)) {
     const tempPath = path.join(TARGET_DIR, `${name}_master.tmp`);
-    // Check if all tiers already exist
-    const allExist = TIERS.every((t) =>
-      fs.existsSync(path.join(TARGET_DIR, `${name}_${t.name}.webp`)),
+    
+    const ktx2Exist = !hasToktx || TIERS.every((t) =>
+      fs.existsSync(path.join(TARGET_DIR, `${name}_${t.name}.ktx2`)),
     );
 
-    if (allExist) {
+    if (ktx2Exist) {
       console.log(
         `${colors.dim}⏭  ${name}: All tiers exist, skipping${colors.reset}`,
       );
@@ -343,7 +358,6 @@ async function main() {
     process.stdout.write(`🌍 ${colors.cyan}${name.padEnd(12)}${colors.reset} `);
 
     try {
-      // Download master texture
       process.stdout.write(`Downloading... `);
       const result = await tryDownload(config.urls, tempPath, config.fallback);
 
@@ -359,7 +373,6 @@ async function main() {
           : `${colors.green}(NASA/SSS)${colors.reset}`;
       process.stdout.write(`${sourceType} `);
 
-      // Generate tiers
       process.stdout.write(`Generating tiers... `);
       const generated = await generateTiers(
         tempPath,
@@ -374,16 +387,14 @@ async function main() {
         continue;
       }
 
-      // Get file sizes
       const sizes = TIERS.map((t) => {
-        const p = path.join(TARGET_DIR, `${name}_${t.name}.webp`);
-        return fs.existsSync(p) ? formatBytes(fs.statSync(p).size) : "?";
-      }).join(" / ");
+        const k = path.join(TARGET_DIR, `${name}_${t.name}.ktx2`);
+        return fs.existsSync(k) ? formatBytes(fs.statSync(k).size) : "N/A";
+      }).join(" | ");
 
       console.log(`${colors.green}OK${colors.reset} [${sizes}]`);
       stats.success++;
 
-      // Cleanup temp file
       if (fs.existsSync(tempPath)) {
         fs.unlinkSync(tempPath);
       }
@@ -394,7 +405,6 @@ async function main() {
     }
   }
 
-  // Summary
   console.log(
     `\n${colors.blue}════════════════════════════════════════════════════════════════${colors.reset}`,
   );

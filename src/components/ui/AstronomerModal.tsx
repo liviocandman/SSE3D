@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { useSolarStore } from '@/store/solarStore';
 import { useAstronomer, AstronomerError } from '@/hooks/useAstronomer';
 import type { SelectedPlanet } from '@/lib/types';
 import { FavoriteButton } from './FavoriteButton';
 import { getSessionItem, setSessionItem, removeSessionItem } from '@/lib/sessionStorage';
-import { Trash2 } from 'lucide-react';
+import { Trash2, X, Loader2, Send } from 'lucide-react';
 
 interface AstronomerModalProps {
   isOpen: boolean;
@@ -33,14 +34,22 @@ export function AstronomerModal({
   isOpen,
   onClose,
   planet,
-  currentDate,
-}: AstronomerModalProps) {
+}: Omit<AstronomerModalProps, 'currentDate'>) {
   const [inputValue, setInputValue] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const { mutateAsync, isPending } = useAstronomer();
+  
+  // Internal subscription to date
+  const currentDate = useSolarStore(state => state.currentDate);
 
   const storageKey = planet ? `sse3d:astronomer:${planet.bodyId}` : null;
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isPending]);
 
   useEffect(() => {
     if (isOpen) {
@@ -137,14 +146,28 @@ export function AstronomerModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md">
+    <div className="fixed inset-0 z-[200] flex items-end md:items-center justify-center bg-black/70 backdrop-blur-md">
       <div
         className="absolute inset-0"
         onClick={onClose}
         aria-hidden
       />
-      <div className="relative w-full max-w-2xl max-h-[85vh] bg-white/5 border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+      <div 
+        className={`
+          relative w-full flex flex-col overflow-hidden bg-white/5 backdrop-blur-xl border-t md:border border-white/10 shadow-2xl hardware-accel
+          /* Mobile: Bottom Sheet */
+          fixed inset-x-0 bottom-0 max-h-[85vh] h-full rounded-t-3xl animate-in slide-in-from-bottom-8
+          /* Desktop: Centered Modal */
+          md:relative md:inset-auto md:max-w-2xl md:h-[80vh] md:max-h-[800px] md:rounded-2xl md:animate-in md:fade-in md:zoom-in-95
+        `}
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerMove={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+        onWheel={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 shrink-0">
           <div className="flex flex-col">
             <span className="text-[10px] uppercase tracking-[0.2em] text-white/40">Astrônomo Virtual</span>
             <span className="text-sm text-white/80">
@@ -170,12 +193,12 @@ export function AstronomerModal({
               className="text-white/60 hover:text-white transition-colors text-sm"
               aria-label="Fechar"
             >
-              ✕
+              <X size={20} />
             </button>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col space-y-3">
+        <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col space-y-3 scrollbar-hide">
           {messages.length === 0 && (
             <div className="flex flex-col space-y-2 text-center mt-4">
               <div className="text-white/60 text-sm">
@@ -191,8 +214,8 @@ export function AstronomerModal({
             <div
               key={message.id}
               className={`relative rounded-xl px-4 py-3 text-sm leading-relaxed ${message.role === 'user'
-                  ? 'bg-blue-500/20 text-blue-100 border border-blue-500/20 self-end'
-                  : 'bg-white/5 text-white/80 border border-white/10 group'
+                  ? 'bg-blue-500/20 text-blue-100 border border-blue-500/20 self-end ml-12'
+                  : 'bg-white/5 text-white/80 border border-white/10 group mr-12'
                 }`}
             >
               {message.content}
@@ -211,13 +234,15 @@ export function AstronomerModal({
           ))}
 
           {isPending && (
-            <div className="rounded-xl px-4 py-3 text-sm text-white/60 bg-white/5 border border-white/10 animate-pulse">
-              Gerando resposta...
+            <div className="rounded-xl px-4 py-3 text-sm text-white/60 bg-white/5 border border-white/10 flex items-center gap-2 self-start mr-12">
+              <Loader2 size={14} className="animate-spin" />
+              <span>Gerando resposta...</span>
             </div>
           )}
+          <div ref={messagesEndRef} />
         </div>
 
-        <div className="px-6 py-4 border-t border-white/10 flex gap-3">
+        <div className="px-6 py-4 border-t border-white/10 flex gap-3 shrink-0 pb-[calc(1rem+env(safe-area-inset-bottom))] md:pb-4 bg-black/20">
           <input
             ref={inputRef}
             type="text"
@@ -230,12 +255,13 @@ export function AstronomerModal({
           <button
             onClick={handleSend}
             disabled={!inputValue.trim() || isPending}
-            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${!inputValue.trim() || isPending
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${!inputValue.trim() || isPending
                 ? 'bg-white/10 text-white/40 cursor-not-allowed'
                 : 'bg-blue-500/30 text-blue-100 hover:bg-blue-500/40'
               }`}
           >
-            Enviar
+            {isPending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+            <span>Enviar</span>
           </button>
         </div>
       </div>
