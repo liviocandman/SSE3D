@@ -16,4 +16,4 @@ cryptography==43.0.3
 python-jose[cryptography]==3.3.0
 aiosqlite==0.21.0
 loguru==0.7.2
-
+spiceypy==6.0.0

@@ -1,6 +1,9 @@
 app = "sse3d-api"
 primary_region = "gru"
 
+[env]
+S3_KERNELS_URL = "https://sse3d-textures-prod.s3.us-east-1.amazonaws.com/kernels"
+
 [build]
   dockerfile = "Dockerfile"
 
@@ -15,13 +18,17 @@ primary_region = "gru"
   min_machines_running = 0
 
 [[http_service.checks]]
-  grace_period = "10s"
+  grace_period = "180s"
   interval = "15s"
   method = "get"
   path = "/health"
   timeout = "5s"
 
 [[vm]]
-  memory = "256mb"
+  memory = "1024mb"
   cpu_kind = "shared"
   cpus = 1
+
+[mounts]
+  source = "spice_data"
+  destination = "/data"

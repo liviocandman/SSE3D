@@ -40,7 +40,12 @@ export interface SelectedPlanet {
   trajectory?: EphemerisTrajectory[];
 }
 
-export type DataSource = 'NASA_LIVE' | 'CACHE_HIT' | 'FALLBACK_DATASET';
+export type DataSource =
+  | 'NASA_LIVE'
+  | 'CACHE_HIT'
+  | 'FALLBACK_DATASET'
+  | 'SPICE_KERNELS'
+  | 'SPICE_AND_FALLBACK';
 
 export interface EphemerisResponse {
   data: EphemerisData[];

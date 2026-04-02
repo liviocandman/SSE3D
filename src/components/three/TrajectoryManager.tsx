@@ -8,6 +8,8 @@ import { PLANET_MOONS } from "@/lib/textureConfig";
 import { computeBufferPlan, hasCoverageNearTime } from "@/lib/trajectoryEngine";
 import { useTrajectoryWorker } from "@/hooks/useTrajectoryWorker";
 
+import { useQualityTier } from "@/contexts/QualityTierContext";
+
 const COVERAGE_TOLERANCE_MS = 48 * 60 * 60 * 1000; // Increased to 48h to avoid flickering at segment boundaries
 
 // Eager load Jupiter (599) and Saturn (699) since they are the most visited and have many moons
@@ -39,6 +41,7 @@ export function buildFetchBodyIds(activeIds: (string | null | undefined)[]): str
 }
 
 export function TrajectoryManager() {
+  const { tier } = useQualityTier();
   const {
     currentTime,
     currentDate,
@@ -62,9 +65,26 @@ export function TrajectoryManager() {
 
   const { fetchTrajectory } = useTrajectoryWorker();
   const loadingRef = useRef<Set<string>>(new Set());
+  const activeTimeouts = useRef<Set<NodeJS.Timeout>>(new Set());
   const frameCountRef = useRef(0);
   const lastFetchRef = useRef<string | null>(null);
   const jumpAbortControllerRef = useRef<AbortController | null>(null);
+
+  // Cleanup on unmount or major jumps
+  useEffect(() => {
+    const timeouts = activeTimeouts.current;
+    const loading = loadingRef.current;
+    return () => {
+      // Clear all pending lock removals
+      timeouts.forEach(clearTimeout);
+      timeouts.clear();
+      loading.clear();
+      
+      if (jumpAbortControllerRef.current) {
+        jumpAbortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   const fetchBlock = useCallback(
     async (date: string, spanDays: number, specificIds?: string[], signal?: AbortSignal) => {
@@ -85,7 +105,7 @@ export function TrajectoryManager() {
       );
 
       try {
-        const data = await fetchTrajectory(date, spanDays, ids, signal);
+        const data = await fetchTrajectory(date, spanDays, ids, tier, signal);
         appendTrajectoryData(data);
         console.log(
           `[TrajectoryManager] Block starting at ${date} processed by worker and appended successfully.`,
@@ -101,10 +121,14 @@ export function TrajectoryManager() {
           );
         }
       } finally {
-        setTimeout(() => loadingRef.current.delete(blockCacheKey), 5000);
+        const timerId = setTimeout(() => {
+          loadingRef.current.delete(blockCacheKey);
+          activeTimeouts.current.delete(timerId);
+        }, 5000);
+        activeTimeouts.current.add(timerId);
       }
     },
-    [appendTrajectoryData, fetchTrajectory],
+    [appendTrajectoryData, fetchTrajectory, tier],
   );
 
   // 1A. Time Travel Fetch (DEBOUNCED)
@@ -158,7 +182,7 @@ export function TrajectoryManager() {
 
     if (missingIds.length > 0) {
       const cacheKey = `target_${currentDate}_${fetchSpanDays}_${missingIds.join(",")}`;
-      
+
       if (!loadingRef.current.has(cacheKey)) {
         loadingRef.current.add(cacheKey);
         // Notice: No abort signal passed here. We don't want a hover to cancel a click.
@@ -175,7 +199,7 @@ export function TrajectoryManager() {
 
     const timeMs = currentTime.getTime();
     const { fetchSpanDays, thresholdDays } = getDynamicBufferParams();
-    
+
     const state = useSolarStore.getState();
     const bodyIds = buildFetchBodyIds([state.selectedPlanet?.bodyId, state.hoveredPlanetId]);
 

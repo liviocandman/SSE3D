@@ -350,7 +350,7 @@ export function PlanetInfo({ planet, earthPosition, onAskAstronomer }: PlanetInf
       {/* Footer Info */}
       <div className="p-3 bg-white/5 border border-white/5 rounded-lg">
         <p className="text-[10px] text-white/40 italic">
-          High-precision ephemeris data provided by NASA JPL Horizons.
+          High-precision ephemeris data provided by NASA NAIF SPICE kernels.
         </p>
       </div>
     </div>

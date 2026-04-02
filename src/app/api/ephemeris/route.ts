@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCachedBulkEphemeris } from '@/services/cacheService';
-import { BODY_IDS } from '@/services/nasaClient';
 import { API_BASE_URL } from '@/lib/api';
-
-const ALL_PLANET_IDS = Object.values(BODY_IDS);
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -13,29 +9,6 @@ export async function GET(request: NextRequest) {
   const idsParam = searchParams.get('ids');
   const centerBody = searchParams.get('center_body') ?? '10';
   const fullOrbit = searchParams.get('fullOrbit') === 'true';
-  
-  const bodyIds = idsParam 
-    ? idsParam.split(',').map(id => id.trim()) 
-    : ALL_PLANET_IDS;
-
-  // Include spanDays and fullOrbit in the cache key
-  const cacheKeyDate = fullOrbit ? 'FULL_ORBIT' : `${date}_${spanDays}`;
-
-  if (!force) {
-    const cacheResult = await getCachedBulkEphemeris(bodyIds, cacheKeyDate, centerBody);
-    if (cacheResult.missing.length === 0 && cacheResult.cached.length > 0) {
-      return NextResponse.json({
-        data: cacheResult.cached,
-        meta: {
-          source: 'CACHE_HIT',
-          timestamp: new Date().toISOString(),
-          requestedDate: date,
-          cacheHits: cacheResult.cached.length,
-          cacheMisses: 0,
-        }
-      });
-    }
-  }
 
   const idsQuery = idsParam ? `&ids=${idsParam}` : '';
   const forceQuery = force ? '&force=true' : '';

@@ -9,7 +9,6 @@
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
-.agents/
 
 # testing
 /coverage
@@ -58,4 +57,9 @@ __pycache__/
 .env
 .env.local
 .env.*
-! .env.example
+
+# spice kernels
+sse3d-api/kernels/**
+!sse3d-api/kernels/.gitkeep
+!sse3d-api/kernels/lsk/.gitkeep
+!sse3d-api/kernels/spk/.gitkeep

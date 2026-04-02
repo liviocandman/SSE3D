@@ -1,16 +1,22 @@
 import type { EphemerisData, EphemerisTrajectory } from '../lib/types';
+import { densifyWithCatmullRom } from '../lib/catmullRom';
 
 /**
  * Trajectory Web Worker
- * Offloads heavy JSON parsing and normalization from the Main Thread.
+ * Offloads heavy JSON parsing, normalization, and densification from the Main Thread.
  */
 
 const activeJobs = new Map<string, AbortController>();
 
+// Quality-gated subdivision counts (confirmed thresholds)
+const SUBDIVISIONS_BY_TIER: Record<string, number> = {
+  high: 8,   // 7 synthetic pts per gap
+  mid:  4,   // 3 synthetic pts per gap
+  low:  2,   // 1 synthetic pt per gap
+};
+
 /**
  * Normalizes trajectory points (sorting and uniqueness)
- * Duplicate logic from trajectoryEngine.ts to keep worker self-contained if needed,
- * but using module imports if possible.
  */
 function normalizePoints(points: EphemerisTrajectory[]): EphemerisTrajectory[] {
   const unique = new Map<string, EphemerisTrajectory>();
@@ -41,7 +47,9 @@ self.onmessage = async (e: MessageEvent) => {
     const controller = new AbortController();
     activeJobs.set(jobId, controller);
 
-    const { date, spanDays, ids, origin } = params;
+    const { date, spanDays, ids, origin, tier } = params;
+    const subdivisions = SUBDIVISIONS_BY_TIER[tier ?? 'mid'];
+
     const urlParams = new URLSearchParams({
       date,
       spanDays: spanDays.toString(),
@@ -62,10 +70,12 @@ self.onmessage = async (e: MessageEvent) => {
       const payload = await response.json();
       const rawData = payload.data as EphemerisData[];
 
-      // OPTIMIZATION: Initial normalization on background thread
+      // OPTIMIZATION: Initial normalization and Catmull-Rom densification on background thread
       const processedData = rawData.map(body => ({
         ...body,
-        trajectory: body.trajectory ? normalizePoints(body.trajectory) : []
+        trajectory: body.trajectory 
+          ? densifyWithCatmullRom(normalizePoints(body.trajectory), subdivisions) 
+          : []
       }));
 
       self.postMessage({
