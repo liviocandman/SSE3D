@@ -3,12 +3,13 @@
  * Fetches and manages ephemeris data with error handling, validation, and fallback support
  */
 
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { EphemerisData, EphemerisResponse, DataSource } from '@/lib/types';
-import { toast } from 'sonner';
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { EphemerisData, EphemerisResponse, DataSource } from "@/lib/types";
+import { API_BASE_URL } from "@/lib/api";
+import { toast } from "sonner";
 
 // --- Types ---
 
@@ -28,11 +29,11 @@ export interface EphemerisError {
 }
 
 export type EphemerisErrorType =
-  | 'NASA_API_ERROR'
-  | 'NETWORK_ERROR'
-  | 'VALIDATION_ERROR'
-  | 'TIMEOUT_ERROR'
-  | 'UNKNOWN_ERROR';
+  | "NASA_API_ERROR"
+  | "NETWORK_ERROR"
+  | "VALIDATION_ERROR"
+  | "TIMEOUT_ERROR"
+  | "UNKNOWN_ERROR";
 
 interface UseEphemerisOptions {
   date?: string; // YYYY-MM-DD format
@@ -60,7 +61,7 @@ class EphemerisFetchError extends Error {
     message: string,
     canRetry: boolean,
     technicalDetails?: string,
-    isAbort = false
+    isAbort = false,
   ) {
     super(message);
     this.type = type;
@@ -88,7 +89,10 @@ function validateData(data: EphemerisData[]): EphemerisData[] {
 
     const { x, y, z } = item.position;
     if (!isFinite(x) || !isFinite(y) || !isFinite(z)) {
-      console.warn(`[useEphemeris] Invalid position for ${item.name}:`, item.position);
+      console.warn(
+        `[useEphemeris] Invalid position for ${item.name}:`,
+        item.position,
+      );
       return false;
     }
 
@@ -98,12 +102,14 @@ function validateData(data: EphemerisData[]): EphemerisData[] {
 
 async function loadFallbackData(): Promise<EphemerisData[]> {
   try {
-    const fallback = await import('@/lib/fallback_planets.json');
+    const fallback = await import("@/lib/fallback_planets.json");
     const validated = validateData(fallback.data as EphemerisData[]);
-    console.log(`[useEphemeris] Loaded ${validated.length} bodies from fallback`);
+    console.log(
+      `[useEphemeris] Loaded ${validated.length} bodies from fallback`,
+    );
     return validated;
   } catch (error) {
-    console.error('[useEphemeris] Failed to load fallback data:', error);
+    console.error("[useEphemeris] Failed to load fallback data:", error);
     return [];
   }
 }
@@ -137,14 +143,14 @@ async function fetchEphemeris({
     if (signal.aborted) {
       abortController.abort();
     } else {
-      signal.addEventListener('abort', handleAbort, { once: true });
+      signal.addEventListener("abort", handleAbort, { once: true });
     }
   }
 
   try {
     const url = force
-      ? `/api/ephemeris?date=${date}&spanDays=${spanDays}&force=true`
-      : `/api/ephemeris?date=${date}&spanDays=${spanDays}`;
+      ? `${API_BASE_URL}/api/ephemeris?date=${date}&spanDays=${spanDays}&force=true`
+      : `${API_BASE_URL}/api/ephemeris?date=${date}&spanDays=${spanDays}`;
 
     const response = await fetch(url, {
       signal: abortController.signal,
@@ -152,9 +158,9 @@ async function fetchEphemeris({
 
     if (!response.ok) {
       throw new EphemerisFetchError(
-        'NASA_API_ERROR',
+        "NASA_API_ERROR",
         `API error: ${response.status} ${response.statusText}`,
-        true
+        true,
       );
     }
 
@@ -162,9 +168,9 @@ async function fetchEphemeris({
 
     if (!result.data || !Array.isArray(result.data)) {
       throw new EphemerisFetchError(
-        'VALIDATION_ERROR',
-        'Invalid API response format: missing data array',
-        false
+        "VALIDATION_ERROR",
+        "Invalid API response format: missing data array",
+        false,
       );
     }
 
@@ -172,9 +178,9 @@ async function fetchEphemeris({
 
     if (validatedData.length === 0) {
       throw new EphemerisFetchError(
-        'VALIDATION_ERROR',
-        'No valid ephemeris data received',
-        false
+        "VALIDATION_ERROR",
+        "No valid ephemeris data received",
+        false,
       );
     }
 
@@ -187,44 +193,44 @@ async function fetchEphemeris({
       throw error;
     }
 
-    if (error instanceof Error && error.name === 'AbortError') {
+    if (error instanceof Error && error.name === "AbortError") {
       if (didTimeout) {
         throw new EphemerisFetchError(
-          'TIMEOUT_ERROR',
-          'Request timed out',
+          "TIMEOUT_ERROR",
+          "Request timed out",
           true,
-          `Timeout after ${timeoutMs}ms`
+          `Timeout after ${timeoutMs}ms`,
         );
       }
 
       throw new EphemerisFetchError(
-        'UNKNOWN_ERROR',
-        'Request aborted',
+        "UNKNOWN_ERROR",
+        "Request aborted",
         false,
         undefined,
-        true
+        true,
       );
     }
 
-    if (error instanceof TypeError && error.message.includes('fetch')) {
+    if (error instanceof TypeError && error.message.includes("fetch")) {
       throw new EphemerisFetchError(
-        'NETWORK_ERROR',
-        'Network error while fetching ephemeris data',
+        "NETWORK_ERROR",
+        "Network error while fetching ephemeris data",
         true,
-        error.message
+        error.message,
       );
     }
 
     throw new EphemerisFetchError(
-      'UNKNOWN_ERROR',
-      'Unknown error occurred',
+      "UNKNOWN_ERROR",
+      "Unknown error occurred",
       true,
-      error instanceof Error ? error.stack : undefined
+      error instanceof Error ? error.stack : undefined,
     );
   } finally {
     clearTimeout(timeoutId);
     if (signal) {
-      signal.removeEventListener('abort', handleAbort);
+      signal.removeEventListener("abort", handleAbort);
     }
   }
 }
@@ -233,27 +239,33 @@ async function fetchEphemeris({
 
 export function useEphemeris(options: UseEphemerisOptions = {}) {
   const {
-    date = new Date().toISOString().split('T')[0],
+    date = new Date().toISOString().split("T")[0],
     spanDays = 30,
     autoFetch = true,
     timeoutMs = DEFAULT_TIMEOUT_MS,
   } = options;
 
   const queryClient = useQueryClient();
-  const [fallbackData, setFallbackData] = useState<EphemerisData[] | null>(null);
-  const [fallbackError, setFallbackError] = useState<EphemerisError | null>(null);
+  const [fallbackData, setFallbackData] = useState<EphemerisData[] | null>(
+    null,
+  );
+  const [fallbackError, setFallbackError] = useState<EphemerisError | null>(
+    null,
+  );
   const [source, setSource] = useState<DataSource | null>(null);
   const [isFallback, setIsFallback] = useState(false);
   const [isFallbackLoading, setIsFallbackLoading] = useState(false);
 
   const query = useQuery<EphemerisResponse, EphemerisFetchError>({
-    queryKey: ['ephemeris', date, spanDays],
-    queryFn: ({ signal }) => fetchEphemeris({ date, spanDays, timeoutMs, signal }),
+    queryKey: ["ephemeris", date, spanDays],
+    queryFn: ({ signal }) =>
+      fetchEphemeris({ date, spanDays, timeoutMs, signal }),
     enabled: autoFetch,
-    retry: (failureCount, error) => error.canRetry && failureCount < MAX_RETRIES,
+    retry: (failureCount, error) =>
+      error.canRetry && failureCount < MAX_RETRIES,
     retryDelay: (attempt) => RETRY_DELAY_MS * attempt,
     staleTime: STALE_TIME_MS,
-    networkMode: 'always',
+    networkMode: "always",
   });
 
   const COLD_START_THRESHOLD_MS = 1000;
@@ -263,8 +275,8 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
 
     const timer = setTimeout(() => {
       if (query.isFetching) {
-        toast.info('Conectando aos servidores espaciais...', {
-          id: 'cold-start-toast',
+        toast.info("Conectando aos servidores espaciais...", {
+          id: "cold-start-toast",
           duration: 8000,
         });
       }
@@ -272,7 +284,7 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
 
     return () => {
       clearTimeout(timer);
-      toast.dismiss('cold-start-toast');
+      toast.dismiss("cold-start-toast");
     };
   }, [query.isFetching]);
 
@@ -296,7 +308,7 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
         if (cancelled) return;
         setFallbackData(data);
         setIsFallback(true);
-        setSource('FALLBACK_DATASET');
+        setSource("FALLBACK_DATASET");
         setFallbackError(toEphemerisError(query.error));
       })
       .finally(() => {
@@ -327,8 +339,9 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
 
     try {
       await queryClient.fetchQuery({
-        queryKey: ['ephemeris', date, spanDays],
-        queryFn: ({ signal }) => fetchEphemeris({ date, spanDays, timeoutMs, force: true, signal }),
+        queryKey: ["ephemeris", date, spanDays],
+        queryFn: ({ signal }) =>
+          fetchEphemeris({ date, spanDays, timeoutMs, force: true, signal }),
       });
     } catch (error) {
       if (error instanceof EphemerisFetchError && error.isAbort) return;

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useCallback } from 'react';
-import type { EphemerisData } from '../lib/types';
-
+import { useEffect, useRef, useCallback } from "react";
+import type { EphemerisData } from "../lib/types";
+import { API_BASE_URL } from "@/lib/api";
 interface WorkerRequest {
   resolve: (data: EphemerisData[]) => void;
   reject: (reason: unknown) => void;
@@ -13,8 +13,8 @@ export function useTrajectoryWorker() {
   useEffect(() => {
     // Initialize worker with standard Next.js / Webpack / Vite compatible syntax
     const worker = new Worker(
-      new URL('../workers/trajectory.worker.ts', import.meta.url),
-      { type: 'module' }
+      new URL("../workers/trajectory.worker.ts", import.meta.url),
+      { type: "module" },
     );
 
     worker.onmessage = (e: MessageEvent) => {
@@ -23,9 +23,9 @@ export function useTrajectoryWorker() {
 
       if (!request) return;
 
-      if (type === 'SUCCESS') {
+      if (type === "SUCCESS") {
         request.resolve(data);
-      } else if (type === 'ERROR') {
+      } else if (type === "ERROR") {
         request.reject(new Error(error));
       }
 
@@ -40,47 +40,50 @@ export function useTrajectoryWorker() {
     };
   }, []);
 
-  const fetchTrajectory = useCallback(async (
-    date: string,
-    spanDays: number,
-    ids: string[],
-    tier: string,
-    signal?: AbortSignal
-  ): Promise<EphemerisData[]> => {
-    if (!workerRef.current) {
-      throw new Error('Worker not initialized');
-    }
-
-    const jobId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-    return new Promise((resolve, reject) => {
-      pendingRequests.current.set(jobId, { resolve, reject });
-
-      // Handle external abort signal
-      if (signal) {
-        signal.addEventListener('abort', () => {
-          workerRef.current?.postMessage({ type: 'CANCEL', jobId });
-          const req = pendingRequests.current.get(jobId);
-          if (req) {
-            req.reject(new Error('AbortError'));
-            pendingRequests.current.delete(jobId);
-          }
-        });
+  const fetchTrajectory = useCallback(
+    async (
+      date: string,
+      spanDays: number,
+      ids: string[],
+      tier: string,
+      signal?: AbortSignal,
+    ): Promise<EphemerisData[]> => {
+      if (!workerRef.current) {
+        throw new Error("Worker not initialized");
       }
 
-      workerRef.current?.postMessage({
-        type: 'FETCH',
-        jobId,
-        params: { 
-          date, 
-          spanDays, 
-          ids,
-          tier,
-          origin: window.location.origin 
-        },
+      const jobId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+      return new Promise((resolve, reject) => {
+        pendingRequests.current.set(jobId, { resolve, reject });
+
+        // Handle external abort signal
+        if (signal) {
+          signal.addEventListener("abort", () => {
+            workerRef.current?.postMessage({ type: "CANCEL", jobId });
+            const req = pendingRequests.current.get(jobId);
+            if (req) {
+              req.reject(new Error("AbortError"));
+              pendingRequests.current.delete(jobId);
+            }
+          });
+        }
+
+        workerRef.current?.postMessage({
+          type: "FETCH",
+          jobId,
+          params: {
+            date,
+            spanDays,
+            ids,
+            tier,
+            origin: API_BASE_URL,
+          },
+        });
       });
-    });
-  }, []);
+    },
+    [],
+  );
 
   return { fetchTrajectory };
 }

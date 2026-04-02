@@ -36,7 +36,9 @@ async function uploadKernels() {
     process.exit(1);
   }
 
-  console.log(`🚀 Starting Multipart Upload of ${KERNELS_TO_UPLOAD.length} Kernels to S3...`);
+  console.log(
+    `🚀 Starting Multipart Upload of ${KERNELS_TO_UPLOAD.length} Kernels to S3...`,
+  );
 
   for (const fileKey of KERNELS_TO_UPLOAD) {
     const filePath = path.join(KERNELS_DIR, fileKey);
@@ -50,7 +52,9 @@ async function uploadKernels() {
     const stat = fs.statSync(filePath);
     const s3Key = `kernels/${fileKey}`; // Will be saved as kernels/spk/file.bsp
 
-    console.log(`\n📤 Processing ${fileKey} (${(stat.size / 1024 / 1024).toFixed(2)} MB)...`);
+    console.log(
+      `\n📤 Processing ${fileKey} (${(stat.size / 1024 / 1024).toFixed(2)} MB)...`,
+    );
 
     try {
       const parallelUploads3 = new Upload({
@@ -60,6 +64,7 @@ async function uploadKernels() {
           Key: s3Key,
           Body: fileStream,
           ContentType: "application/octet-stream",
+          ACL: "public-read", // Make the file publicly readable
         },
         partSize: 1024 * 1024 * 15, // Divide into 15 MB chunks
         leavePartsOnError: false,
