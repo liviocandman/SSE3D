@@ -72,11 +72,13 @@ export function TrajectoryManager() {
 
   // Cleanup on unmount or major jumps
   useEffect(() => {
+    const timeouts = activeTimeouts.current;
+    const loading = loadingRef.current;
     return () => {
       // Clear all pending lock removals
-      activeTimeouts.current.forEach(clearTimeout);
-      activeTimeouts.current.clear();
-      loadingRef.current.clear();
+      timeouts.forEach(clearTimeout);
+      timeouts.clear();
+      loading.clear();
       
       if (jumpAbortControllerRef.current) {
         jumpAbortControllerRef.current.abort();
@@ -126,7 +128,7 @@ export function TrajectoryManager() {
         activeTimeouts.current.add(timerId);
       }
     },
-    [appendTrajectoryData, fetchTrajectory],
+    [appendTrajectoryData, fetchTrajectory, tier],
   );
 
   // 1A. Time Travel Fetch (DEBOUNCED)

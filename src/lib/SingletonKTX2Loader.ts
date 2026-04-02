@@ -34,6 +34,7 @@ export class SingletonKTX2Loader extends KTX2Loader {
       return globalInstance;
     }
     super();
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     globalInstance = this;
   }
 }

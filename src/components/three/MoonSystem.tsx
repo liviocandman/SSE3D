@@ -143,23 +143,23 @@ function MoonMesh({
     useShallow((s) => s.masterTrajectorySegments[bodyId] || [])
   );
 
-  if (!config) return null;
-
+  // Pre-calculate properties for hooks safely
   const radius = getRadius(bodyId, 'MOON', viewMode);
   const textureTier = resolveTextureTier(tier);
-  const textureUrl = getTexturePath(bodyId, textureTier);
-  const name = config.englishName;
+  const textureUrl = config ? getTexturePath(bodyId, textureTier) : '';
+  
+  const orbitScale = config
+    ? getMoonOrbitScale(
+        parentId,
+        parentClass,
+        config.meanDistanceAU * AU_TO_KM,
+        viewMode
+      )
+    : 1;
 
-  const orbitScale = getMoonOrbitScale(
-    parentId,
-    parentClass,
-    config.meanDistanceAU * AU_TO_KM,
-    viewMode
-  );
-
-  const texture = useLoader(SingletonKTX2Loader as any, textureUrl, () => {
+  const texture = useLoader(SingletonKTX2Loader as unknown as typeof THREE.Loader, textureUrl || '/textures/generic_moon_mid.ktx2', () => {
     getSharedKTX2Loader(gl);
-  });
+  }) as THREE.Texture;
 
   // Correct color space for SRGB textures loaded via KTX2
   useEffect(() => {
@@ -180,6 +180,7 @@ function MoonMesh({
   }, []);
 
   useFrame((_, delta) => {
+    if (!config) return;
     const solarState = useSolarStore.getState();
     const simTime = solarState.currentTime.getTime();
     const isPlaying = solarState.isPlaying;
@@ -207,6 +208,10 @@ function MoonMesh({
       meshRef.current.rotation.y += rotationSpeed * 60 * delta * (isPlaying ? timeMultiplier : 1);
     }
   });
+
+  if (!config) return null;
+
+  const name = config.englishName;
 
   const handleClick = () => {
     const currentPos = moonTrajectory.length > 0 ? moonTrajectory[0].position : { x: 0, y: 0, z: 0 };
@@ -321,26 +326,15 @@ export function MoonSystem({
   parentId,
   parentClass,
   parentPosition,
-  worldParentPosition,
   viewMode,
   tier,
 }: MoonSystemProps) {
   const moonIds = PLANET_MOONS[parentId] ?? [];
   const hasMoons = moonIds.length > 0;
 
-  const { setSelectedPlanet, setViewMode, setTravelTarget } = useSolarStore(
-    useShallow((s) => ({
-      setSelectedPlanet: s.setSelectedPlanet,
-      setViewMode: s.setViewMode,
-      setTravelTarget: s.setTravelTarget,
-    }))
-  );
-
   const parentConfig = getPlanetConfig(parentId);
 
   if (!hasMoons) return null;
-
-  const textureTier = resolveTextureTier(tier);
 
   return (
     <group position={parentPosition}>

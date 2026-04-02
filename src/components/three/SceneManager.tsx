@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, ReactNode, useRef, useMemo, useEffect } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Stars } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import { QualityTierProvider, useQualityTier } from '@/contexts/QualityTierContext';

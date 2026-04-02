@@ -28,9 +28,9 @@ export function Sun({
 
   // Carregar Textura do Sol (KTX2 Optimized)
   const texturePath = getTexturePath(SUN_BODY_ID, tier as TextureTier);
-  const sunTexture = useLoader(SingletonKTX2Loader as any, texturePath, () => {
+  const sunTexture = useLoader(SingletonKTX2Loader as unknown as typeof THREE.Loader, texturePath, () => {
     getSharedKTX2Loader(gl);
-  });
+  }) as THREE.Texture;
 
   // Tamanhos de referência
   const didacticRadius = getRadius(SUN_BODY_ID, 'STAR', 'didactic'); // ~35u
