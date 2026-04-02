@@ -44,6 +44,7 @@ export function useTrajectoryWorker() {
     date: string,
     spanDays: number,
     ids: string[],
+    tier: string,
     signal?: AbortSignal
   ): Promise<EphemerisData[]> => {
     if (!workerRef.current) {
@@ -74,6 +75,7 @@ export function useTrajectoryWorker() {
           date, 
           spanDays, 
           ids,
+          tier,
           origin: window.location.origin 
         },
       });

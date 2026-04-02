@@ -8,6 +8,8 @@ import { PLANET_MOONS } from "@/lib/textureConfig";
 import { computeBufferPlan, hasCoverageNearTime } from "@/lib/trajectoryEngine";
 import { useTrajectoryWorker } from "@/hooks/useTrajectoryWorker";
 
+import { useQualityTier } from "@/contexts/QualityTierContext";
+
 const COVERAGE_TOLERANCE_MS = 48 * 60 * 60 * 1000; // Increased to 48h to avoid flickering at segment boundaries
 
 // Eager load Jupiter (599) and Saturn (699) since they are the most visited and have many moons
@@ -39,6 +41,7 @@ export function buildFetchBodyIds(activeIds: (string | null | undefined)[]): str
 }
 
 export function TrajectoryManager() {
+  const { tier } = useQualityTier();
   const {
     currentTime,
     currentDate,
@@ -100,7 +103,7 @@ export function TrajectoryManager() {
       );
 
       try {
-        const data = await fetchTrajectory(date, spanDays, ids, signal);
+        const data = await fetchTrajectory(date, spanDays, ids, tier, signal);
         appendTrajectoryData(data);
         console.log(
           `[TrajectoryManager] Block starting at ${date} processed by worker and appended successfully.`,

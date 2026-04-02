@@ -1,4 +1,4 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Line } from '@react-three/drei';
@@ -29,20 +29,31 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
   graceMs = 12 * 60 * 60 * 1000,
 }) => {
   const lineRef = useRef<LineMesh>(null);
-  const baseColor = useMemo(() => new THREE.Color(color), [color]);
-  const fadeColor = useMemo(() => new THREE.Color(0x000000), []);
+  
+  // Reusable Color objects stored in refs to avoid GC allocations in the frame loop
+  const baseColor = useRef(new THREE.Color(color));
+  const fadeColor = useRef(new THREE.Color(0x000000));
+  const scratchColor = useRef(new THREE.Color());
 
-  // Pre-allocate fixed buffers for the maximum possible points
-  // Line from @react-three/drei uses LineGeometry (Fat Lines) which requires specific buffer management
-  const [initialPoints, initialColors] = useMemo(() => {
-    const pts = [];
-    const cls = [];
-    for (let i = 0; i < maxTrailPoints; i++) {
-      pts.push(new THREE.Vector3(0, 0, 0));
-      cls.push([1, 1, 1] as [number, number, number]);
+  // Performance: Pre-allocate typed arrays for the GPU buffers
+  const posBuffer = useRef(new Float32Array(maxTrailPoints * 3));
+  const colBuffer = useRef(new Float32Array(maxTrailPoints * 3));
+
+  // Sync color changes to the ref
+  useEffect(() => {
+    baseColor.current.set(color);
+  }, [color]);
+
+  // Handle quality tier changes / buffer resizing
+  useEffect(() => {
+    if (posBuffer.current.length !== maxTrailPoints * 3) {
+      posBuffer.current = new Float32Array(maxTrailPoints * 3);
+      colBuffer.current = new Float32Array(maxTrailPoints * 3);
     }
-    return [pts, cls];
   }, [maxTrailPoints]);
+
+  // Minimal initial points to satisfy Line's constructor without creating memory pressure
+  const initialPoints = useMemo(() => [[0, 0, 0], [0, 0, 0]] as [number, number, number][], []);
 
   useFrame(() => {
     if (!lineRef.current) return;
@@ -81,25 +92,40 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
 
     lineRef.current.visible = true;
 
-    const positions: number[] = [];
-    const colors: number[] = [];
-    const tempColor = new THREE.Color();
+    const pos = posBuffer.current;
+    const col = colBuffer.current;
+    const bc = baseColor.current;
+    const fc = fadeColor.current;
+    const sc = scratchColor.current;
 
     for (let i = 0; i < count; i++) {
       const p = samples[lastVisibleIndex - i].point;
-      positions.push(p.x, p.y, p.z);
+      const idx = i * 3;
+
+      // Direct write into pre-allocated Float32Array (Zero allocation)
+      pos[idx] = p.x;
+      pos[idx + 1] = p.y;
+      pos[idx + 2] = p.z;
 
       const alpha = calculateTrailAlpha(i, count, 'tail');
-      tempColor.copy(baseColor).lerp(fadeColor, 1 - alpha);
-      colors.push(tempColor.r, tempColor.g, tempColor.b);
+      sc.copy(bc).lerp(fc, 1 - alpha);
+      
+      col[idx] = sc.r;
+      col[idx + 1] = sc.g;
+      col[idx + 2] = sc.b;
     }
 
     // Direct mutation without triggering React renders
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const geometry = lineRef.current.geometry as any; // LineGeometry doesn't have public TS defs for setPositions
-    if (geometry.setPositions) {
-      geometry.setPositions(positions);
-      geometry.setColors(colors);
+    const geometry = lineRef.current.geometry as any; 
+    if (geometry.setPositions && geometry.setColors) {
+      // Use subarray to provide a view of the buffer (Zero allocation)
+      geometry.setPositions(pos.subarray(0, count * 3));
+      geometry.setColors(col.subarray(0, count * 3));
+      
+      // Notify Three.js that the attributes need an update
+      geometry.attributes.instanceStart.needsUpdate = true;
+      geometry.attributes.instanceEnd.needsUpdate = true;
     }
     
     lineRef.current.computeLineDistances();
@@ -110,7 +136,7 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ref={lineRef as any}
       points={initialPoints} 
-      vertexColors={initialColors}
+      vertexColors={[[1, 1, 1], [1, 1, 1]]} // Placeholder colors
       transparent
       opacity={opacity}
       lineWidth={lineWidth}
