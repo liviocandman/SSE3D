@@ -62,9 +62,24 @@ export function TrajectoryManager() {
 
   const { fetchTrajectory } = useTrajectoryWorker();
   const loadingRef = useRef<Set<string>>(new Set());
+  const activeTimeouts = useRef<Set<NodeJS.Timeout>>(new Set());
   const frameCountRef = useRef(0);
   const lastFetchRef = useRef<string | null>(null);
   const jumpAbortControllerRef = useRef<AbortController | null>(null);
+
+  // Cleanup on unmount or major jumps
+  useEffect(() => {
+    return () => {
+      // Clear all pending lock removals
+      activeTimeouts.current.forEach(clearTimeout);
+      activeTimeouts.current.clear();
+      loadingRef.current.clear();
+      
+      if (jumpAbortControllerRef.current) {
+        jumpAbortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   const fetchBlock = useCallback(
     async (date: string, spanDays: number, specificIds?: string[], signal?: AbortSignal) => {
@@ -101,7 +116,11 @@ export function TrajectoryManager() {
           );
         }
       } finally {
-        setTimeout(() => loadingRef.current.delete(blockCacheKey), 5000);
+        const timerId = setTimeout(() => {
+          loadingRef.current.delete(blockCacheKey);
+          activeTimeouts.current.delete(timerId);
+        }, 5000);
+        activeTimeouts.current.add(timerId);
       }
     },
     [appendTrajectoryData, fetchTrajectory],
@@ -158,7 +177,7 @@ export function TrajectoryManager() {
 
     if (missingIds.length > 0) {
       const cacheKey = `target_${currentDate}_${fetchSpanDays}_${missingIds.join(",")}`;
-      
+
       if (!loadingRef.current.has(cacheKey)) {
         loadingRef.current.add(cacheKey);
         // Notice: No abort signal passed here. We don't want a hover to cancel a click.
@@ -175,7 +194,7 @@ export function TrajectoryManager() {
 
     const timeMs = currentTime.getTime();
     const { fetchSpanDays, thresholdDays } = getDynamicBufferParams();
-    
+
     const state = useSolarStore.getState();
     const bodyIds = buildFetchBodyIds([state.selectedPlanet?.bodyId, state.hoveredPlanetId]);
 

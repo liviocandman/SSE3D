@@ -27,10 +27,10 @@ async def get_ephemeris(
     try:
         actual_date = target_date if target_date else date.today()
 
-        # Preserve previous date coarsening to reduce trajectory churn during scrubbing.
-        if not full_orbit:
+        if full_orbit:
+            # Complete orbits (background lines) use 10-day coarsening to maximize cache efficiency.
             days_since_epoch = (actual_date - date(2000, 1, 1)).days
-            rounded_days = (days_since_epoch // 3) * 3
+            rounded_days = (days_since_epoch // 10) * 10
             actual_date = date(2000, 1, 1) + timedelta(days=rounded_days)
 
         date_str = actual_date.isoformat()

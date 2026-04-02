@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useEffect, Suspense } from 'react';
+import { useRef, useState, useEffect, Suspense, useMemo } from 'react';
 import { useFrame, useThree, useLoader } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import * as THREE from 'three';
@@ -40,15 +40,12 @@ interface MoonSystemProps {
 
 interface MoonMeshProps {
   bodyId: string;
-  name: string;
-  orbitScale: number;
-  radius: number;
-  textureUrl: string;
-  rotationSpeed: number;
-  fallbackColor: string;
+  parentId: string;
+  parentName: string;
+  parentClass: BodyClass;
   viewMode: ViewMode;
-  onClick: () => void;
-  onDoubleClick: () => void;
+  tier: string;
+  parentPosition: [number, number, number];
 }
 
 // ---------------------------------------------------------------------------
@@ -114,15 +111,12 @@ function resolveTextureTier(tier: string): TextureTier {
 
 function MoonMesh({
   bodyId,
-  name,
-  orbitScale,
-  radius,
-  textureUrl,
-  rotationSpeed,
-  fallbackColor,
+  parentId,
+  parentName,
+  parentClass,
   viewMode,
-  onClick,
-  onDoubleClick,
+  tier,
+  parentPosition
 }: MoonMeshProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
@@ -131,9 +125,38 @@ function MoonMesh({
   const [isHovered, setIsHovered] = useState(false);
   const tempVec = useRef(new THREE.Vector3());
 
-  // Use idiomatic useLoader with the singleton.
-  // This will suspend MoonMesh until the texture is loaded.
-  // We wrap MoonMesh in a Suspense component in the MoonSystem to avoid blocking the scene.
+  const { setSelectedPlanet, setViewMode, setTravelTarget } = useSolarStore(
+    useShallow((s) => ({
+      setSelectedPlanet: s.setSelectedPlanet,
+      setViewMode: s.setViewMode,
+      setTravelTarget: s.setTravelTarget,
+    }))
+  );
+
+  const config = useMemo(() => getPlanetConfig(bodyId), [bodyId]);
+  
+  // Reactive subscription: This component only re-renders if this specific moon's data changes.
+  const moonTrajectory = useSolarStore(
+    useShallow((s) => s.masterTrajectory[bodyId] || [])
+  );
+  const masterSegments = useSolarStore(
+    useShallow((s) => s.masterTrajectorySegments[bodyId] || [])
+  );
+
+  if (!config) return null;
+
+  const radius = getRadius(bodyId, 'MOON', viewMode);
+  const textureTier = resolveTextureTier(tier);
+  const textureUrl = getTexturePath(bodyId, textureTier);
+  const name = config.englishName;
+
+  const orbitScale = getMoonOrbitScale(
+    parentId,
+    parentClass,
+    config.meanDistanceAU * AU_TO_KM,
+    viewMode
+  );
+
   const texture = useLoader(SingletonKTX2Loader as any, textureUrl, () => {
     getSharedKTX2Loader(gl);
   });
@@ -145,9 +168,6 @@ function MoonMesh({
       texture.needsUpdate = true;
     }
   }, [texture]);
-
-  // Subscribe only to this specific moon's trajectory
-  const masterSegments = useSolarStore(useShallow(state => state.masterTrajectorySegments[bodyId] || []));
 
   // Dispose of material on unmount
   useEffect(() => {
@@ -183,40 +203,67 @@ function MoonMesh({
     }
 
     if (meshRef.current) {
+      const rotationSpeed = config.rotationSpeed || 0.005;
       meshRef.current.rotation.y += rotationSpeed * 60 * delta * (isPlaying ? timeMultiplier : 1);
     }
   });
+
+  const handleClick = () => {
+    const currentPos = moonTrajectory.length > 0 ? moonTrajectory[0].position : { x: 0, y: 0, z: 0 };
+    const distanceToParentKm = Math.sqrt(currentPos.x ** 2 + currentPos.y ** 2 + currentPos.z ** 2);
+    
+    setSelectedPlanet({
+      bodyId,
+      name: config.name,
+      englishName: config.englishName,
+      position: currentPos,
+      velocity: moonTrajectory.length > 0 ? moonTrajectory[0].velocity : { x: 0, y: 0, z: 0 },
+      trajectory: moonTrajectory,
+      radius: radius,
+      distanceFromSun: 0,
+      parentId,
+      parentName,
+      distanceToParentKm,
+    });
+  };
+
+  const handleDoubleClick = () => {
+    const currentPos = moonTrajectory.length > 0 ? moonTrajectory[0].position : { x: 0, y: 0, z: 0 };
+    
+    // Calculate realistic world position for camera travel
+    const realisticWorldPos = {
+      x: (parentPosition?.[0] ?? 0) + (currentPos.x * KM_TO_UNIT),
+      y: (parentPosition?.[1] ?? 0) + (currentPos.y * KM_TO_UNIT),
+      z: (parentPosition?.[2] ?? 0) + (currentPos.z * KM_TO_UNIT),
+    };
+
+    handleClick(); // Set selected state
+    setViewMode('realistic');
+    const realisticRadius = getRadius(bodyId, 'MOON', 'realistic');
+    setTravelTarget(realisticWorldPos, realisticRadius * 8);
+  };
+
+  const events = {
+    onClick: handleClick,
+    onDoubleClick: handleDoubleClick,
+    onPointerEnter: () => {
+      setIsHovered(true);
+      document.body.style.cursor = 'pointer';
+    },
+    onPointerLeave: () => {
+      setIsHovered(false);
+      document.body.style.cursor = 'auto';
+    },
+  };
+
+  const isDataLoading = masterSegments.length === 0;
+  const currentRadius = isDataLoading ? 0 : radius;
 
   const fontSize = viewMode === 'didactic' ? radius * 0.8 : radius * 12;
   const hitboxRadius = viewMode === 'realistic' ? Math.max(radius * 40, 0.1) : radius * 1.5;
   const labelY = isHovered ? radius * 1.8 : -radius * 1.8;
   const labelColor = isHovered ? '#ffffff' : '#8ab4d8';
   const labelAnchorY = isHovered ? 'bottom' : 'top';
-
-  const handleClick = () => {
-    onClick();
-  };
-  const handleDoubleClick = () => {
-    onDoubleClick();
-  };
-  const handlePointerEnter = () => {
-    setIsHovered(true);
-    document.body.style.cursor = 'pointer';
-  };
-  const handlePointerLeave = () => {
-    setIsHovered(false);
-    document.body.style.cursor = 'auto';
-  };
-
-  const events = {
-    onClick: handleClick,
-    onDoubleClick: handleDoubleClick,
-    onPointerEnter: handlePointerEnter,
-    onPointerLeave: handlePointerLeave,
-  };
-
-  const isDataLoading = masterSegments.length === 0;
-  const currentRadius = isDataLoading ? 0 : radius;
 
   return (
     <group name={name} ref={groupRef}>
@@ -228,7 +275,7 @@ function MoonMesh({
         <meshStandardMaterial
           map={texture || null}
           color="#ffffff"
-          emissive={texture ? 0x000000 : fallbackColor}
+          emissive={texture ? 0x000000 : (config.fallbackColor || '#888888')}
           emissiveIntensity={texture ? 0 : 0.5}
           transparent={isDataLoading}
           opacity={isDataLoading ? 0 : 1}
@@ -310,68 +357,16 @@ export function MoonSystem({
 
       {/* 2. Moon Meshes */}
       {moonIds.map((moonId) => {
-        const config = getPlanetConfig(moonId);
-        if (!config) return null;
-
-        const orbitScale = getMoonOrbitScale(
-          parentId,
-          parentClass,
-          config.meanDistanceAU * AU_TO_KM,
-          viewMode
-        );
-
-        const moonRadius = getRadius(moonId, 'MOON', viewMode);
-        const moonTrajectory = useSolarStore.getState().masterTrajectory[moonId];
-
-        const currentPos = moonTrajectory && moonTrajectory.length > 0
-          ? moonTrajectory[0].position
-          : { x: 0, y: 0, z: 0 };
-
-        const baseWorldParentPos = worldParentPosition || parentPosition;
-        const realisticWorldPos = {
-          x: baseWorldParentPos[0] + (currentPos.x * KM_TO_UNIT),
-          y: baseWorldParentPos[1] + (currentPos.y * KM_TO_UNIT),
-          z: baseWorldParentPos[2] + (currentPos.z * KM_TO_UNIT),
-        };
-
-        const distanceToParentKm = Math.sqrt(currentPos.x ** 2 + currentPos.y ** 2 + currentPos.z ** 2);
-
-        const moonPayload = {
-          bodyId: moonId,
-          name: config.name,
-          englishName: config.englishName,
-          position: currentPos,
-          velocity: moonTrajectory && moonTrajectory.length > 0 ? moonTrajectory[0].velocity : { x: 0, y: 0, z: 0 },
-          trajectory: moonTrajectory || [],
-          radius: moonRadius,
-          distanceFromSun: 0,
-          parentId,
-          parentName: parentConfig?.englishName ?? parentId,
-          distanceToParentKm,
-        };
-
-        const handleMoonClick = () => setSelectedPlanet(moonPayload);
-
-        const handleMoonDoubleClick = () => {
-          setSelectedPlanet(moonPayload);
-          setViewMode('realistic');
-          const realisticRadius = getRadius(moonId, 'MOON', 'realistic');
-          setTravelTarget(realisticWorldPos, realisticRadius * 8);
-        };
-
         return (
           <Suspense key={`moon-suspense-${moonId}`} fallback={null}>
             <MoonMesh
               bodyId={moonId}
-              name={config.englishName}
-              orbitScale={orbitScale}
-              radius={moonRadius}
-              textureUrl={getTexturePath(moonId, textureTier)}
-              rotationSpeed={config.rotationSpeed || 0.005}
-              fallbackColor={config.fallbackColor || '#888888'}
+              parentId={parentId}
+              parentName={parentConfig?.englishName ?? parentId}
+              parentClass={parentClass}
+              parentPosition={parentPosition}
               viewMode={viewMode}
-              onClick={handleMoonClick}
-              onDoubleClick={handleMoonDoubleClick}
+              tier={tier}
             />
           </Suspense>
         );
