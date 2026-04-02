@@ -51,14 +51,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+origins = [
+    "http://localhost:3000",          
+    "https://sse3d.vercel.app",       
+]
 # Compression Middleware
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins,
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
