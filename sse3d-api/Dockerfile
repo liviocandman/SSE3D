@@ -11,4 +11,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+ENV KERNELS_DIR="/data/kernels"
+
+CMD ["sh", "-c", "python scripts/fetch_kernels.py --kernel-root /data/kernels && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]

@@ -13,8 +13,9 @@ from urllib.request import urlopen
 
 import spiceypy as spice
 
+S3_BASE_URL = os.getenv("S3_KERNELS_URL", "").rstrip("/")
+NASA_BASE_URL = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels"
 
-NAIF_BASE = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels"
 DEFAULT_REQUIRED_BODY_IDS = [
     "10", "199", "299", "399", "499", "599", "699", "799", "899", "999",
     "301", "401", "402", "501", "502", "503", "504", "601", "602", "603", "604",
@@ -36,51 +37,31 @@ class KernelFile:
     required: bool = True
     sha256: str | None = None
 
+def get_kernel_list() -> list[KernelFile]:
+    if not S3_BASE_URL:
+        print("⚠️ Warning: S3_KERNELS_URL not defined in environment. Using empty base (will fail on S3).")
 
-DEFAULT_KERNELS = [
-    KernelFile(
-        relative_path="lsk/naif0012.tls",
-        url=f"{NAIF_BASE}/lsk/naif0012.tls",
-        required=True,
-    ),
-    KernelFile(
-        relative_path="spk/de440.bsp",
-        url=f"{NAIF_BASE}/spk/planets/de440.bsp",
-        required=True,
-    ),
-]
-
+    return [
+        # The Leap Seconds Kernel is tiny (50KB), we can fetch it directly from NASA without risk.
+        KernelFile(
+            relative_path="lsk/naif0012.tls",
+            url=f"{NASA_BASE_URL}/lsk/naif0012.tls"
+        ),
+        # All other heavy files come from S3 
+        KernelFile(relative_path="spk/de440.bsp", url=f"{S3_BASE_URL}/spk/de440.bsp"),
+        KernelFile(relative_path="spk/mar099_min.bsp", url=f"{S3_BASE_URL}/spk/mar099_min.bsp"),
+        KernelFile(relative_path="spk/jup365_min.bsp", url=f"{S3_BASE_URL}/spk/jup365_min.bsp"),
+        KernelFile(relative_path="spk/sat441_min.bsp", url=f"{S3_BASE_URL}/spk/sat441_min.bsp"),
+        KernelFile(relative_path="spk/ura111_min.bsp", url=f"{S3_BASE_URL}/spk/ura111_min.bsp"),
+        KernelFile(relative_path="spk/nep081_min.bsp", url=f"{S3_BASE_URL}/spk/nep081_min.bsp"),
+        KernelFile(relative_path="spk/plu060_min.bsp", url=f"{S3_BASE_URL}/spk/plu060_min.bsp"),
+    ]
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Download and verify SPICE kernels for SSE3D.",
-    )
-    parser.add_argument(
-        "--kernel-root",
-        default=str((Path(__file__).resolve().parents[1] / "kernels")),
-        help="Directory where kernels are stored.",
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Re-download even if file already exists.",
-    )
-    parser.add_argument(
-        "--verify-only",
-        action="store_true",
-        help="Skip download and only validate local kernels.",
-    )
-    parser.add_argument(
-        "--moon-kernel-url",
-        action="append",
-        default=[],
-        help="URL of compact moon SPK file. Can be passed multiple times.",
-    )
-    parser.add_argument(
-        "--strict-coverage",
-        action="store_true",
-        help="Exit non-zero if required NAIF IDs are missing.",
-    )
+    parser = argparse.ArgumentParser(description="Sync SPICE kernels from S3.")
+    parser.add_argument("--kernel-root", default="kernels", help="Directory where kernels are stored.")
+    parser.add_argument("--force", action="store_true", help="Re-download even if file exists.")
+    parser.add_argument("--strict-coverage", action="store_true", help="Exit non-zero if IDs are missing.")
     return parser.parse_args()
 
 
@@ -111,13 +92,17 @@ def download_file(url: str, dest: Path, force: bool) -> None:
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
 
-    with urlopen(url, context=ctx) as response, dest.open("wb") as output:
-        while True:
-            chunk = response.read(1024 * 1024)
-            if not chunk:
-                break
-            output.write(chunk)
-
+    try:
+        with urlopen(url, context=ctx) as response, dest.open("wb") as output:
+            while True:
+                chunk = response.read(1024 * 1024 * 5) # 5MB chunks 
+                if not chunk:
+                    break
+                output.write(chunk)
+    except Exception as e:
+        print(f"❌ Critical error downloading {url}: {e}")
+        if dest.exists():
+            dest.unlink() # Delete corrupted file to not break the cache
 
 def build_kernel_list(moon_urls: list[str]) -> list[KernelFile]:
     kernels = list(DEFAULT_KERNELS)

@@ -15,6 +15,7 @@
     "upload:textures": "node --env-file=.env.local scripts/upload-textures-s3.mjs"
   },
   "dependencies": {
+    "@aws-sdk/lib-storage": "^3.1022.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "@react-three/postprocessing": "^3.0.4",
@@ -37,7 +38,7 @@
   },
   "devDependencies": {
     "@aws-sdk/client-cloudfront": "^3.1014.0",
-    "@aws-sdk/client-s3": "^3.1014.0",
+    "@aws-sdk/client-s3": "^3.1022.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
