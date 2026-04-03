@@ -5,6 +5,7 @@ from typing import Optional
 
 import numpy as np
 import spiceypy as spice
+from loguru import logger 
 
 from app.models.schemas import EphemerisData, EphemerisTrajectory
 from app.services.body_catalog import BODY_NAMES, MOON_PARENTS, ORBITAL_PERIODS_DAYS
@@ -21,20 +22,13 @@ def calculate_trajectory_params(
     """
     period = ORBITAL_PERIODS_DAYS.get(body_id)
     if not period:
-        span = float(requested_span)
-        target_points = 600 if full_orbit else 200
-        return span, max(2, target_points)
-
-    is_moon = body_id in MOON_PARENTS
+        return float(requested_span), 200 if not full_orbit else 600
 
     if full_orbit:
         span = period
         target_points = 600
-    elif is_moon:
-        span = period * 1.1
-        target_points = 200
     else:
-        span = min(period / 12.0, 3650.0)
+        span = float(requested_span)
         target_points = 200
 
     return span, max(2, target_points)
@@ -47,8 +41,6 @@ def _parse_target_datetime(target_date: str) -> datetime:
 
 
 def _to_scene_coords(state_xyz: np.ndarray) -> dict[str, float]:
-    # Preserve existing backend contract used by the frontend:
-    # astronomy Z -> scene Y, astronomy Y -> scene Z.
     return {
         "x": float(state_xyz[0]),
         "y": float(state_xyz[2]),
@@ -57,7 +49,6 @@ def _to_scene_coords(state_xyz: np.ndarray) -> dict[str, float]:
 
 
 def _et_to_iso_z(et: float) -> str:
-    # ISOC returns UTC-like "YYYY-MM-DDTHH:MM:SS.sss"
     return f"{spice.et2utc(et, 'ISOC', 3)}Z"
 
 
@@ -88,7 +79,7 @@ def _build_trajectory(
     start_dt: datetime,
     end_dt: datetime,
     steps: int,
-) -> tuple[list[EphemerisTrajectory], Optional[dict[str, float]], Optional[dict[str, float]]]:
+) -> list[EphemerisTrajectory]:
     et_start = spice.str2et(start_dt.isoformat())
     et_end = spice.str2et(end_dt.isoformat())
     times = np.linspace(et_start, et_end, steps, dtype=float)
@@ -99,17 +90,11 @@ def _build_trajectory(
         states_array = states_array.reshape(1, 6)
 
     trajectory: list[EphemerisTrajectory] = []
-    first_position: Optional[dict[str, float]] = None
-    first_velocity: Optional[dict[str, float]] = None
 
     for i in range(states_array.shape[0]):
         position = _to_scene_coords(states_array[i, 0:3])
         velocity = _to_scene_coords(states_array[i, 3:6])
         ts = _et_to_iso_z(times[i])
-
-        if first_position is None:
-            first_position = position
-            first_velocity = velocity
 
         trajectory.append(
             EphemerisTrajectory.model_validate(
@@ -121,7 +106,7 @@ def _build_trajectory(
             )
         )
 
-    return trajectory, first_position, first_velocity
+    return trajectory
 
 
 def compute_ephemeris(
@@ -156,25 +141,33 @@ def compute_ephemeris(
     start_dt, end_dt, steps = _resolve_window(
         body_id, target_date, span_days, full_orbit=full_orbit
     )
-    #Barycenter correction for outer planets (Avoid time limit for moons)
+    
+    # Baricenter is mandatory for outer planets always
     target_id = body_id
-    # If it's a full orbit and it's Uranus, Neptune, or Pluto
-    if full_orbit and body_id in ["599", "699", "799", "899", "999"]:
-        # Extract only the first digit: "799" -> "7", "899" -> "8"
+    if body_id in ["599", "699", "799", "899", "999"]:
         target_id = body_id[0]
 
-    trajectory, first_pos, first_vel = _build_trajectory(
-        target_id, observer_id, start_dt, end_dt, steps
-    )
-    if not trajectory or first_pos is None:
+    # Calculate the exact position and velocity for the target_date
+    try:
+        et_target = spice.str2et(_parse_target_datetime(target_date).isoformat())
+        target_state, _ = spice.spkezr(target_id, et_target, "ECLIPJ2000", "NONE", observer_id)
+        current_pos = _to_scene_coords(target_state[0:3])
+        current_vel = _to_scene_coords(target_state[3:6])
+        
+        trajectory = _build_trajectory(target_id, observer_id, start_dt, end_dt, steps)
+    except Exception as e:
+        logger.error(f"Error SPICE on body {body_id}: {str(e)}")
+        return None
+
+    if not trajectory:
         return None
 
     return EphemerisData.model_validate(
         {
             "bodyId": body_id,
             "name": BODY_NAMES.get(body_id, f"Body {body_id}"),
-            "position": first_pos,
-            "velocity": first_vel,
+            "position": current_pos,
+            "velocity": current_vel,
             "timestamp": target_date,
             "parentId": parent_id,
             "trajectory": trajectory,
@@ -199,8 +192,10 @@ async def fetch_all_spice(
                 span_days=span_days,
                 full_orbit=full_orbit,
             )
-        except Exception:
-            item = None
-        if item:
-            data.append(item)
+            if item:
+                data.append(item)
+        except Exception as e:
+   
+            logger.error(f"[fetch_all_spice] Failed to compute ephemeris for body {body_id}: {e}")
+            
     return data
