@@ -199,3 +199,73 @@ async def fetch_all_spice(
             logger.error(f"[fetch_all_spice] Failed to compute ephemeris for body {body_id}: {e}")
             
     return data
+
+def compute_mission_relative_geometry(target_date: str) -> Optional[dict]:
+    """
+    Computes Earth and Moon states at target_date for mission geometry calculations.
+    Returns raw numpy arrays for positions in ECLIPJ2000.
+    """
+    try:
+        assert_spice_ready()
+        dt = _parse_target_datetime(target_date)
+        et = spice.str2et(dt.isoformat())
+        
+        earth_state, _ = spice.spkezr("399", et, "ECLIPJ2000", "NONE", "10")
+        moon_state, _ = spice.spkezr("301", et, "ECLIPJ2000", "NONE", "10")
+        
+        return {
+            "et": et,
+            "earth_pos": np.array(earth_state[0:3]),
+            "moon_pos": np.array(moon_state[0:3])
+        }
+    except Exception as e:
+        logger.error(f"Error computing mission relative geometry: {str(e)}")
+        return None
+
+def compute_mission_trajectory(start_date: str, end_date: str, steps: int = 100) -> Optional[dict]:
+    """
+    Computes a mission trajectory window without using planetary full_orbit logic.
+    Provides ET times and corresponding Earth, Moon, and potentially Orion states for the window.
+    """
+    try:
+        assert_spice_ready()
+        dt_start = _parse_target_datetime(start_date)
+        dt_end = _parse_target_datetime(end_date)
+        
+        et_start = spice.str2et(dt_start.isoformat())
+        et_end = spice.str2et(dt_end.isoformat())
+        
+        times = np.linspace(et_start, et_end, steps, dtype=float)
+        
+        earth_states, _ = spice.spkezr("399", times, "ECLIPJ2000", "NONE", "10")
+        moon_states, _ = spice.spkezr("301", times, "ECLIPJ2000", "NONE", "10")
+        
+        earth_states = np.asarray(earth_states, dtype=float)
+        moon_states = np.asarray(moon_states, dtype=float)
+        
+        if earth_states.ndim == 1:
+            earth_states = earth_states.reshape(1, 6)
+            moon_states = moon_states.reshape(1, 6)
+            
+        orion_pos = None
+        orion_vel = None
+        try:
+            orion_states, _ = spice.spkezr("-98", times, "ECLIPJ2000", "NONE", "10")
+            orion_states = np.asarray(orion_states, dtype=float)
+            if orion_states.ndim == 1:
+                orion_states = orion_states.reshape(1, 6)
+            orion_pos = orion_states[:, 0:3]
+            orion_vel = orion_states[:, 3:6]
+        except Exception:
+            logger.debug("Orion (-98) kernel not found in SPICE. Mission trajectory will rely on fallback data.")
+            
+        return {
+            "times": times,
+            "earth_pos": earth_states[:, 0:3],
+            "moon_pos": moon_states[:, 0:3],
+            "orion_pos": orion_pos,
+            "orion_vel": orion_vel
+        }
+    except Exception as e:
+        logger.error(f"Error computing mission trajectory: {str(e)}")
+        return None

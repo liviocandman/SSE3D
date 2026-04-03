@@ -8,7 +8,6 @@ from app.models.mission_schemas import (
     MissionTrajectoryResponse, 
     MissionEventsResponse, 
     MissionHealthResponse,
-    MissionMode,
     MissionPhase,
     MissionDataSource,
     MissionPosition,
@@ -19,15 +18,9 @@ from app.models.mission_schemas import (
     MissionCoordinates,
     MissionTrajectorySegment
 )
-from app.services.mission_arow_client import AROWClient
-from app.services.mission_normalizer import normalize_arow_live_payload, create_mission_health
-from app.services.mission_cache_service import MissionCacheService
+from app.services.mission_data_service import get_live_mission_state, get_replay_state, get_mission_trajectory, cache_service
 
 router = APIRouter(prefix="/missions", tags=["Missions"])
-
-# Shared service instances
-arow_client = AROWClient()
-cache_service = MissionCacheService()
 
 # Mock Constants
 ARTEMIS2_ID = "artemis-2"
@@ -36,102 +29,14 @@ ORION_VEHICLE_ID = "orion"
 @router.get("/artemis2/state", response_model=MissionStateResponse)
 async def get_artemis2_state(at: Optional[str] = Query(None)):
     """Returns the current or historical state of Artemis II."""
-    
-    # 1. Historical / Replay Mode (Isolated from AROW)
     if at:
-        timestamp = at
-        return MissionStateResponse(
-            missionId=ARTEMIS2_ID,
-            vehicleId=ORION_VEHICLE_ID,
-            mode=MissionMode.REPLAY,
-            phase=MissionPhase.TRANSLUNAR_COAST,
-            source=MissionDataSource.ARCHIVE,
-            sourceTimestamp=timestamp,
-            stalenessSeconds=0.0,
-            position=MissionPosition(x=150000.0, y=200000.0, z=50000.0),
-            velocity=MissionVelocity(x=1.2, y=-0.5, z=0.1),
-            distances=MissionDistances(earthKm=250000.0, moonKm=130000.0),
-            missionElapsedTime="2-04:30:15",
-            globalCoordinates=MissionCoordinates(x=150000.0, y=200000.0, z=50000.0),
-            missionCoordinates=MissionCoordinates(x=150000.0, y=200000.0, z=50000.0)
-        )
-
-    # 2. Live Mode with Cache and AROW Integration
-    try:
-        # Check Cache first
-        state, _ = await cache_service.get_live_state()
-        if state:
-            return state
-            
-        # Cache Miss: Fetch from AROW
-        logger.info("Mission cache miss: fetching from AROW")
-        arow_data = await arow_client.fetch_live_data()
-        
-        # Normalize
-        live_state = normalize_arow_live_payload(
-            arow_data["raw_payload"],
-            arow_data["headers"],
-            arow_data["fetched_at"]
-        )
-        
-        # Create Health and Cache both
-        live_health = create_mission_health(
-            live_state, arow_data["headers"], arow_data["fetched_at"], raw_payload=arow_data["raw_payload"]
-        )
-        await cache_service.set_live_state(live_state, live_health)
-        
-        return live_state
-
-    except Exception as e:
-        logger.warning(f"AROW fetch failed: {str(e)}. Attempting fallback to last good state.")
-        
-        # Fallback to Last Known Good State
-        fallback_state, _ = await cache_service.get_last_good_state()
-        if fallback_state:
-            return fallback_state
-            
-        # Ultimate Fallback: Predicted data
-        logger.error("No last good state found. Returning predicted data as ultimate fallback.")
-        return MissionStateResponse(
-            missionId=ARTEMIS2_ID,
-            vehicleId=ORION_VEHICLE_ID,
-            mode=MissionMode.PREDICTED,
-            phase=MissionPhase.TRANSLUNAR_COAST,
-            source=MissionDataSource.SPICE_PREDICTED,
-            sourceTimestamp=datetime.now(timezone.utc).isoformat(),
-            stalenessSeconds=999.9,
-            position=MissionPosition(x=150000.0, y=200000.0, z=50000.0),
-            velocity=MissionVelocity(x=1.2, y=-0.5, z=0.1),
-            distances=MissionDistances(earthKm=250000.0, moonKm=130000.0),
-            missionElapsedTime="0-00:00:00",
-            globalCoordinates=MissionCoordinates(x=150000.0, y=200000.0, z=50000.0),
-            missionCoordinates=MissionCoordinates(x=150000.0, y=200000.0, z=50000.0)
-        )
+        return get_replay_state(at)
+    return await get_live_mission_state()
 
 @router.get("/artemis2/trajectory", response_model=MissionTrajectoryResponse)
 async def get_artemis2_trajectory():
     """Returns past and planned trajectory points for Artemis II."""
-    return MissionTrajectoryResponse(
-        missionId=ARTEMIS2_ID,
-        past=[
-            MissionTrajectoryPoint(
-                timestamp="2026-04-03T12:00:00Z",
-                position=MissionPosition(x=100000, y=150000, z=40000),
-                velocity=MissionVelocity(x=1.1, y=-0.4, z=0.05),
-                phase=MissionPhase.TRANSLUNAR_COAST,
-                segment=MissionTrajectorySegment.PAST # Corrected: Enum value
-            )
-        ],
-        planned=[
-            MissionTrajectoryPoint(
-                timestamp="2026-04-05T12:00:00Z",
-                position=MissionPosition(x=350000, y=50000, z=10000),
-                velocity=MissionVelocity(x=0.5, y=-0.2, z=-0.1),
-                phase=MissionPhase.LUNAR_FLYBY,
-                segment=MissionTrajectorySegment.PLANNED # Corrected: Enum value
-            )
-        ]
-    )
+    return get_mission_trajectory()
 
 @router.get("/artemis2/events", response_model=MissionEventsResponse)
 async def get_artemis2_events():
@@ -181,10 +86,8 @@ async def get_artemis2_health():
     # If not in live cache, check last good
     _, last_good_health = await cache_service.get_last_good_state()
     if last_good_health:
-        # Mark as fallback/degraded
         last_good_health.status = "degraded"
-        last_good_health.fallback_active = True # Corrected: Set model field
-        last_good_health.current_source = last_good_health.source
+        last_good_health.fallback_active = True
         if last_good_health.details:
             last_good_health.details["fallbackActive"] = True
         return last_good_health

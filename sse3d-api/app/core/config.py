@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     arow_stale_fallback_seconds: int = 600
     arow_user_agent: str = "SolarExplore3D/1.0"
     arow_retry_count: int = 1
+    arow_input_frame: str = "J2000"
 
     # SPICE kernel configuration
     spice_enabled: bool = True
