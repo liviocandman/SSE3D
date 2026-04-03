@@ -3,6 +3,7 @@ primary_region = "gru"
 
 [env]
 S3_KERNELS_URL = "https://sse3d-textures-prod.s3.us-east-1.amazonaws.com/kernels"
+ALLOWED_ORIGINS = "http://localhost:3000,https://sse3d.vercel.app"
 
 [build]
   dockerfile = "Dockerfile"
