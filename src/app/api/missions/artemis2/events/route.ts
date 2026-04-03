@@ -8,19 +8,22 @@ export async function GET() {
   const url = `${pythonUrl}/api/missions/artemis2/events`;
 
   try {
-    const res = await fetch(url, {
-      headers: { 'Content-Type': 'application/json' },
-      next: { revalidate: 0 }
-    });
-    
+    const res = await fetch(url, { next: { revalidate: 0 } });
+
     if (!res.ok) {
-      return NextResponse.json({ error: 'Failed to fetch mission events' }, { status: res.status });
+      return NextResponse.json(
+        { error: 'UPSTREAM_ERROR' },
+        { status: res.status }
+      );
     }
-    
+
     const data = await res.json();
     return NextResponse.json(data);
   } catch (error) {
-    console.error('BFF Error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    console.error('[Mission Events API Proxy] Error:', error);
+    return NextResponse.json(
+      { error: 'NETWORK_ERROR' },
+      { status: 502 }
+    );
   }
 }
