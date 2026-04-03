@@ -7,7 +7,6 @@ class MissionDataSource(str, Enum):
     ARCHIVE = "ARCHIVE"
     SPICE_PREDICTED = "SPICE_PREDICTED"
 
-
 class MissionMode(str, Enum):
     LIVE = "live"
     REPLAY = "replay"
@@ -21,6 +20,11 @@ class MissionPhase(str, Enum):
     RETURN_COAST = "return_coast"
     REENTRY = "reentry"
     SPLASHDOWN = "splashdown"
+
+class MissionTrajectorySegment(str, Enum):
+    PAST = "past"
+    CURRENT = "current"
+    PLANNED = "planned"
 
 class MissionPosition(BaseModel):
     x: float
@@ -50,12 +54,6 @@ class MissionEvent(BaseModel):
     timestamp: str
     phase: MissionPhase
     is_completed: bool = Field(alias="isCompleted")
-
-
-class MissionTrajectorySegment(str, Enum):
-    PAST = "past"
-    CURRENT = "current"
-    PLANNED = "planned"
 
 class MissionTrajectoryPoint(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -100,10 +98,14 @@ class MissionEventsResponse(BaseModel):
 class MissionHealthResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     mission_id: str = Field(alias="missionId")
-    current_source: MissionDataSource = Field(alias="currentSource")
+    status: str = "unknown"
+    source: MissionDataSource = MissionDataSource.AROW_LIVE
     last_update: str = Field(alias="lastUpdate")
+    
+    current_source: MissionDataSource = Field(alias="currentSource")
     data_age_seconds: float = Field(alias="dataAgeSeconds")
     fallback_active: bool = Field(alias="fallbackActive")
-    coverage_start: str = Field(alias="coverageStart")
-    coverage_end: str = Field(alias="coverageEnd")
+    coverage_start: Optional[str] = Field(default=None, alias="coverageStart")
+    coverage_end: Optional[str] = Field(default=None, alias="coverageEnd")
+    
     details: Optional[dict] = None
