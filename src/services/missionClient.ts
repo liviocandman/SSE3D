@@ -14,6 +14,10 @@ type CacheEntry<T> = {
   value: T;
 };
 
+type MissionRequestOptions = {
+  signal?: AbortSignal;
+};
+
 const requestCache = new Map<string, CacheEntry<unknown>>();
 
 function getCached<T>(key: string): T | null {
@@ -46,7 +50,11 @@ function getBackoffDelay(attempt: number): number {
   return BASE_DELAY_MS * (attempt + 1);
 }
 
-async function fetchJsonWithRetry<T>(path: string, cacheKey: string): Promise<T> {
+async function fetchJsonWithRetry<T>(
+  path: string,
+  cacheKey: string,
+  options?: MissionRequestOptions
+): Promise<T> {
   const cached = getCached<T>(cacheKey);
   if (cached) {
     return cached;
@@ -56,9 +64,14 @@ async function fetchJsonWithRetry<T>(path: string, cacheKey: string): Promise<T>
 
   for (let attempt = 0; attempt <= DEFAULT_RETRIES; attempt += 1) {
     try {
+      if (options?.signal?.aborted) {
+        throw new DOMException('Mission request aborted', 'AbortError');
+      }
+
       const response = await fetch(path, {
         headers: { Accept: 'application/json' },
         cache: 'no-store',
+        signal: options?.signal,
       });
 
       if (!response.ok) {
@@ -68,6 +81,10 @@ async function fetchJsonWithRetry<T>(path: string, cacheKey: string): Promise<T>
       const data = (await response.json()) as T;
       return setCached(cacheKey, data);
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw error;
+      }
+
       lastError = error instanceof Error ? error : new Error('Mission API request failed');
       if (attempt < DEFAULT_RETRIES) {
         await sleep(getBackoffDelay(attempt));
@@ -78,7 +95,10 @@ async function fetchJsonWithRetry<T>(path: string, cacheKey: string): Promise<T>
   throw lastError ?? new Error('Mission API request failed');
 }
 
-export async function fetchMissionState(at?: string): Promise<MissionState> {
+export async function fetchMissionState(
+  at?: string,
+  options?: MissionRequestOptions
+): Promise<MissionState> {
   const params = new URLSearchParams();
   if (at) {
     params.set('at', at);
@@ -87,27 +107,34 @@ export async function fetchMissionState(at?: string): Promise<MissionState> {
   const query = params.toString();
   const path = `/api/missions/artemis2/state${query ? `?${query}` : ''}`;
 
-  return fetchJsonWithRetry<MissionState>(path, `mission-state:${query || 'live'}`);
+  return fetchJsonWithRetry<MissionState>(
+    path,
+    `mission-state:${query || 'live'}`,
+    options
+  );
 }
 
-export async function fetchMissionTrajectory(): Promise<MissionTrajectory> {
+export async function fetchMissionTrajectory(options?: MissionRequestOptions): Promise<MissionTrajectory> {
   return fetchJsonWithRetry<MissionTrajectory>(
     '/api/missions/artemis2/trajectory',
-    'mission-trajectory'
+    'mission-trajectory',
+    options
   );
 }
 
-export async function fetchMissionEvents(): Promise<MissionEventsResponse> {
+export async function fetchMissionEvents(options?: MissionRequestOptions): Promise<MissionEventsResponse> {
   return fetchJsonWithRetry<MissionEventsResponse>(
     '/api/missions/artemis2/events',
-    'mission-events'
+    'mission-events',
+    options
   );
 }
 
-export async function fetchMissionHealth(): Promise<MissionHealth> {
+export async function fetchMissionHealth(options?: MissionRequestOptions): Promise<MissionHealth> {
   return fetchJsonWithRetry<MissionHealth>(
     '/api/missions/artemis2/health',
-    'mission-health'
+    'mission-health',
+    options
   );
 }
 

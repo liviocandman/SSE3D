@@ -223,17 +223,25 @@ def get_mission_trajectory() -> MissionTrajectoryResponse:
             segment=MissionTrajectorySegment.PLANNED
         ))
     else:
+        fallback_start_pos, fallback_start_vel = to_scene_frame(
+            MissionPosition(x=100000, y=150000, z=40000),
+            MissionVelocity(x=1.1, y=-0.4, z=0.05),
+        )
+        fallback_end_pos, fallback_end_vel = to_scene_frame(
+            MissionPosition(x=350000, y=50000, z=10000),
+            MissionVelocity(x=0.5, y=-0.2, z=-0.1),
+        )
         past_points.append(MissionTrajectoryPoint(
             timestamp="2026-04-03T12:00:00Z",
-            position=MissionPosition(x=100000, y=40000, z=150000),
-            velocity=MissionVelocity(x=1.1, y=-0.4, z=0.05),
+            position=fallback_start_pos,
+            velocity=fallback_start_vel,
             phase=MissionPhase.TRANSLUNAR_COAST,
             segment=MissionTrajectorySegment.PAST
         ))
         planned_points.append(MissionTrajectoryPoint(
             timestamp="2026-04-05T12:00:00Z",
-            position=MissionPosition(x=350000, y=10000, z=50000),
-            velocity=MissionVelocity(x=0.5, y=-0.2, z=-0.1),
+            position=fallback_end_pos,
+            velocity=fallback_end_vel,
             phase=MissionPhase.LUNAR_FLYBY,
             segment=MissionTrajectorySegment.PLANNED
         ))
