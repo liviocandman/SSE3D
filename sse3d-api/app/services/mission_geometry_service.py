@@ -4,6 +4,24 @@ from typing import Tuple
 from loguru import logger
 from app.models.mission_schemas import MissionPosition, MissionVelocity, MissionCoordinates, MissionDistances
 
+
+FRAME_ALIASES = {
+    "EME2000": "J2000",
+}
+
+
+def normalize_spice_frame(frame_name: str) -> str:
+    """
+    Normalizes common mission telemetry frame aliases to SPICE-native frame names.
+
+    NASA/OEM products may expose `EME2000`, while SPICE inertial transforms
+    are typically defined against `J2000`. Treating the alias explicitly avoids
+    silently falling back to identity and leaking Earth's equatorial tilt into
+    the frontend scene.
+    """
+    normalized = frame_name.upper()
+    return FRAME_ALIASES.get(normalized, normalized)
+
 def transform_to_eclipj2000(
     position: MissionPosition, 
     velocity: MissionVelocity, 
@@ -13,11 +31,13 @@ def transform_to_eclipj2000(
     """
     Transforms coordinates from a given input_frame to ECLIPJ2000.
     """
-    if input_frame.upper() == "ECLIPJ2000":
+    source_frame = normalize_spice_frame(input_frame)
+
+    if source_frame == "ECLIPJ2000":
         return position, velocity
         
     try:
-        rot_matrix = spice.pxform(input_frame.upper(), "ECLIPJ2000", et)
+        rot_matrix = spice.pxform(source_frame, "ECLIPJ2000", et)
         
         pos_vec = np.array([position.x, position.y, position.z])
         vel_vec = np.array([velocity.x, velocity.y, velocity.z])
@@ -26,14 +46,14 @@ def transform_to_eclipj2000(
         new_vel = rot_matrix @ vel_vec
         
         # Log preservation of magnitude (Epic 2 validation criteria)
-        logger.debug(f"Rotated position from {input_frame} to ECLIPJ2000 at ET={et}")
+        logger.debug(f"Rotated position from {source_frame} to ECLIPJ2000 at ET={et}")
         
         return (
             MissionPosition(x=float(new_pos[0]), y=float(new_pos[1]), z=float(new_pos[2])),
             MissionVelocity(x=float(new_vel[0]), y=float(new_vel[1]), z=float(new_vel[2]))
         )
     except Exception as e:
-        logger.error(f"Failed to transform frame {input_frame} to ECLIPJ2000: {e}")
+        logger.error(f"Failed to transform frame {source_frame} to ECLIPJ2000: {e}")
         # fallback to identity
         return position, velocity
 

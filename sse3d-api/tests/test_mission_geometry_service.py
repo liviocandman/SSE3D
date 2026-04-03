@@ -7,6 +7,7 @@ from app.services.mission_geometry_service import (
     enrich_mission_geometry,
     to_scene_frame,
     derive_scene_coordinates,
+    normalize_spice_frame,
 )
 
 def test_transform_to_eclipj2000():
@@ -30,6 +31,31 @@ def test_transform_preserves_magnitude_fallback():
     # and the fallback is identity, which preserves magnitude
     out_pos, out_vel = transform_to_eclipj2000(pos, vel, "UNKNOWN_FRAME", et=0.0)
     assert out_pos.x == 100.0
+
+
+def test_normalize_spice_frame_maps_eme2000_to_j2000():
+    assert normalize_spice_frame("EME2000") == "J2000"
+    assert normalize_spice_frame("J2000") == "J2000"
+
+
+def test_transform_to_eclipj2000_uses_normalized_frame_alias(monkeypatch):
+    pos = MissionPosition(x=10.0, y=20.0, z=30.0)
+    vel = MissionVelocity(x=1.0, y=2.0, z=3.0)
+    captured = {}
+
+    def fake_pxform(source, target, et):
+        captured["source"] = source
+        captured["target"] = target
+        return np.identity(3)
+
+    monkeypatch.setattr("app.services.mission_geometry_service.spice.pxform", fake_pxform)
+
+    out_pos, out_vel = transform_to_eclipj2000(pos, vel, "EME2000", et=123.0)
+
+    assert captured["source"] == "J2000"
+    assert captured["target"] == "ECLIPJ2000"
+    assert out_pos.x == 10.0
+    assert out_vel.z == 3.0
 
 def test_calculate_mission_local_frame():
     # Simple scenario: Earth at origin, Moon on +X
