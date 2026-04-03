@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     arow_user_agent: str = "SolarExplore3D/1.0"
     arow_retry_count: int = 1
     arow_input_frame: str = "J2000"
+    arow_position_origin: str = "EARTH"
+    mission_oem_enabled: bool = True
+    mission_oem_path: str = r"C:\Users\Reuther\Downloads\artemis-ii-oem-2026-04-03-to-ei\Artemis_II_OEM_2026_04_03_to_EI.asc"
 
     # SPICE kernel configuration
     spice_enabled: bool = True

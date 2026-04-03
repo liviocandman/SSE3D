@@ -33,6 +33,8 @@ def test_normalize_arow_payload_basic():
     assert state.source == MissionDataSource.AROW_LIVE
     assert state.distances.earth_km == 50000
     assert state.source_timestamp == "2026-04-03T12:00:00Z"
+    assert state.scene_coordinates is None
+    assert state.global_coordinates is None
 
 def test_normalize_arow_payload_flat_resilience():
     # Test resilience to flat structure and different naming
@@ -141,6 +143,7 @@ def test_create_mission_health_enriches_details():
     assert health.details["timeFormatDetected"] == "doy"
     assert health.details["parserVersion"] == "epic1-final"
     assert health.details["cacheControl"] == "public, max-age=15"
+    assert health.details["geometrySource"] == "OEM_OR_AROW"
 
 def test_normalize_empty_vehicles():
     with pytest.raises(ValueError, match="No vehicles list found"):

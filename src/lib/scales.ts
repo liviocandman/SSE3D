@@ -20,7 +20,15 @@ export const DIDACTIC_SCALE = {
 };
 
 // Planet type classification
-export type BodyClass = 'STAR' | 'GAS_GIANT' | 'ROCKY_PLANET' | 'DWARF_PLANET' | 'MOON';
+export type BodyClass = 'STAR' | 'GAS_GIANT' | 'ROCKY_PLANET' | 'DWARF_PLANET' | 'MOON' | 'SPACECRAFT';
+
+/**
+ * Note on SPACECRAFT: The apparent size of the spacecraft in the scene is NOT controlled 
+ * exclusively by getRadius(). It uses a screen-space approach (marker vs model mode)
+ * to remain visible and clickable at any zoom level. The radius returned here is purely 
+ * a geometric fallback.
+ */
+export const SPACECRAFT_RADIUS_KM = 0.005; // Approx 5 meters for Orion
 
 // Real radii in km (source: NASA)
 export const REAL_RADII_KM: Record<string, number> = {
@@ -66,7 +74,7 @@ export const MOON_ORBIT_PADDING = 1.5;
  * Converts real radius in km to didactic rendering units
  */
 export function getDidacticRadius(bodyId: string, bodyClass: BodyClass): number {
-  const realRadiusKm = REAL_RADII_KM[bodyId] || 1000;
+  const realRadiusKm = bodyClass === 'SPACECRAFT' ? SPACECRAFT_RADIUS_KM : (REAL_RADII_KM[bodyId] || 1000);
   const baseRadius = realRadiusKm * KM_TO_UNIT;
 
   switch (bodyClass) {
@@ -79,6 +87,8 @@ export function getDidacticRadius(bodyId: string, bodyClass: BodyClass): number 
       return baseRadius * DIDACTIC_SCALE.ROCKY_PLANET;
     case 'MOON':
       return baseRadius * DIDACTIC_SCALE.MOON;
+    case 'SPACECRAFT':
+      return baseRadius; // Spacecraft didactic radius is same as base, we handle visibility in screen-space
     default:
       return baseRadius * DIDACTIC_SCALE.ROCKY_PLANET;
   }
@@ -137,7 +147,7 @@ export function getRadius(
   bodyClass: BodyClass,
   mode: ViewMode = 'didactic'
 ): number {
-  const realRadiusKm = REAL_RADII_KM[bodyId] || 1000;
+  const realRadiusKm = bodyClass === 'SPACECRAFT' ? SPACECRAFT_RADIUS_KM : (REAL_RADII_KM[bodyId] || 1000);
   const realisticRadius = realRadiusKm * KM_TO_UNIT;
 
   if (mode === 'realistic') {
@@ -155,6 +165,8 @@ export function getRadius(
       return realisticRadius * DIDACTIC_SCALE.ROCKY_PLANET;
     case 'MOON':
       return realisticRadius * DIDACTIC_SCALE.MOON;
+    case 'SPACECRAFT':
+      return realisticRadius; // Spacecraft didactic radius is same as realistic, handled in screen-space
     default:
       return realisticRadius * DIDACTIC_SCALE.ROCKY_PLANET;
   }

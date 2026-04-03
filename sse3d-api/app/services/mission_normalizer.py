@@ -10,7 +10,6 @@ from app.models.mission_schemas import (
     MissionPosition,
     MissionVelocity,
     MissionDistances,
-    MissionCoordinates,
     MissionHealthResponse,
 )
 
@@ -67,8 +66,6 @@ def normalize_arow_live_payload(
         velocity=velocity,
         distances=distances,
         missionElapsedTime=mission_elapsed_time,
-        globalCoordinates=MissionCoordinates(x=position.x, y=position.y, z=position.z),
-        missionCoordinates=MissionCoordinates(x=position.x, y=position.y, z=position.z),
     )
 
 
@@ -273,6 +270,7 @@ def create_mission_health(
         "parserVersion": PARSER_VERSION,
         "rawSourceType": detect_raw_source_type(raw_payload or {}),
         "timeFormatDetected": detect_time_format(raw_payload or {}, headers, state, fetched_at),
+        "geometrySource": "OEM" if state.mode != MissionMode.LIVE else "OEM_OR_AROW",
     }
 
     return MissionHealthResponse(

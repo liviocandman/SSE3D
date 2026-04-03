@@ -80,6 +80,9 @@ export interface MissionState {
   missionElapsedTime: string;
   globalCoordinates?: MissionCoordinates;
   missionCoordinates?: MissionCoordinates;
+  // Single render-space coordinate for Orion in the frontend.
+  // It is Earth-relative and must be mounted under Earth's transform.
+  sceneCoordinates?: MissionCoordinates;
 }
 
 export interface MissionTrajectory {

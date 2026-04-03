@@ -11,7 +11,6 @@ import { MissionMode } from '@/lib/missionTypes';
 
 export function useMissionData() {
   const missionMode = useMissionStore((state) => state.missionMode);
-  const selectedMissionTargetId = useMissionStore((state) => state.selectedMissionTargetId);
   const setMissionState = useMissionStore((state) => state.setMissionState);
   const setMissionTrajectory = useMissionStore((state) => state.setMissionTrajectory);
   const setMissionEvents = useMissionStore((state) => state.setMissionEvents);
@@ -22,10 +21,6 @@ export function useMissionData() {
   const controllersRef = useRef<Set<AbortController>>(new Set());
 
   useEffect(() => {
-    if (!selectedMissionTargetId) {
-      return;
-    }
-
     let stateTimeout: NodeJS.Timeout;
     let trajectoryTimeout: NodeJS.Timeout;
     let eventsTimeout: NodeJS.Timeout;
@@ -158,5 +153,5 @@ export function useMissionData() {
       clearTimeout(eventsTimeout);
       clearTimeout(healthTimeout);
     };
-  }, [isLive, selectedMissionTargetId, setLiveTimestamp, setMissionEvents, setMissionHealth, setMissionState, setMissionTrajectory]);
+  }, [isLive, setLiveTimestamp, setMissionEvents, setMissionHealth, setMissionState, setMissionTrajectory]);
 }

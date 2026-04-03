@@ -52,6 +52,25 @@ def to_scene_frame(
         MissionVelocity(x=velocity.x, y=velocity.z, z=velocity.y),
     )
 
+
+def derive_scene_coordinates(
+    position: MissionPosition,
+    velocity: MissionVelocity,
+    input_frame: str = "J2000",
+    et: float = 0.0,
+) -> MissionCoordinates:
+    """
+    Converts an Earth-relative telemetry vector into the project's scene frame.
+
+    This is the single render-space coordinate the frontend should use for Orion.
+    It does not apply Earth's heliocentric offset; it only rotates the incoming
+    telemetry frame into ECLIPJ2000 when needed and then maps axes into the
+    scene convention used by planets/moons.
+    """
+    rotated_pos, rotated_vel = transform_to_eclipj2000(position, velocity, input_frame, et)
+    scene_pos, _ = to_scene_frame(rotated_pos, rotated_vel)
+    return MissionCoordinates(x=float(scene_pos.x), y=float(scene_pos.y), z=float(scene_pos.z))
+
 def calculate_mission_local_frame(
     orion_eclip: np.ndarray,
     earth_eclip: np.ndarray,
@@ -102,15 +121,32 @@ def enrich_mission_geometry(
     earth_pos_eclip: np.ndarray,
     moon_pos_eclip: np.ndarray,
     et: float,
-    input_frame: str = "J2000"
-) -> Tuple[MissionCoordinates, MissionCoordinates, MissionDistances]:
+    input_frame: str = "J2000",
+    input_origin: str = "EARTH",
+) -> Tuple[MissionCoordinates, MissionCoordinates, MissionCoordinates, MissionDistances]:
     """
-    Enriches the raw Orion state with global coordinates, mission-local coordinates, and derived distances.
+    Enriches the raw Orion state with global coordinates, mission-local coordinates, Earth-relative scene coordinates, and derived distances.
     """
-    global_pos_eclip, global_vel_eclip = transform_to_eclipj2000(orion_pos, orion_vel, input_frame, et)
-    scene_pos, _scene_vel = to_scene_frame(global_pos_eclip, global_vel_eclip)
+    relative_pos_eclip, relative_vel_eclip = transform_to_eclipj2000(orion_pos, orion_vel, input_frame, et)
+    relative_orion_eclip = np.array([relative_pos_eclip.x, relative_pos_eclip.y, relative_pos_eclip.z])
 
-    orion_eclip = np.array([global_pos_eclip.x, global_pos_eclip.y, global_pos_eclip.z])
+    # AROW telemetry is treated as Earth-centered by default. Convert it into the
+    # solar-system global frame before mapping it into the scene.
+    if input_origin.upper() == "EARTH":
+        earth_relative_eclip = relative_orion_eclip
+        orion_eclip = earth_pos_eclip + relative_orion_eclip
+        earth_dist = float(np.linalg.norm(relative_orion_eclip))
+    else:
+        earth_relative_eclip = relative_orion_eclip - earth_pos_eclip
+        orion_eclip = relative_orion_eclip
+        earth_dist = float(np.linalg.norm(earth_relative_eclip))
+
+    global_pos_eclip = MissionPosition(
+        x=float(orion_eclip[0]),
+        y=float(orion_eclip[1]),
+        z=float(orion_eclip[2]),
+    )
+    scene_pos, _scene_vel = to_scene_frame(global_pos_eclip, relative_vel_eclip)
 
     global_coords = MissionCoordinates(
         x=float(scene_pos.x),
@@ -118,11 +154,23 @@ def enrich_mission_geometry(
         z=float(scene_pos.z),
     )
     
+    # Earth relative scene coordinates
+    earth_rel_pos_eclip = MissionPosition(
+        x=float(earth_relative_eclip[0]),
+        y=float(earth_relative_eclip[1]),
+        z=float(earth_relative_eclip[2]),
+    )
+    scene_coords = derive_scene_coordinates(
+        earth_rel_pos_eclip,
+        relative_vel_eclip,
+        input_frame="ECLIPJ2000",
+        et=et,
+    )
+    
     mission_coords = calculate_mission_local_frame(orion_eclip, earth_pos_eclip, moon_pos_eclip)
     
-    earth_dist = float(np.linalg.norm(orion_eclip - earth_pos_eclip))
     moon_dist = float(np.linalg.norm(orion_eclip - moon_pos_eclip))
     
     distances = MissionDistances(earthKm=earth_dist, moonKm=moon_dist)
     
-    return global_coords, mission_coords, distances
+    return global_coords, mission_coords, scene_coords, distances

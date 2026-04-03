@@ -24,11 +24,13 @@ import { getRadius, scalePositionFromKm } from '@/lib/scales';
 import { CameraController } from '@/hooks/useCameraAnimation';
 import * as THREE from 'three';
 import { useSolarStore } from '@/store/solarStore';
+import { useMissionStore } from '@/store/missionStore';
 import { useShallow } from 'zustand/react/shallow';
 import { TrajectoryManager } from './TrajectoryManager';
 import { KM_TO_UNIT } from '@/lib/scales';
 import StaticOrbitLine from './StaticOrbitLine';
 import DynamicTrailLine from './DynamicTrailLine';
+import { SpacecraftBody } from './SpacecraftBody';
 import { BODY_IDS } from '@/lib/types';
 
 // --- Types ---
@@ -180,6 +182,18 @@ export function SceneContent({
   const { tier, settings } = useQualityTier();
 
   const {
+    missionState,
+    selectedMissionTargetId,
+    setSelectedMissionTargetId,
+  } = useMissionStore(
+    useShallow((state) => ({
+      missionState: state.missionState,
+      selectedMissionTargetId: state.selectedMissionTargetId,
+      setSelectedMissionTargetId: state.setSelectedMissionTargetId,
+    }))
+  );
+
+  const {
     selectedPlanet,
     setSelectedPlanet,
     viewMode,
@@ -187,6 +201,7 @@ export function SceneContent({
     travelTarget,
     travelTargetRadius,
     setTravelTarget,
+    resetTravel,
     masterTrajectorySegments,
     fullOrbits,
     appendFullOrbits,
@@ -199,6 +214,7 @@ export function SceneContent({
       travelTarget: state.travelTarget,
       travelTargetRadius: state.travelTargetRadius,
       setTravelTarget: state.setTravelTarget,
+      resetTravel: state.resetTravel,
       masterTrajectorySegments: state.masterTrajectorySegments,
       fullOrbits: state.fullOrbits,
       appendFullOrbits: state.appendFullOrbits,
@@ -264,6 +280,8 @@ export function SceneContent({
   }, [ephemerisData, tier, viewMode]);
 
   const handlePlanetClick = (bodyId: string) => {
+    setSelectedMissionTargetId(null);
+    resetTravel();
     const planet = planetsToRender.find(p => p?.bodyId === bodyId);
 
     if (planet) {
@@ -286,6 +304,7 @@ export function SceneContent({
   };
 
   const handlePlanetDoubleClick = (bodyId: string) => {
+    setSelectedMissionTargetId(null);
     const planet = planetsToRender.find(p => p?.bodyId === bodyId);
 
     if (planet) {
@@ -317,6 +336,30 @@ export function SceneContent({
     ? planetsToRender.find(p => p?.bodyId === selectedPlanet.bodyId)
     : null;
 
+  const earthPlanet = planetsToRender.find((planet) => planet?.bodyId === BODY_IDS.EARTH) ?? null;
+
+  const spacecraftLocalPosition = useMemo<[number, number, number] | null>(() => {
+    if (!missionState?.sceneCoordinates) return null;
+
+    // Mission scene coordinates are Earth-relative. They must be rendered as a
+    // child of Earth, exactly like the Moon system, not dropped into global space.
+    return scalePositionFromKm(
+      missionState.sceneCoordinates.x,
+      missionState.sceneCoordinates.y,
+      missionState.sceneCoordinates.z
+    );
+  }, [missionState?.sceneCoordinates]);
+
+  const spacecraftWorldPosition = useMemo(() => {
+    if (!earthPlanet || !spacecraftLocalPosition) return null;
+
+    return {
+      x: earthPlanet.position[0] + spacecraftLocalPosition[0],
+      y: earthPlanet.position[1] + spacecraftLocalPosition[1],
+      z: earthPlanet.position[2] + spacecraftLocalPosition[2],
+    };
+  }, [earthPlanet, spacecraftLocalPosition]);
+
   return (
     <Canvas
       camera={CAMERA_CONFIG}
@@ -329,6 +372,8 @@ export function SceneContent({
       style={{ width: '100%', height: '100%' }}
       onPointerMissed={() => {
         setSelectedPlanet(null);
+        setSelectedMissionTargetId(null);
+        resetTravel();
       }}
     >
       <ambientLight intensity={0.25} color="#b0b0b0" />
@@ -419,12 +464,32 @@ export function SceneContent({
                   radius={selectedPlanetData.radius}
                 />
               )}
+              {planet.bodyId === BODY_IDS.EARTH && missionState && spacecraftLocalPosition && (
+                <SpacecraftBody
+                  vehicleId={missionState.vehicleId}
+                  label={missionState.vehicleId === 'orion' ? 'Orion' : missionState.vehicleId.toUpperCase()}
+                  position={spacecraftLocalPosition}
+                  isSelected={selectedMissionTargetId === missionState.vehicleId}
+                  onClick={(id) => {
+                    setSelectedPlanet(null);
+                    setSelectedMissionTargetId(id);
+
+                    if (spacecraftWorldPosition) {
+                      setTravelTarget(spacecraftWorldPosition, 0.01);
+                    }
+                  }}
+                />
+              )}
             </CelestialBody>
           </group>
         );
       })}
 
-      <CameraController targetPosition={travelTarget} targetRadius={travelTargetRadius} targetName={selectedPlanet?.englishName} />
+      <CameraController 
+        targetPosition={travelTarget} 
+        targetRadius={travelTargetRadius} 
+        targetName={selectedMissionTargetId ? (selectedMissionTargetId === 'orion' ? 'Orion' : selectedMissionTargetId.toUpperCase()) : selectedPlanet?.englishName} 
+      />
 
       {children}
     </Canvas>

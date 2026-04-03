@@ -32,6 +32,8 @@ interface UseCameraAnimationReturn {
     radius?: number,
     targetName?: string,
   ) => void;
+  /** Stop tracking/animation without snapping back to the default camera */
+  stopTracking: () => void;
   /** Reset camera to default position */
   resetCamera: () => void;
 }
@@ -199,8 +201,16 @@ export function useCameraAnimation(
     isAnimatingRef.current = true;
   };
 
+  const stopTracking = () => {
+    targetRef.current = null;
+    targetObjectNameRef.current = null;
+    animationProgressRef.current = 0;
+    isAnimatingRef.current = false;
+  };
+
   return {
     focusOn,
+    stopTracking,
     resetCamera,
   };
 }
@@ -218,28 +228,38 @@ export function CameraController({
   targetRadius,
   targetName,
 }: CameraControllerProps) {
-  const { focusOn, resetCamera } = useCameraAnimation();
+  const { focusOn, stopTracking } = useCameraAnimation();
   const prevTargetRef = useRef<{ x: number; y: number; z: number } | null>(
     null,
   );
+  const prevTargetNameRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    // Check if target changed
     const targetChanged =
       targetPosition !== prevTargetRef.current &&
       (targetPosition?.x !== prevTargetRef.current?.x ||
         targetPosition?.y !== prevTargetRef.current?.y ||
         targetPosition?.z !== prevTargetRef.current?.z);
+    const targetNameChanged = targetName !== prevTargetNameRef.current;
 
-    if (targetChanged) {
-      if (targetPosition) {
+    if (targetPosition) {
+      if (targetChanged || targetNameChanged) {
         focusOn(targetPosition, targetRadius, targetName);
+        prevTargetRef.current = targetPosition;
+        prevTargetNameRef.current = targetName;
       } else {
-        resetCamera();
+        prevTargetRef.current = targetPosition;
+        prevTargetNameRef.current = targetName;
       }
-      prevTargetRef.current = targetPosition ?? null;
+      return;
     }
-  }, [targetPosition, targetRadius, targetName, focusOn, resetCamera]);
+
+    if (prevTargetRef.current || prevTargetNameRef.current) {
+      stopTracking();
+      prevTargetRef.current = null;
+      prevTargetNameRef.current = undefined;
+    }
+  }, [targetPosition, targetRadius, targetName, focusOn, stopTracking]);
 
   return null;
 }

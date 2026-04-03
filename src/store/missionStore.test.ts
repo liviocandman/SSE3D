@@ -16,7 +16,6 @@ describe('missionStore', () => {
     expect(state.missionTrajectory).toBeNull();
     expect(state.missionEvents).toBeNull();
     expect(state.missionHealth).toBeNull();
-    expect(state.isLive).toBe(true);
     expect(state.liveTimestamp).toBeNull();
   });
 
@@ -45,13 +44,13 @@ describe('missionStore', () => {
   });
 
   it('should reset mission state correctly', () => {
-    useMissionStore.getState().setIsLive(false);
+    useMissionStore.getState().setMissionMode(MissionMode.REPLAY);
     useMissionStore.getState().setLiveTimestamp('2026-04-01T12:00:00Z');
     
     useMissionStore.getState().resetMissionState();
     
     const state = useMissionStore.getState();
-    expect(state.isLive).toBe(true);
+    expect(state.missionMode).toBe(MissionMode.LIVE);
     expect(state.liveTimestamp).toBeNull();
   });
 });

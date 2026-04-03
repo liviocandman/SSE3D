@@ -81,6 +81,11 @@ class MissionStateResponse(BaseModel):
     mission_elapsed_time: str = Field(alias="missionElapsedTime")
     global_coordinates: Optional[MissionCoordinates] = Field(default=None, alias="globalCoordinates")
     mission_coordinates: Optional[MissionCoordinates] = Field(default=None, alias="missionCoordinates")
+    scene_coordinates: Optional[MissionCoordinates] = Field(
+        default=None, 
+        alias="sceneCoordinates",
+        description="Earth-relative position already rotated/mapped into the scene frame, still expressed in km."
+    )
 
 class MissionTrajectoryResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)

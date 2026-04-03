@@ -18,7 +18,6 @@ describe('useMissionData hook', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useMissionStore.getState().resetMissionState();
-    useMissionStore.getState().setSelectedMissionTargetId('artemis-2'); // enable polling
     
     // Default mock responses
     vi.mocked(missionClient.fetchMissionTrajectory).mockResolvedValue({} as any);
@@ -30,11 +29,13 @@ describe('useMissionData hook', () => {
     vi.restoreAllMocks();
   });
 
-  it('should not fetch if selectedMissionTargetId is null', () => {
-    useMissionStore.getState().setSelectedMissionTargetId(null);
+  it('should fetch mission data even when no mission target is selected yet', async () => {
+    vi.mocked(missionClient.fetchMissionState).mockResolvedValue({} as any);
     const { unmount } = renderHook(() => useMissionData());
 
-    expect(missionClient.fetchMissionState).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(missionClient.fetchMissionState).toHaveBeenCalled();
+    });
     unmount();
   });
 

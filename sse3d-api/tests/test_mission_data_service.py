@@ -1,0 +1,50 @@
+from app.models.mission_schemas import MissionPosition, MissionVelocity
+from app.services import mission_data_service
+
+
+def test_replay_prefers_oem_geometry(monkeypatch):
+    monkeypatch.setattr(
+        mission_data_service,
+        "_resolve_orion_state_from_oem",
+        lambda _timestamp: {
+            "position": MissionPosition(x=1.0, y=2.0, z=3.0),
+            "velocity": MissionVelocity(x=0.1, y=0.2, z=0.3),
+            "input_frame": "EME2000",
+            "input_origin": "EARTH",
+        },
+    )
+    monkeypatch.setattr(
+        mission_data_service,
+        "compute_mission_relative_geometry",
+        lambda _timestamp: None,
+    )
+
+    state = mission_data_service.get_replay_state("2026-04-03T13:07:09Z")
+
+    assert state.position.x == 1.0
+    assert state.position.y == 2.0
+    assert state.position.z == 3.0
+    assert state.velocity.x == 0.1
+    assert state.source.value == "ARCHIVE"
+
+
+def test_replay_without_spice_keeps_earth_distance_consistent(monkeypatch):
+    monkeypatch.setattr(
+        mission_data_service,
+        "_resolve_orion_state_from_oem",
+        lambda _timestamp: {
+            "position": MissionPosition(x=3.0, y=4.0, z=12.0),
+            "velocity": MissionVelocity(x=0.0, y=0.0, z=0.0),
+            "input_frame": "EME2000",
+            "input_origin": "EARTH",
+        },
+    )
+    monkeypatch.setattr(
+        mission_data_service,
+        "compute_mission_relative_geometry",
+        lambda _timestamp: None,
+    )
+
+    state = mission_data_service.get_replay_state("2026-04-03T13:07:09Z")
+
+    assert state.distances.earth_km == 13.0
