@@ -35,31 +35,60 @@ export function catmullRomPoint(
  * @param points  - Sorted, deduplicated real trajectory points
  * @param subdivisions - Total segments per raw interval. 
  *                       e.g. 4 -> inserts 3 synthetic pts between each pair.
+ * @param options - Optional configuration including velocityThreshold for burn detection.
  */
 export function densifyWithCatmullRom(
   points: EphemerisTrajectory[],
-  subdivisions: number
+  subdivisions: number,
+  options?: { velocityThreshold?: number }
 ): EphemerisTrajectory[] {
   if (points.length < 2 || subdivisions <= 1) return points;
 
   const result: EphemerisTrajectory[] = [];
 
   for (let i = 0; i < points.length - 1; i++) {
+    const pCurrent = points[i];
+    const pNext = points[i + 1];
+
+    // --- Burn Guard Logic ---
+    // If a velocity threshold is provided and both points have velocity data,
+    // calculate the magnitude of the velocity change (Delta-V).
+    let isBurnDetected = false;
+    if (options?.velocityThreshold && pCurrent.velocity && pNext.velocity) {
+      const dv = {
+        x: pNext.velocity.x - pCurrent.velocity.x,
+        y: pNext.velocity.y - pCurrent.velocity.y,
+        z: pNext.velocity.z - pCurrent.velocity.z,
+      };
+      const deltaVMagnitude = Math.sqrt(dv.x * dv.x + dv.y * dv.y + dv.z * dv.z);
+      
+      if (deltaVMagnitude > options.velocityThreshold) {
+        isBurnDetected = true;
+      }
+    }
+
+    // Push the real anchor at the start of this segment
+    result.push(pCurrent);
+
+    if (isBurnDetected) {
+      // Do not interpolate segments containing a burn to avoid fake curves.
+      // The segment will remain a straight line between the two real points.
+      continue;
+    }
+
+    // --- Spline Interpolation ---
     // Clamp outer phantom points at boundaries (standard Catmull-Rom endpoint handling)
     const p0 = points[Math.max(0, i - 1)].position;
-    const p1 = points[i].position;
-    const p2 = points[i + 1].position;
+    const p1 = pCurrent.position;
+    const p2 = pNext.position;
     const p3 = points[Math.min(points.length - 1, i + 2)].position;
 
     const t1 = new Date(
-      points[i].timestamp.includes('Z') ? points[i].timestamp : `${points[i].timestamp}Z`
+      pCurrent.timestamp.includes('Z') ? pCurrent.timestamp : `${pCurrent.timestamp}Z`
     ).getTime();
     const t2 = new Date(
-      points[i + 1].timestamp.includes('Z') ? points[i + 1].timestamp : `${points[i + 1].timestamp}Z`
+      pNext.timestamp.includes('Z') ? pNext.timestamp : `${pNext.timestamp}Z`
     ).getTime();
-
-    // Push the real anchor at the start of this segment
-    result.push(points[i]);
 
     // Inject (subdivisions - 1) synthetic interior points
     for (let s = 1; s < subdivisions; s++) {
@@ -71,7 +100,7 @@ export function densifyWithCatmullRom(
         continue;
       }
 
-      // Linearly interpolated timestamp - used for binary-search cutoff in DynamicTrailLine
+      // Linearly interpolated timestamp
       const syntheticTimestamp = new Date(Math.round(t1 + alpha * (t2 - t1))).toISOString();
       
       result.push({ 

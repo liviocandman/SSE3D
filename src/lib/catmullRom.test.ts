@@ -60,4 +60,35 @@ describe('densifyWithCatmullRom', () => {
     const input = makePoints(1);
     expect(densifyWithCatmullRom(input, 4)).toBe(input);
   });
+
+  describe('burn guard', () => {
+    const p1 = { timestamp: '2026-01-01T00:00:00Z', position: P(0, 0, 0), velocity: { x: 1, y: 0, z: 0 } };
+    const p2 = { timestamp: '2026-01-01T01:00:00Z', position: P(10, 0, 0), velocity: { x: 10, y: 0, z: 0 } }; // Delta-V = 9
+
+    it('blocks interpolation when delta-V exceeds threshold', () => {
+      // 5 subdivisions would normally add 4 points.
+      // With burn detected, it only adds the start point of the segment.
+      const result = densifyWithCatmullRom([p1, p2], 5, { velocityThreshold: 5 });
+      
+      // result = [p1, p2]
+      expect(result.length).toBe(2);
+      expect(result[0].timestamp).toBe(p1.timestamp);
+      expect(result[1].timestamp).toBe(p2.timestamp);
+    });
+
+    it('allows interpolation when delta-V is below threshold', () => {
+      const result = densifyWithCatmullRom([p1, p2], 5, { velocityThreshold: 20 });
+      
+      // 2 real pts + 4 synthetic = 6
+      expect(result.length).toBe(6);
+    });
+
+    it('ignores guard when velocity data is missing', () => {
+      const pNoVel1 = { timestamp: '2026-01-01T00:00:00Z', position: P(0, 0, 0) };
+      const pNoVel2 = { timestamp: '2026-01-01T01:00:00Z', position: P(10, 0, 0) };
+      
+      const result = densifyWithCatmullRom([pNoVel1, pNoVel2], 5, { velocityThreshold: 1 });
+      expect(result.length).toBe(6);
+    });
+  });
 });

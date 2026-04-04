@@ -73,6 +73,7 @@ export function CelestialBody({
     getSharedKTX2Loader(gl);
   }) as THREE.Texture;
 
+
   const [fontSize, setFontSize] = useState(5);
   const [isHovered, setIsHovered] = useState(false);
   const { camera } = useThree();

@@ -36,6 +36,13 @@ def test_get_artemis2_trajectory_segments():
     assert data["past"][0]["segment"] == "past"
     assert data["planned"][0]["segment"] == "planned"
 
+def test_get_artemis2_trajectory_replay_timestamp():
+    response = client.get("/api/missions/artemis2/trajectory?at=2026-04-05T12:00:00Z")
+    assert response.status_code == 200
+    data = response.json()
+    assert "past" in data
+    assert "planned" in data
+
 def test_get_artemis2_events():
     response = client.get("/api/missions/artemis2/events")
     assert response.status_code == 200

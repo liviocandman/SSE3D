@@ -307,7 +307,15 @@ def get_replay_state(timestamp: str) -> MissionStateResponse:
         
     return state
 
-def get_mission_trajectory() -> MissionTrajectoryResponse:
+def _parse_split_timestamp(timestamp: str | None) -> datetime:
+    if not timestamp:
+        return datetime.now(timezone.utc)
+
+    normalized = timestamp if timestamp.endswith("Z") else f"{timestamp}Z"
+    return datetime.fromisoformat(normalized.replace("Z", "+00:00")).astimezone(timezone.utc)
+
+
+def get_mission_trajectory(at: str | None = None) -> MissionTrajectoryResponse:
     """
     Returns the mission trajectory, past and planned points.
     OEM is the primary source for Orion trajectory when available.
@@ -317,7 +325,7 @@ def get_mission_trajectory() -> MissionTrajectoryResponse:
 
     ephemeris = mission_oem_service.get_ephemeris()
     if ephemeris and ephemeris.states:
-        split_dt = datetime.now(timezone.utc)
+        split_dt = _parse_split_timestamp(at)
         states = mission_oem_service.get_states_between(
             ephemeris.metadata.start_time,
             ephemeris.metadata.stop_time,

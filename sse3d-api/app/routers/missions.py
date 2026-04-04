@@ -34,9 +34,9 @@ async def get_artemis2_state(at: Optional[str] = Query(None)):
     return await get_live_mission_state()
 
 @router.get("/artemis2/trajectory", response_model=MissionTrajectoryResponse)
-async def get_artemis2_trajectory():
+async def get_artemis2_trajectory(at: Optional[str] = Query(None)):
     """Returns past and planned trajectory points for Artemis II."""
-    return get_mission_trajectory()
+    return get_mission_trajectory(at)
 
 @router.get("/artemis2/events", response_model=MissionEventsResponse)
 async def get_artemis2_events():

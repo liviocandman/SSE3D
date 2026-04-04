@@ -20,6 +20,16 @@ export function useMissionData() {
   const isLive = missionMode === MissionMode.LIVE;
   const controllersRef = useRef<Set<AbortController>>(new Set());
 
+  const getReplayTimestampParam = (): string | undefined => {
+    if (isLive) {
+      return undefined;
+    }
+
+    const currentTime = useSolarStore.getState().currentTime;
+    const date = new Date(currentTime);
+    return date.toISOString().split('.')[0] + 'Z';
+  };
+
   useEffect(() => {
     let stateTimeout: NodeJS.Timeout;
     let trajectoryTimeout: NodeJS.Timeout;
@@ -44,14 +54,7 @@ export function useMissionData() {
     const fetchState = async () => {
       if (!isMounted) return;
       try {
-        let atParam: string | undefined = undefined;
-        
-        if (!isLive) {
-          const currentTime = useSolarStore.getState().currentTime;
-          // Drop milliseconds for cache-friendly requests in seconds precision
-          const date = new Date(currentTime);
-          atParam = date.toISOString().split('.')[0] + 'Z';
-        }
+        const atParam = getReplayTimestampParam();
         
         const data = await withAbortController((options) => fetchMissionState(atParam, options));
         
@@ -85,7 +88,8 @@ export function useMissionData() {
     const fetchTrajectory = async () => {
       if (!isMounted) return;
       try {
-        const data = await withAbortController((options) => fetchMissionTrajectory(options));
+        const atParam = getReplayTimestampParam();
+        const data = await withAbortController((options) => fetchMissionTrajectory(atParam, options));
         if (isMounted) {
           setMissionTrajectory(data);
         }

@@ -114,10 +114,20 @@ export async function fetchMissionState(
   );
 }
 
-export async function fetchMissionTrajectory(options?: MissionRequestOptions): Promise<MissionTrajectory> {
+export async function fetchMissionTrajectory(
+  at?: string,
+  options?: MissionRequestOptions
+): Promise<MissionTrajectory> {
+  const params = new URLSearchParams();
+  if (at) {
+    params.set('at', at);
+  }
+  const query = params.toString();
+  const path = `/api/missions/artemis2/trajectory${query ? `?${query}` : ''}`;
+
   return fetchJsonWithRetry<MissionTrajectory>(
-    '/api/missions/artemis2/trajectory',
-    'mission-trajectory',
+    path,
+    `mission-trajectory:${query || 'live'}`,
     options
   );
 }

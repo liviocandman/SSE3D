@@ -1,11 +1,12 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { API_BASE_URL } from '@/lib/api';
 
 export const revalidate = 0;
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const pythonUrl = process.env.PYTHON_API_URL || API_BASE_URL;
-  const url = `${pythonUrl}/api/missions/artemis2/trajectory`;
+  const at = request.nextUrl.searchParams.get('at');
+  const url = `${pythonUrl}/api/missions/artemis2/trajectory${at ? `?at=${encodeURIComponent(at)}` : ''}`;
 
   try {
     const res = await fetch(url, { next: { revalidate: 0 } });

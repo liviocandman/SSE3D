@@ -20,6 +20,15 @@ type LineMesh = THREE.Mesh<THREE.BufferGeometry, THREE.Material> & {
   computeLineDistances: () => void;
 };
 
+/**
+ * DynamicTrailLine Component
+ * 
+ * SCOPE: Exclusive for planets and moons.
+ * DO NOT use this for spacecraft or mission trajectories.
+ * Spacecraft trajectories should use MissionTrajectoryLine.
+ * 
+ * Provides a performant, GPU-accelerated trail line that fades based on simulation time.
+ */
 export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
   samples,
   maxTrailPoints,

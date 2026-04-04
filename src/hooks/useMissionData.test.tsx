@@ -78,6 +78,10 @@ describe('useMissionData hook', () => {
         '2026-04-05T12:00:00Z',
         expect.objectContaining({ signal: expect.any(AbortSignal) })
       );
+      expect(missionClient.fetchMissionTrajectory).toHaveBeenCalledWith(
+        '2026-04-05T12:00:00Z',
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
+      );
     });
     
     unmount();

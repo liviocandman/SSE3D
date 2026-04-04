@@ -31,6 +31,7 @@ import { KM_TO_UNIT } from '@/lib/scales';
 import StaticOrbitLine from './StaticOrbitLine';
 import DynamicTrailLine from './DynamicTrailLine';
 import { SpacecraftBody } from './SpacecraftBody';
+import { MissionTrajectoryLine } from './MissionTrajectoryLine';
 import { BODY_IDS } from '@/lib/types';
 
 // --- Types ---
@@ -183,11 +184,13 @@ export function SceneContent({
 
   const {
     missionState,
+    missionTrajectory,
     selectedMissionTargetId,
     setSelectedMissionTargetId,
   } = useMissionStore(
     useShallow((state) => ({
       missionState: state.missionState,
+      missionTrajectory: state.missionTrajectory,
       selectedMissionTargetId: state.selectedMissionTargetId,
       setSelectedMissionTargetId: state.setSelectedMissionTargetId,
     }))
@@ -465,20 +468,34 @@ export function SceneContent({
                 />
               )}
               {planet.bodyId === BODY_IDS.EARTH && missionState && spacecraftLocalPosition && (
-                <SpacecraftBody
-                  vehicleId={missionState.vehicleId}
-                  label={missionState.vehicleId === 'orion' ? 'Orion' : missionState.vehicleId.toUpperCase()}
-                  position={spacecraftLocalPosition}
-                  isSelected={selectedMissionTargetId === missionState.vehicleId}
-                  onClick={(id) => {
-                    setSelectedPlanet(null);
-                    setSelectedMissionTargetId(id);
+                <>
+                  <SpacecraftBody
+                    vehicleId={missionState.vehicleId}
+                    label={missionState.vehicleId === 'orion' ? 'Orion' : missionState.vehicleId.toUpperCase()}
+                    position={spacecraftLocalPosition}
+                    isSelected={selectedMissionTargetId === missionState.vehicleId}
+                    onClick={(id) => {
+                      setSelectedPlanet(null);
+                      setSelectedMissionTargetId(id);
 
-                    if (spacecraftWorldPosition) {
-                      setTravelTarget(spacecraftWorldPosition, 0.01);
-                    }
-                  }}
-                />
+                      if (spacecraftWorldPosition) {
+                        setTravelTarget(spacecraftWorldPosition, 0.01);
+                      }
+                    }}
+                  />
+                  {missionTrajectory && (
+                    <MissionTrajectoryLine
+                      past={missionTrajectory.past}
+                      current={[
+                        missionState.sceneCoordinates!.x,
+                        missionState.sceneCoordinates!.y,
+                        missionState.sceneCoordinates!.z
+                      ]}
+                      planned={missionTrajectory.planned}
+                      smoothing={false}
+                    />
+                  )}
+                </>
               )}
             </CelestialBody>
           </group>
