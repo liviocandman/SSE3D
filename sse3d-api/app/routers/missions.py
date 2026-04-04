@@ -18,7 +18,13 @@ from app.models.mission_schemas import (
     MissionCoordinates,
     MissionTrajectorySegment
 )
-from app.services.mission_data_service import get_live_mission_state, get_replay_state, get_mission_trajectory, cache_service
+from app.services.mission_data_service import (
+    get_live_mission_state, 
+    get_replay_state, 
+    get_mission_trajectory, 
+    get_health,
+    cache_service
+)
 
 router = APIRouter(prefix="/missions", tags=["Missions"])
 
@@ -78,31 +84,4 @@ async def get_artemis2_events():
 @router.get("/artemis2/health", response_model=MissionHealthResponse)
 async def get_artemis2_health():
     """Returns the health status of the mission data source."""
-    # Check Cache first
-    _, health = await cache_service.get_live_state()
-    if health:
-        return health
-        
-    # If not in live cache, check last good
-    _, last_good_health = await cache_service.get_last_good_state()
-    if last_good_health:
-        last_good_health.status = "degraded"
-        last_good_health.fallback_active = True
-        if last_good_health.details:
-            last_good_health.details["fallbackActive"] = True
-        return last_good_health
-
-    # Default Mock Health
-    now = datetime.now(timezone.utc).isoformat()
-    return MissionHealthResponse(
-        missionId=ARTEMIS2_ID,
-        status="nominal",
-        source=MissionDataSource.AROW_LIVE,
-        lastUpdate=now,
-        currentSource=MissionDataSource.AROW_LIVE,
-        dataAgeSeconds=0.0,
-        fallbackActive=False,
-        coverageStart=None,
-        coverageEnd=None,
-        details={"status": "initializing", "info": "No cached data available"}
-    )
+    return await get_health()

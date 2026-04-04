@@ -68,7 +68,7 @@ describe('MissionInfo', () => {
     // Check formatted distance
     expect(screen.getByText('350,000')).toBeInTheDocument();
     
-    // Check formatted velocity (1^2 + 0.5^2 + 0.2^2 = 1 + 0.25 + 0.04 = 1.29. Sqrt(1.29) approx 1.135. 1.135 * 3600 approx 4088)
+    // Check formatted velocity
     expect(screen.getByText('4,089')).toBeInTheDocument();
     expect(screen.getByText('1.17 s')).toBeInTheDocument();
     expect(screen.getByText('+1.14')).toBeInTheDocument();
@@ -90,18 +90,32 @@ describe('MissionInfo', () => {
     expect(screen.getByText('in 22h 00m')).toBeInTheDocument();
   });
 
-  it('shows stale data warning', () => {
-    const staleHealth = { ...mockMissionHealth, dataAgeSeconds: 120 };
+  it('shows stale data warning when missionHealth is missing but stalenessSeconds is high', () => {
     const staleState = { ...mockMissionState, stalenessSeconds: 120 };
     render(
       <MissionInfo 
         missionState={staleState} 
+        missionHealth={null} 
+        missionEvents={mockMissionEvents} 
+      />
+    );
+
+    expect(screen.getByText(/Telemetry Lag:/)).toBeInTheDocument();
+    expect(screen.getByText(/120s/)).toBeInTheDocument();
+  });
+
+  it('shows stale data warning when missionHealth reporting high dataAgeSeconds', () => {
+    const staleHealth = { ...mockMissionHealth, dataAgeSeconds: 150 };
+    render(
+      <MissionInfo 
+        missionState={mockMissionState} 
         missionHealth={staleHealth} 
         missionEvents={mockMissionEvents} 
       />
     );
 
-    expect(screen.getByText(/Stale Data: 120s/)).toBeInTheDocument();
+    expect(screen.getByText(/Telemetry Lag:/)).toBeInTheDocument();
+    expect(screen.getByText(/150s/)).toBeInTheDocument();
   });
 
   it('shows fallback data active warning', () => {
@@ -114,7 +128,7 @@ describe('MissionInfo', () => {
       />
     );
 
-    expect(screen.getByText('Fallback Data Active')).toBeInTheDocument();
+    expect(screen.getByText(/Fallback Mode Active/)).toBeInTheDocument();
   });
 
   it('switches to altitude near Earth', () => {
@@ -135,5 +149,31 @@ describe('MissionInfo', () => {
 
     expect(screen.getByText('Altitude')).toBeInTheDocument();
     expect(screen.getByText('400')).toBeInTheDocument();
+  });
+
+  it('shows source explanations', () => {
+    const archiveState = { ...mockMissionState, source: MissionDataSource.ARCHIVE };
+    const { rerender } = render(
+      <MissionInfo 
+        missionState={archiveState} 
+        missionHealth={mockMissionHealth} 
+        missionEvents={mockMissionEvents} 
+      />
+    );
+
+    expect(screen.getByText(/Archived Data:/)).toBeInTheDocument();
+    expect(screen.getByText(/High-fidelity historical records/)).toBeInTheDocument();
+
+    const predictedState = { ...mockMissionState, source: MissionDataSource.SPICE_PREDICTED };
+    rerender(
+      <MissionInfo 
+        missionState={predictedState} 
+        missionHealth={mockMissionHealth} 
+        missionEvents={mockMissionEvents} 
+      />
+    );
+
+    expect(screen.getByText(/Predicted State:/)).toBeInTheDocument();
+    expect(screen.getByText(/Simulated trajectory based on orbital mechanics/)).toBeInTheDocument();
   });
 });

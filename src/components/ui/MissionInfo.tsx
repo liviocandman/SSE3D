@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   MissionState, 
   MissionHealth, 
@@ -53,6 +53,8 @@ function getSourceLabel(source: MissionDataSource): string {
 // --- Component ---
 
 export function MissionInfo({ missionState, missionHealth, missionEvents }: MissionInfoProps) {
+  const [showSourceInfo, setShowSourceInfo] = useState(false);
+
   if (!missionState) {
     return (
       <div className="text-center py-8 px-4 text-white/50 animate-in fade-in duration-700">
@@ -85,6 +87,37 @@ export function MissionInfo({ missionState, missionHealth, missionEvents }: Miss
       onTouchStart={(e) => e.stopPropagation()}
       onTouchMove={(e) => e.stopPropagation()}
     >
+      {/* Observability Banners */}
+      <div className="flex flex-col gap-2">
+        {isFallback && (
+          <div className="bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg p-2 text-[10px] font-bold uppercase tracking-wide flex items-center gap-2">
+            <span className="text-xs">🚨</span>
+            <span>Fallback Mode Active: NASA Live API is currently unreachable.</span>
+          </div>
+        )}
+        
+        {isStale && !isFallback && (
+          <div className="bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-lg p-2 text-[10px] font-bold uppercase tracking-wide flex items-center gap-2">
+            <span className="text-xs">⚠️</span>
+            <span>Telemetry Lag: {Math.round(freshnessSeconds)}s since last update.</span>
+          </div>
+        )}
+
+        {missionState.source === MissionDataSource.ARCHIVE && (
+          <div className="bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg p-2 text-[10px] font-bold uppercase tracking-wide flex items-center gap-2">
+            <span className="text-xs">📚</span>
+            <span>Archived Data: Viewing validated historical trajectory (OEM).</span>
+          </div>
+        )}
+
+        {missionState.source === MissionDataSource.SPICE_PREDICTED && !isFallback && (
+          <div className="bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded-lg p-2 text-[10px] font-bold uppercase tracking-wide flex items-center gap-2">
+            <span className="text-xs">🔮</span>
+            <span>Predicted State: Viewing mathematically derived trajectory.</span>
+          </div>
+        )}
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between gap-3 mb-2">
         <div className="flex items-center gap-3">
@@ -157,16 +190,28 @@ export function MissionInfo({ missionState, missionHealth, missionEvents }: Miss
           <span className="text-xs font-bold text-blue-400">{getPhaseLabel(missionState.phase)}</span>
         </div>
         
-        <div className="flex justify-between items-center">
-          <span className="text-[10px] text-white/50 uppercase tracking-wider">Data Source</span>
+        <div 
+          className="flex justify-between items-center group cursor-help relative"
+          onClick={() => setShowSourceInfo(!showSourceInfo)}
+        >
+          <span className="text-[10px] text-white/50 uppercase tracking-wider underline decoration-dotted decoration-white/20">Data Source</span>
           <span className="text-[10px] text-white/80 text-right max-w-[150px] truncate" title={getSourceLabel(missionState.source)}>
             {getSourceLabel(missionState.source)}
           </span>
+          
+          {/* Tooltip-like explainer for Source - supports hover AND click for mobile */}
+          <div className={`absolute bottom-full right-0 mb-2 w-48 p-2 bg-black/90 border border-white/10 rounded shadow-xl text-[9px] text-white/70 transition-opacity z-50 pointer-events-none ${
+            showSourceInfo ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          }`}>
+            {missionState.source === MissionDataSource.AROW_LIVE && "Live feed from NASA's Track Artemis API."}
+            {missionState.source === MissionDataSource.ARCHIVE && "High-fidelity historical records (OEM format)."}
+            {missionState.source === MissionDataSource.SPICE_PREDICTED && "Simulated trajectory based on orbital mechanics."}
+          </div>
         </div>
 
         <div className="flex justify-between items-center">
           <span className="text-[10px] text-white/50 uppercase tracking-wider">Freshness</span>
-          <span className="text-[10px] text-white/70">
+          <span className="text-[10px] text-white/70 tabular-nums">
             {isLive ? `${Math.round(freshnessSeconds)} s old` : isReplay ? 'Replay state' : 'Predicted state'}
           </span>
         </div>
@@ -177,15 +222,6 @@ export function MissionInfo({ missionState, missionHealth, missionEvents }: Miss
             <span className="text-[10px] text-white/70 tabular-nums">
               {formatSolarRange(missionState.solarRangeKm)}
             </span>
-          </div>
-        )}
-
-        {(isStale || isFallback) && (
-          <div className={`mt-1 flex items-center gap-1.5 px-2 py-1 rounded text-[9px] font-bold uppercase ${
-            isFallback ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
-          }`}>
-            <span>⚠️</span>
-            <span>{isFallback ? 'Fallback Data Active' : `Stale Data: ${Math.round(freshnessSeconds)}s`}</span>
           </div>
         )}
 

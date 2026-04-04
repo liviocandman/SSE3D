@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
+from typing import Optional, Tuple
 from loguru import logger
 
 from app.models.mission_schemas import (
     MissionStateResponse,
     MissionTrajectoryResponse,
+    MissionHealthResponse,
     MissionPhase,
     MissionDataSource,
     MissionLineOfSightStatus,
@@ -34,6 +36,82 @@ ARTEMIS2_ID = "artemis-2"
 ORION_VEHICLE_ID = "orion"
 PREDICTED_FALLBACK_EARTH_DISTANCE_KM = 250_000.0
 MOON_MEAN_RADIUS_KM = 1_737.4
+
+# Transition tracking for Story 7.2
+_last_source: Optional[MissionDataSource] = None
+_last_fallback_state: Optional[bool] = None
+_last_stale_state: bool = False
+
+
+async def get_health() -> MissionHealthResponse:
+    """
+    Centralized health logic for Story 7.1.
+    Decides health status based on cache availability and degradation.
+    """
+    # 1. Check Live Cache
+    _, health = await cache_service.get_live_state()
+    if health:
+        return health
+
+    # 2. Check Last Good State (Degraded)
+    _, last_good_health = await cache_service.get_last_good_state()
+    if last_good_health:
+        # Create a copy to avoid contaminating the cache (P1 fix)
+        degraded_health = last_good_health.model_copy(update={
+            "status": "degraded",
+            "fallback_active": True
+        })
+        if degraded_health.details:
+            # We copy details too to be safe if it's a nested dict
+            new_details = degraded_health.details.copy()
+            new_details["fallbackActive"] = True
+            new_details["reason"] = "Live AROW data unavailable, using last good state."
+            degraded_health.details = new_details
+        return degraded_health
+
+    # 3. Initializing / Unknown (P2 fix: don't report fallback if just cold start)
+    now = datetime.now(timezone.utc).isoformat()
+    return MissionHealthResponse(
+        missionId=ARTEMIS2_ID,
+        status="initializing",
+        source=MissionDataSource.AROW_LIVE,
+        lastUpdate=now,
+        currentSource=MissionDataSource.AROW_LIVE,
+        dataAgeSeconds=0.0,
+        fallbackActive=False,
+        coverageStart=None,
+        coverageEnd=None,
+        details={"status": "initializing", "info": "Waiting for first data fetch..."}
+    )
+
+
+def _log_source_transition(new_source: MissionDataSource, fallback_active: bool, is_stale: bool = False):
+    """
+    Transition-based logging for Story 7.2.
+    Only logs when source, fallback state, or staleness changes.
+    """
+    global _last_source, _last_fallback_state, _last_stale_state
+
+    # Source changes
+    if new_source != _last_source:
+        logger.info(f"MISSION SOURCE CHANGE: {_last_source} -> {new_source}")
+        _last_source = new_source
+
+    # Fallback transitions
+    if fallback_active != _last_fallback_state:
+        if fallback_active:
+            logger.warning("MISSION FALLBACK ACTIVATED: System is running on degraded/predicted data.")
+        else:
+            logger.info("MISSION FALLBACK CLEARED: Live telemetry recovered.")
+        _last_fallback_state = fallback_active
+
+    # Telemetry gaps (P2 fix for Story 7.2)
+    if is_stale != _last_stale_state:
+        if is_stale:
+            logger.warning("MISSION TELEMETRY GAP DETECTED: Data freshness exceeds nominal threshold.")
+        else:
+            logger.info("MISSION TELEMETRY REFRESHED: Nominal data flow resumed.")
+        _last_stale_state = is_stale
 
 
 def _resolve_orion_state_from_oem(timestamp: str):
@@ -188,6 +266,9 @@ async def get_live_mission_state() -> MissionStateResponse:
     # 1. Check Cache
     state, _ = await cache_service.get_live_state()
     if state:
+        is_stale = state.staleness_seconds > 60
+        fallback_active = state.mode == "predicted" or state.source == MissionDataSource.SPICE_PREDICTED
+        _log_source_transition(state.source, fallback_active, is_stale)
         return state
         
     try:
@@ -248,6 +329,8 @@ async def get_live_mission_state() -> MissionStateResponse:
         )
         await cache_service.set_live_state(live_state, live_health)
         
+        is_stale = live_state.staleness_seconds > 60
+        _log_source_transition(live_state.source, False, is_stale)
         return live_state
 
     except Exception as e:
@@ -256,10 +339,15 @@ async def get_live_mission_state() -> MissionStateResponse:
         # 6. Fallback
         fallback_state, _ = await cache_service.get_last_good_state()
         if fallback_state:
+            # When in fallback, we consider it stale if the data age is high
+            is_stale = fallback_state.staleness_seconds > 60
+            _log_source_transition(fallback_state.source, True, is_stale)
             return fallback_state
             
         logger.error("No last good state found. Returning predicted data as ultimate fallback.")
-        return get_predicted_fallback_state()
+        predicted = get_predicted_fallback_state()
+        _log_source_transition(predicted.source, True, True) # Predicted is always "gapped" from live
+        return predicted
 
 def get_predicted_fallback_state() -> MissionStateResponse:
     now = datetime.now(timezone.utc).isoformat()
