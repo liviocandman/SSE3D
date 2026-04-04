@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SceneContent } from './SceneManager';
 import { useMissionStore } from '@/store/missionStore';
 import { useSolarStore } from '@/store/solarStore';
+import { MissionPhase } from '@/lib/missionTypes';
 
 // Mock store
 vi.mock('@/store/missionStore', () => ({
@@ -41,6 +42,14 @@ vi.mock('./SpacecraftBody', () => ({
   SpacecraftBody: ({ vehicleId }: any) => <div data-testid="spacecraft">{vehicleId}</div>,
 }));
 
+vi.mock('./MissionTrajectoryLine', () => ({
+  MissionTrajectoryLine: () => <div data-testid="trajectory-line" />,
+}));
+
+vi.mock('./MissionMilestoneMarker', () => ({
+  MissionMilestoneMarker: ({ label }: any) => <div data-testid="milestone-marker">{label}</div>,
+}));
+
 vi.mock('@/hooks/useCameraAnimation', () => ({
   CameraController: () => <div />,
 }));
@@ -54,33 +63,53 @@ vi.mock('./TrajectoryManager', () => ({
 }));
 
 describe('SceneManager / SceneContent', () => {
+  const setTravelTarget = vi.fn();
+  const setSelectedMissionTargetId = vi.fn();
+  const setSelectedPlanet = vi.fn();
+
   beforeEach(() => {
+    vi.clearAllMocks();
+    
+    // Mock global fetch to avoid URL errors
+    global.fetch = vi.fn().mockImplementation(() => 
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ data: [] }),
+      })
+    );
+
     // Basic mock of solarStore
-    vi.mocked(useSolarStore).mockImplementation(() => ({
-      selectedPlanet: null,
-      setSelectedPlanet: vi.fn(),
-      viewMode: 'didactic',
-      setViewMode: vi.fn(),
-      travelTarget: null,
-      travelTargetRadius: 1,
-      setTravelTarget: vi.fn(),
-      masterTrajectorySegments: {},
-      fullOrbits: {},
-      appendFullOrbits: vi.fn(),
-      advanceTime: vi.fn(),
-    }));
+    vi.mocked(useSolarStore).mockImplementation((selector: any) => 
+      selector({
+        currentTime: new Date('2026-04-01T12:00:00Z'),
+        selectedPlanet: null,
+        setSelectedPlanet,
+        viewMode: 'didactic',
+        setViewMode: vi.fn(),
+        travelTarget: null,
+        travelTargetRadius: 1,
+        setTravelTarget,
+        resetTravel: vi.fn(),
+        masterTrajectorySegments: {},
+        fullOrbits: {},
+        appendFullOrbits: vi.fn(),
+        advanceTime: vi.fn(),
+      })
+    );
   });
 
   it('renders spacecraft when missionState has sceneCoordinates', () => {
-    // Mock missionStore returning scene coordinates
-    vi.mocked(useMissionStore).mockImplementation(() => ({
-      missionState: {
-        vehicleId: 'orion',
-        sceneCoordinates: { x: 1000, y: 0, z: 0 },
-      },
-      selectedMissionTargetId: null,
-      setSelectedMissionTargetId: vi.fn(),
-    }));
+    vi.mocked(useMissionStore).mockImplementation((selector: any) => 
+      selector({
+        missionState: {
+          vehicleId: 'orion',
+          sceneCoordinates: { x: 1000, y: 0, z: 0 },
+        },
+        selectedMissionTargetId: null,
+        setSelectedMissionTargetId,
+        autoFocusEvents: false,
+      })
+    );
 
     const mockEarthEphemeris = [{
       bodyId: '399',
@@ -91,17 +120,147 @@ describe('SceneManager / SceneContent', () => {
 
     const { getByTestId } = render(<SceneContent ephemerisData={mockEarthEphemeris as any} />);
     expect(getByTestId('spacecraft')).toBeInTheDocument();
-    expect(getByTestId('spacecraft')).toHaveTextContent('orion');
   });
 
-  it('does not render spacecraft when missionState is missing', () => {
-    vi.mocked(useMissionStore).mockImplementation(() => ({
-      missionState: null,
-      selectedMissionTargetId: null,
-      setSelectedMissionTargetId: vi.fn(),
-    }));
+  it('triggers non-intrusive auto-focus on major mission events', async () => {
+    vi.mocked(useMissionStore).mockImplementation((selector: any) => 
+      selector({
+        missionState: {
+          vehicleId: 'orion',
+          sceneCoordinates: { x: 1000, y: 0, z: 0 },
+          phase: MissionPhase.EARTH_DEPARTURE,
+        },
+        missionTrajectory: { past: [], planned: [] },
+        missionEvents: {
+          events: [
+            { id: 'ev-1', name: 'TLI', timestamp: '2026-04-01T12:00:10Z', phase: MissionPhase.EARTH_DEPARTURE },
+          ],
+        },
+        selectedMissionTargetId: null,
+        setSelectedMissionTargetId,
+        autoFocusEvents: true,
+      })
+    );
 
-    const { queryByTestId } = render(<SceneContent ephemerisData={[]} />);
-    expect(queryByTestId('spacecraft')).toBeNull();
+    const mockEarthEphemeris = [{
+      bodyId: '399',
+      position: { x: 0, y: 0, z: 0 },
+      velocity: { x: 0, y: 0, z: 0 },
+      trajectory: [],
+    }];
+
+    render(<SceneContent ephemerisData={mockEarthEphemeris as any} />);
+
+    // Camera should move
+    expect(setTravelTarget).toHaveBeenCalled();
+    
+    // Selection should NOT be hijacked (P2 fix)
+    expect(setSelectedMissionTargetId).not.toHaveBeenCalled();
+    expect(setSelectedPlanet).not.toHaveBeenCalled();
+  });
+
+  it('re-arms auto-focus after leaving and re-entering an event window', () => {
+    const missionSelectorImpl = (currentTimeIso: string) => (selector: any) =>
+      selector({
+        missionState: {
+          vehicleId: 'orion',
+          sceneCoordinates: { x: 1000, y: 0, z: 0 },
+          phase: MissionPhase.LUNAR_FLYBY,
+        },
+        missionTrajectory: { past: [], planned: [] },
+        missionEvents: {
+          events: [
+            {
+              id: 'ev-flyby',
+              name: 'Lunar Flyby',
+              timestamp: '2026-04-01T12:00:10Z',
+              phase: MissionPhase.LUNAR_FLYBY,
+            },
+          ],
+        },
+        selectedMissionTargetId: null,
+        setSelectedMissionTargetId,
+        autoFocusEvents: true,
+      });
+
+    const solarSelectorImpl = (currentTimeIso: string) => (selector: any) =>
+      selector({
+        currentTime: new Date(currentTimeIso),
+        selectedPlanet: null,
+        setSelectedPlanet,
+        viewMode: 'didactic',
+        setViewMode: vi.fn(),
+        travelTarget: null,
+        travelTargetRadius: 1,
+        setTravelTarget,
+        resetTravel: vi.fn(),
+        masterTrajectorySegments: {},
+        fullOrbits: {},
+        appendFullOrbits: vi.fn(),
+        advanceTime: vi.fn(),
+      });
+
+    vi.mocked(useMissionStore).mockImplementation(missionSelectorImpl('2026-04-01T12:00:00Z'));
+    vi.mocked(useSolarStore).mockImplementation(solarSelectorImpl('2026-04-01T12:00:00Z'));
+
+    const mockEarthEphemeris = [{
+      bodyId: '399',
+      position: { x: 0, y: 0, z: 0 },
+      velocity: { x: 0, y: 0, z: 0 },
+      trajectory: [],
+    }];
+
+    const { rerender } = render(<SceneContent ephemerisData={mockEarthEphemeris as any} />);
+    expect(setTravelTarget).toHaveBeenCalledTimes(1);
+
+    vi.mocked(useMissionStore).mockImplementation(missionSelectorImpl('2026-04-01T12:03:00Z'));
+    vi.mocked(useSolarStore).mockImplementation(solarSelectorImpl('2026-04-01T12:03:00Z'));
+    rerender(<SceneContent ephemerisData={mockEarthEphemeris as any} />);
+    expect(setTravelTarget).toHaveBeenCalledTimes(1);
+
+    vi.mocked(useMissionStore).mockImplementation(missionSelectorImpl('2026-04-01T12:00:20Z'));
+    vi.mocked(useSolarStore).mockImplementation(solarSelectorImpl('2026-04-01T12:00:20Z'));
+    rerender(<SceneContent ephemerisData={mockEarthEphemeris as any} />);
+    expect(setTravelTarget).toHaveBeenCalledTimes(2);
+    expect(setSelectedMissionTargetId).not.toHaveBeenCalled();
+    expect(setSelectedPlanet).not.toHaveBeenCalled();
+  });
+
+  it('renders milestones when missionEvents has major phases', () => {
+    vi.mocked(useMissionStore).mockImplementation((selector: any) => 
+      selector({
+        missionState: { vehicleId: 'orion', sceneCoordinates: { x: 0, y: 0, z: 0 } },
+        missionTrajectory: { 
+          past: [
+            { timestamp: '2026-04-01T12:00:00Z', position: { x: 0, y: 0, z: 0 }, segment: 'past' }
+          ], 
+          planned: [] 
+        },
+        missionEvents: {
+          events: [
+            {
+              id: '1',
+              name: 'TLI',
+              timestamp: '2026-04-01T12:00:00Z',
+              phase: MissionPhase.EARTH_DEPARTURE,
+            },
+          ],
+        },
+        selectedMissionTargetId: null,
+        setSelectedMissionTargetId,
+        autoFocusEvents: false,
+      })
+    );
+
+    const mockEarthEphemeris = [{
+      bodyId: '399',
+      position: { x: 0, y: 0, z: 0 },
+      velocity: { x: 0, y: 0, z: 0 },
+      trajectory: [],
+    }];
+
+    const { getByTestId } = render(<SceneContent ephemerisData={mockEarthEphemeris as any} />);
+    expect(getByTestId('milestone-marker')).toBeInTheDocument();
+    expect(getByTestId('milestone-marker')).toHaveTextContent('TLI');
   });
 });

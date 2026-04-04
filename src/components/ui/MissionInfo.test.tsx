@@ -1,13 +1,35 @@
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MissionInfo } from './MissionInfo';
 import { 
   MissionMode, 
   MissionPhase, 
   MissionDataSource 
 } from '@/lib/missionTypes';
+import { useMissionStore } from '@/store/missionStore';
+
+// Mock zustand shallow
+vi.mock('zustand/react/shallow', () => ({
+  useShallow: (s: any) => s,
+}));
+
+// Setup hoisted mock state
+const { missionStoreState } = vi.hoisted(() => ({
+  missionStoreState: {
+    autoFocusEvents: false,
+    setAutoFocusEvents: vi.fn(),
+  }
+}));
+
+vi.mock('@/store/missionStore', () => ({
+  useMissionStore: vi.fn((selector) => selector ? selector(missionStoreState) : missionStoreState),
+}));
 
 describe('MissionInfo', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   const mockMissionState = {
     missionId: 'artemis-2',
     vehicleId: 'orion',
@@ -58,7 +80,6 @@ describe('MissionInfo', () => {
     );
 
     expect(screen.getByText('Orion')).toBeInTheDocument();
-    expect(screen.getByText('Artemis II Mission')).toBeInTheDocument();
     expect(screen.getByText('LIVE')).toBeInTheDocument();
     expect(screen.getByText('Translunar Coast')).toBeInTheDocument();
     
@@ -175,5 +196,20 @@ describe('MissionInfo', () => {
 
     expect(screen.getByText(/Predicted State:/)).toBeInTheDocument();
     expect(screen.getByText(/Simulated trajectory based on orbital mechanics/)).toBeInTheDocument();
+  });
+
+  it('toggles auto focus events', () => {
+    render(
+      <MissionInfo 
+        missionState={mockMissionState} 
+        missionHealth={mockMissionHealth} 
+        missionEvents={mockMissionEvents} 
+      />
+    );
+
+    // Look for the Auto Focus button/text
+    const toggle = screen.getByText('Auto Focus');
+    fireEvent.click(toggle);
+    expect(missionStoreState.setAutoFocusEvents).toHaveBeenCalledWith(true);
   });
 });

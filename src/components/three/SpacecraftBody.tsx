@@ -10,6 +10,8 @@ export interface SpacecraftBodyProps {
   position: [number, number, number];
   isSelected: boolean;
   onClick: (id: string) => void;
+  attitude?: [number, number, number]; // [pitch, yaw, roll] in radians
+  useAttitude?: boolean; // Story 8.3: Feature flag
 }
 
 // 5 meters in km converted to units
@@ -17,7 +19,6 @@ const SPACECRAFT_ACTUAL_RADIUS_UNITS = SPACECRAFT_RADIUS_KM * KM_TO_UNIT;
 const MODEL_MODE_THRESHOLD_PX = 18;
 
 function createCircleTexture(color: string) {
-  // If we are in a test environment without DOM, return empty texture
   if (typeof document === 'undefined') return new THREE.Texture();
 
   const canvas = document.createElement('canvas');
@@ -42,10 +43,13 @@ export function SpacecraftBody({
   position,
   isSelected,
   onClick,
+  attitude,
+  useAttitude = false,
 }: SpacecraftBodyProps) {
   const groupRef = useRef<THREE.Group>(null);
   const markerRef = useRef<THREE.Sprite>(null);
   const modelRef = useRef<THREE.Group>(null);
+  const internalModelRef = useRef<THREE.Group>(null);
 
   const markerTexture = useMemo(() => createCircleTexture(isSelected ? '#ffffff' : '#00aaff'), [isSelected]);
 
@@ -61,13 +65,21 @@ export function SpacecraftBody({
         ? ((SPACECRAFT_ACTUAL_RADIUS_UNITS * 2) / visibleHeightAtDistance) * state.size.height
         : 0;
 
-    // Use an inexpensive apparent-size heuristic instead of a raw world-distance threshold.
     const isModelMode = apparentPixelHeight >= MODEL_MODE_THRESHOLD_PX;
 
-    // Only mutate if changed
     if (markerRef.current.visible === isModelMode) {
       markerRef.current.visible = !isModelMode;
       modelRef.current.visible = isModelMode;
+    }
+
+    // --- Story 8.3.1: Neutral fallback orientation ---
+    if (internalModelRef.current) {
+      if (useAttitude && attitude) {
+        internalModelRef.current.rotation.set(attitude[0], attitude[1], attitude[2]);
+      } else {
+        // Keep neutral orientation (Story 8.3.1)
+        internalModelRef.current.rotation.set(Math.PI / 2, 0, 0);
+      }
     }
   });
 
@@ -81,40 +93,81 @@ export function SpacecraftBody({
         onClick(vehicleId);
       }}
     >
-      {/* Marker Mode - Sprite automatically retains constant pixel size via sizeAttenuation=false */}
+      {/* Marker Mode */}
       <sprite ref={markerRef} scale={[0.015, 0.015, 1]}>
         <spriteMaterial map={markerTexture} sizeAttenuation={false} depthTest={false} />
       </sprite>
 
-      {/* Label - Html handles CSS-based sizing outside the 3D render loop */}
+      {/* Label */}
       <Html center style={{ pointerEvents: 'none', transform: 'translate3d(0, 20px, 0)' }}>
         <div style={{
           color: isSelected ? '#ffffff' : '#cccccc',
-          fontSize: '14px',
-          textShadow: '1px 1px 2px #000, -1px -1px 2px #000, 1px -1px 2px #000, -1px 1px 2px #000',
+          fontSize: '12px',
+          fontWeight: 'bold',
+          textShadow: '1px 1px 2px #000, -1px -1px 2px #000',
           whiteSpace: 'nowrap',
           fontFamily: 'sans-serif',
+          letterSpacing: '0.05em',
+          textTransform: 'uppercase'
         }}>
           {label}
         </div>
       </Html>
 
-      {/* Model Mode (Geometric Placeholder) */}
+      {/* Model Mode (Premium Polished Placeholder) */}
       <group ref={modelRef} visible={false}>
-        {/* Simple geometric placeholder representing a capsule */}
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <coneGeometry
-            args={[
-              SPACECRAFT_ACTUAL_RADIUS_UNITS,
-              SPACECRAFT_ACTUAL_RADIUS_UNITS * 2,
-              16,
-            ]}
-          />
-          <meshStandardMaterial
-            color={isSelected ? '#ffffff' : '#aaaaaa'}
-            emissive={isSelected ? '#333333' : '#111111'}
-          />
-        </mesh>
+        <group ref={internalModelRef}>
+          {/* Main Capsule Body */}
+          <mesh>
+            <coneGeometry
+              args={[
+                SPACECRAFT_ACTUAL_RADIUS_UNITS,
+                SPACECRAFT_ACTUAL_RADIUS_UNITS * 2,
+                16,
+              ]}
+            />
+            <meshStandardMaterial
+              color={isSelected ? '#ffffff' : '#dddddd'}
+              roughness={0.3}
+              metalness={0.8}
+              emissive={isSelected ? '#222222' : '#000000'}
+            />
+          </mesh>
+          
+          {/* Service Module Base */}
+          <mesh position={[0, -SPACECRAFT_ACTUAL_RADIUS_UNITS * 0.8, 0]}>
+            <cylinderGeometry
+              args={[
+                SPACECRAFT_ACTUAL_RADIUS_UNITS * 0.9,
+                SPACECRAFT_ACTUAL_RADIUS_UNITS * 0.9,
+                SPACECRAFT_ACTUAL_RADIUS_UNITS * 0.4,
+                16,
+              ]}
+            />
+            <meshStandardMaterial
+              color="#444444"
+              roughness={0.5}
+              metalness={0.5}
+            />
+          </mesh>
+
+          {/* Simple solar panel placeholders */}
+          {[0, Math.PI / 2, Math.PI, Math.PI * 1.5].map((angle, i) => (
+            <mesh 
+              key={i} 
+              position={[Math.cos(angle) * SPACECRAFT_ACTUAL_RADIUS_UNITS * 1.5, -SPACECRAFT_ACTUAL_RADIUS_UNITS * 0.8, Math.sin(angle) * SPACECRAFT_ACTUAL_RADIUS_UNITS * 1.5]}
+              rotation={[0, -angle, 0]}
+            >
+              <boxGeometry args={[SPACECRAFT_ACTUAL_RADIUS_UNITS * 1.2, 0.0001, SPACECRAFT_ACTUAL_RADIUS_UNITS * 0.4]} />
+              <meshStandardMaterial color="#1a2a6c" metalness={0.9} roughness={0.1} />
+            </mesh>
+          ))}
+        </group>
+
+        {/* Dynamic Point Light when selected */}
+        {isSelected && (
+          <pointLight intensity={0.5} distance={0.5} color="#ffffff" />
+        )}
       </group>
     </group>
   );

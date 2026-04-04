@@ -58,6 +58,12 @@ export interface EphemerisResponse {
   };
 }
 
+export const MISSION_CONFIG = {
+  // Story 8.3: Feature flag for spacecraft attitude support.
+  // Disabled until CK kernels are validated.
+  ENABLE_ATTITUDE: false,
+};
+
 // Body ID constants - same as nasaClient
 export const BODY_IDS = {
   SUN: '10',

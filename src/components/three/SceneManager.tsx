@@ -32,7 +32,9 @@ import StaticOrbitLine from './StaticOrbitLine';
 import DynamicTrailLine from './DynamicTrailLine';
 import { SpacecraftBody } from './SpacecraftBody';
 import { MissionTrajectoryLine } from './MissionTrajectoryLine';
-import { BODY_IDS } from '@/lib/types';
+import { MissionMilestoneMarker } from './MissionMilestoneMarker';
+import { MissionPhase } from '@/lib/missionTypes';
+import { BODY_IDS, MISSION_CONFIG } from '@/lib/types';
 
 // --- Types ---
 
@@ -185,18 +187,23 @@ export function SceneContent({
   const {
     missionState,
     missionTrajectory,
+    missionEvents,
+    autoFocusEvents,
     selectedMissionTargetId,
     setSelectedMissionTargetId,
   } = useMissionStore(
     useShallow((state) => ({
       missionState: state.missionState,
       missionTrajectory: state.missionTrajectory,
+      missionEvents: state.missionEvents,
+      autoFocusEvents: state.autoFocusEvents,
       selectedMissionTargetId: state.selectedMissionTargetId,
       setSelectedMissionTargetId: state.setSelectedMissionTargetId,
     }))
   );
 
   const {
+    currentTime,
     selectedPlanet,
     setSelectedPlanet,
     viewMode,
@@ -210,6 +217,7 @@ export function SceneContent({
     appendFullOrbits,
   } = useSolarStore(
     useShallow((state) => ({
+      currentTime: state.currentTime,
       selectedPlanet: state.selectedPlanet,
       setSelectedPlanet: state.setSelectedPlanet,
       viewMode: state.viewMode,
@@ -344,8 +352,6 @@ export function SceneContent({
   const spacecraftLocalPosition = useMemo<[number, number, number] | null>(() => {
     if (!missionState?.sceneCoordinates) return null;
 
-    // Mission scene coordinates are Earth-relative. They must be rendered as a
-    // child of Earth, exactly like the Moon system, not dropped into global space.
     return scalePositionFromKm(
       missionState.sceneCoordinates.x,
       missionState.sceneCoordinates.y,
@@ -362,6 +368,93 @@ export function SceneContent({
       z: earthPlanet.position[2] + spacecraftLocalPosition[2],
     };
   }, [earthPlanet, spacecraftLocalPosition]);
+
+  // --- Story 8.1: Guided Event Camera (Refined P1/P2 Fix) ---
+  const armedAutoFocusEventsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!autoFocusEvents || !missionEvents?.events || !spacecraftWorldPosition) return;
+
+    const majorPhases = [
+      MissionPhase.EARTH_DEPARTURE,
+      MissionPhase.LUNAR_FLYBY,
+      MissionPhase.REENTRY
+    ];
+
+    const simTime = currentTime.getTime();
+    // 1 minute window for auto-focus trigger
+    const focusWindowMs = 60 * 1000;
+
+    for (const ev of missionEvents.events) {
+      if (!majorPhases.includes(ev.phase)) continue;
+
+      const evTime = new Date(ev.timestamp).getTime();
+      if (!Number.isFinite(evTime)) continue;
+      const diff = Math.abs(simTime - evTime);
+      const isWithinWindow = diff < focusWindowMs;
+
+      if (!isWithinWindow) {
+        armedAutoFocusEventsRef.current.delete(ev.id);
+        continue;
+      }
+
+      if (!armedAutoFocusEventsRef.current.has(ev.id)) {
+        // Trigger non-intrusive focus (P2 fix: only move camera, don't hijack selection)
+        setTravelTarget(spacecraftWorldPosition, 0.01);
+        armedAutoFocusEventsRef.current.add(ev.id);
+
+        console.info(`[Camera] Auto-focus triggered for mission event: ${ev.name}`);
+        break;
+      }
+    }
+  }, [missionEvents, currentTime, autoFocusEvents, spacecraftWorldPosition, setTravelTarget]);
+
+  // --- Story 8.2.1: Event Anchor Resolution ---
+  const missionMilestones = useMemo(() => {
+    if (!missionEvents?.events || !missionTrajectory) return [];
+    
+    const majorPhases = [
+      MissionPhase.EARTH_DEPARTURE,
+      MissionPhase.LUNAR_FLYBY,
+      MissionPhase.REENTRY
+    ];
+
+    const allTrajectoryPoints = [...missionTrajectory.past, ...missionTrajectory.planned];
+
+    return missionEvents.events
+      .filter(ev => majorPhases.includes(ev.phase))
+      .map(ev => {
+        // Find nearest point in trajectory by timestamp
+        const evDate = new Date(ev.timestamp).getTime();
+        if (!Number.isFinite(evDate)) return null;
+        let nearestPoint = allTrajectoryPoints[0];
+        let minDiff = Infinity;
+
+        for (const pt of allTrajectoryPoints) {
+          const ptDate = new Date(pt.timestamp).getTime();
+          if (!Number.isFinite(ptDate)) continue;
+          const diff = Math.abs(evDate - ptDate);
+          if (diff < minDiff) {
+            minDiff = diff;
+            nearestPoint = pt;
+          }
+        }
+
+        if (!nearestPoint) return null;
+
+        const pos = scalePositionFromKm(
+          nearestPoint.position.x,
+          nearestPoint.position.y,
+          nearestPoint.position.z
+        );
+
+        return {
+          id: ev.id,
+          label: ev.name,
+          position: pos,
+        };
+      })
+      .filter((m): m is NonNullable<typeof m> => m !== null);
+  }, [missionEvents, missionTrajectory]);
 
   return (
     <Canvas
@@ -482,6 +575,7 @@ export function SceneContent({
                         setTravelTarget(spacecraftWorldPosition, 0.01);
                       }
                     }}
+                    useAttitude={MISSION_CONFIG.ENABLE_ATTITUDE}
                   />
                   {missionTrajectory && (
                     <MissionTrajectoryLine
@@ -495,6 +589,14 @@ export function SceneContent({
                       smoothing={false}
                     />
                   )}
+                  {/* Story 8.2: 3D Mission Milestones */}
+                  {missionMilestones.map(milestone => (
+                    <MissionMilestoneMarker
+                      key={milestone.id}
+                      label={milestone.label}
+                      position={milestone.position}
+                    />
+                  ))}
                 </>
               )}
             </CelestialBody>

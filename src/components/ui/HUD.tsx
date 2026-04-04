@@ -184,11 +184,12 @@ export function HUD({
       </div>
 
       {/* Info Routing */}
-      {isMissionSelected && missionState ? (
+      {isMissionSelected ? (
         <MissionInfo 
           missionState={missionState}
           missionHealth={missionHealth}
           missionEvents={missionEvents}
+          isMobile={isMobile}
         />
       ) : (
         <PlanetInfo
