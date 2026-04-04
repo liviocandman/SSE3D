@@ -43,6 +43,8 @@ export interface MissionDistances {
   moonKm: number;
 }
 
+export type MissionLineOfSightStatus = 'clear' | 'lunar_occultation';
+
 export interface MissionEvent {
   id: string;
   name: string;
@@ -83,6 +85,8 @@ export interface MissionState {
   // Single render-space coordinate for Orion in the frontend.
   // It is Earth-relative and must be mounted under Earth's transform.
   sceneCoordinates?: MissionCoordinates;
+  solarRangeKm?: number;
+  lineOfSightStatus?: MissionLineOfSightStatus;
 }
 
 export interface MissionTrajectory {

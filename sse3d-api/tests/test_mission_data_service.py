@@ -1,3 +1,5 @@
+import numpy as np
+
 from app.models.mission_schemas import MissionPosition, MissionVelocity
 from app.services import mission_data_service
 
@@ -75,3 +77,30 @@ def test_replay_without_spice_uses_right_handed_scene_fallback(monkeypatch):
     assert state.scene_coordinates.x == 10.0
     assert state.scene_coordinates.y == 30.0
     assert state.scene_coordinates.z == -20.0
+
+
+def test_replay_with_geometry_adds_solar_range_and_los(monkeypatch):
+    monkeypatch.setattr(
+        mission_data_service,
+        "_resolve_orion_state_from_oem",
+        lambda _timestamp: {
+            "position": MissionPosition(x=3000.0, y=0.0, z=0.0),
+            "velocity": MissionVelocity(x=1.0, y=0.0, z=0.0),
+            "input_frame": "UNKNOWN_FRAME",
+            "input_origin": "EARTH",
+        },
+    )
+    monkeypatch.setattr(
+        mission_data_service,
+        "compute_mission_relative_geometry",
+        lambda _timestamp: {
+            "et": 0.0,
+            "earth_pos": np.array([100.0, 0.0, 0.0]),
+            "moon_pos": np.array([900.0, 0.0, 0.0]),
+        },
+    )
+
+    state = mission_data_service.get_replay_state("2026-04-03T13:07:09Z")
+
+    assert state.solar_range_km == 3100.0
+    assert state.line_of_sight_status.value == "lunar_occultation"

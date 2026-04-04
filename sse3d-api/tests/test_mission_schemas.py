@@ -28,7 +28,9 @@ def test_mission_state_serialization():
         "distances": {"earthKm": 1000.0, "moonKm": 500.0},
         "missionElapsedTime": "1-02:03:04",
         "globalCoordinates": {"x": 1.0, "y": 2.0, "z": 3.0},
-        "missionCoordinates": {"x": 4.0, "y": 5.0, "z": 6.0}
+        "missionCoordinates": {"x": 4.0, "y": 5.0, "z": 6.0},
+        "solarRangeKm": 149600000.0,
+        "lineOfSightStatus": "lunar_occultation",
     }
     response = MissionStateResponse(**data)
     serialized = response.model_dump(by_alias=True)
@@ -37,6 +39,8 @@ def test_mission_state_serialization():
     assert serialized["distances"]["earthKm"] == 1000.0
     assert serialized["globalCoordinates"]["x"] == 1.0
     assert serialized["missionCoordinates"]["z"] == 6.0
+    assert serialized["solarRangeKm"] == 149600000.0
+    assert serialized["lineOfSightStatus"] == "lunar_occultation"
 
 def test_mission_trajectory_serialization():
     data = {

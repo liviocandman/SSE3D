@@ -6,6 +6,7 @@ from app.models.mission_schemas import (
     MissionTrajectoryResponse,
     MissionPhase,
     MissionDataSource,
+    MissionLineOfSightStatus,
     MissionPosition,
     MissionVelocity,
     MissionDistances,
@@ -32,6 +33,7 @@ cache_service = MissionCacheService()
 ARTEMIS2_ID = "artemis-2"
 ORION_VEHICLE_ID = "orion"
 PREDICTED_FALLBACK_EARTH_DISTANCE_KM = 250_000.0
+MOON_MEAN_RADIUS_KM = 1_737.4
 
 
 def _resolve_orion_state_from_oem(timestamp: str):
@@ -48,6 +50,56 @@ def _resolve_orion_state_from_oem(timestamp: str):
 
 def _norm_km(position: MissionPosition) -> float:
     return float((position.x ** 2 + position.y ** 2 + position.z ** 2) ** 0.5)
+
+
+def _classify_lunar_occultation(orion_rel_eclip: "np.ndarray", moon_rel_eclip: "np.ndarray") -> MissionLineOfSightStatus:
+    import numpy as np
+
+    segment_norm_sq = float(np.dot(orion_rel_eclip, orion_rel_eclip))
+    if segment_norm_sq <= 0:
+        return MissionLineOfSightStatus.CLEAR
+
+    projection = float(np.dot(moon_rel_eclip, orion_rel_eclip) / segment_norm_sq)
+    if projection <= 0.0 or projection >= 1.0:
+        return MissionLineOfSightStatus.CLEAR
+
+    closest_point = orion_rel_eclip * projection
+    clearance = float(np.linalg.norm(moon_rel_eclip - closest_point))
+    if clearance <= MOON_MEAN_RADIUS_KM:
+        return MissionLineOfSightStatus.LUNAR_OCCULTATION
+
+    return MissionLineOfSightStatus.CLEAR
+
+
+def _compute_spacecraft_context(
+    *,
+    position: MissionPosition,
+    velocity: MissionVelocity,
+    input_frame: str,
+    input_origin: str,
+    geo_data: dict | None,
+):
+    import numpy as np
+
+    if not geo_data:
+        return {}
+
+    rotated_pos, _ = transform_to_eclipj2000(position, velocity, input_frame, geo_data["et"])
+    relative_orion_eclip = np.array([rotated_pos.x, rotated_pos.y, rotated_pos.z], dtype=float)
+
+    if input_origin.upper() == "EARTH":
+        orion_rel_eclip = relative_orion_eclip
+        orion_global_eclip = geo_data["earth_pos"] + relative_orion_eclip
+    else:
+        orion_rel_eclip = relative_orion_eclip - geo_data["earth_pos"]
+        orion_global_eclip = relative_orion_eclip
+
+    moon_rel_eclip = geo_data["moon_pos"] - geo_data["earth_pos"]
+
+    return {
+        "solar_range_km": float(np.linalg.norm(orion_global_eclip)),
+        "line_of_sight_status": _classify_lunar_occultation(orion_rel_eclip, moon_rel_eclip),
+    }
 
 
 def _build_trajectory_point_from_state(
@@ -180,6 +232,15 @@ async def get_live_mission_state() -> MissionStateResponse:
             live_state.mission_coordinates = mission_coords
             live_state.scene_coordinates = scene_coords
             live_state.distances = distances
+            context = _compute_spacecraft_context(
+                position=live_state.position,
+                velocity=live_state.velocity,
+                input_frame=oem_state["input_frame"] if oem_state else settings.arow_input_frame,
+                input_origin=oem_state["input_origin"] if oem_state else settings.arow_position_origin,
+                geo_data=geo_data,
+            )
+            live_state.solar_range_km = context.get("solar_range_km")
+            live_state.line_of_sight_status = context.get("line_of_sight_status")
         
         # 5. Create Health and update Cache
         live_health = create_mission_health(
@@ -243,6 +304,15 @@ def get_predicted_fallback_state() -> MissionStateResponse:
         state.mission_coordinates = mission_coords
         state.scene_coordinates = scene_coords
         state.distances = distances
+        context = _compute_spacecraft_context(
+            position=state.position,
+            velocity=state.velocity,
+            input_frame=input_frame,
+            input_origin=input_origin,
+            geo_data=geo_data,
+        )
+        state.solar_range_km = context.get("solar_range_km")
+        state.line_of_sight_status = context.get("line_of_sight_status")
     else:
         state.scene_coordinates = derive_scene_coordinates(
             state.position,
@@ -302,6 +372,15 @@ def get_replay_state(timestamp: str) -> MissionStateResponse:
         state.mission_coordinates = mission_coords
         state.scene_coordinates = scene_coords
         state.distances = distances
+        context = _compute_spacecraft_context(
+            position=state.position,
+            velocity=state.velocity,
+            input_frame=input_frame,
+            input_origin=input_origin,
+            geo_data=geo_data,
+        )
+        state.solar_range_km = context.get("solar_range_km")
+        state.line_of_sight_status = context.get("line_of_sight_status")
     else:
         state.distances = MissionDistances(earthKm=_norm_km(state.position), moonKm=state.distances.moon_km)
         

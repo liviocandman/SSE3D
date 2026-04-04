@@ -26,6 +26,10 @@ class MissionTrajectorySegment(str, Enum):
     CURRENT = "current"
     PLANNED = "planned"
 
+class MissionLineOfSightStatus(str, Enum):
+    CLEAR = "clear"
+    LUNAR_OCCULTATION = "lunar_occultation"
+
 class MissionPosition(BaseModel):
     x: float
     y: float
@@ -86,6 +90,8 @@ class MissionStateResponse(BaseModel):
         alias="sceneCoordinates",
         description="Earth-relative position already rotated/mapped into the scene frame, still expressed in km."
     )
+    solar_range_km: Optional[float] = Field(default=None, alias="solarRangeKm")
+    line_of_sight_status: Optional[MissionLineOfSightStatus] = Field(default=None, alias="lineOfSightStatus")
 
 class MissionTrajectoryResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)

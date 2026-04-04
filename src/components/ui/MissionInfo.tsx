@@ -9,6 +9,16 @@ import {
   MissionDataSource,
   MissionPhase
 } from '@/lib/missionTypes';
+import {
+  formatDistanceKm,
+  formatEventETA,
+  formatMissionMET,
+  formatSignalLatency,
+  formatSolarRange,
+  formatVelocityKmH,
+  getEarthDistanceDisplay,
+  getRadialVelocity,
+} from '@/lib/missionFormatters';
 
 // --- Types ---
 
@@ -16,35 +26,6 @@ interface MissionInfoProps {
   missionState: MissionState | null;
   missionHealth: MissionHealth | null;
   missionEvents: MissionEventsResponse | null;
-}
-
-// --- Helper Functions ---
-
-function formatNumber(num: number, decimals = 0): string {
-  return new Intl.NumberFormat('en-US', {
-    maximumFractionDigits: decimals,
-    minimumFractionDigits: decimals,
-  }).format(num);
-}
-
-function formatVelocity(velocity: { x: number; y: number; z: number }): string {
-  const magnitudeKmS = Math.sqrt(velocity.x ** 2 + velocity.y ** 2 + velocity.z ** 2);
-  const magnitudeKmH = magnitudeKmS * 3600;
-  return formatNumber(magnitudeKmH);
-}
-
-function formatMET(elapsed: string): string {
-  if (!elapsed) return 'T+ 00:00:00:00';
-  if (elapsed.startsWith('T+')) return elapsed;
-
-  const [daysPart = '0', timePart = '00:00:00'] = elapsed.split('-');
-  const dayCount = Number.parseInt(daysPart, 10);
-  const [hoursRaw = '0', minutesRaw = '0', secondsRaw = '0'] = timePart.split(':');
-
-  const pad2 = (value: string | number) => String(value).padStart(2, '0');
-  const safeDays = Number.isFinite(dayCount) ? Math.max(dayCount, 0) : 0;
-
-  return `T+ ${pad2(safeDays)}:${pad2(hoursRaw)}:${pad2(minutesRaw)}:${pad2(secondsRaw)}`;
 }
 
 function getPhaseLabel(phase: MissionPhase): string {
@@ -88,6 +69,11 @@ export function MissionInfo({ missionState, missionHealth, missionEvents }: Miss
   const freshnessSeconds = missionHealth?.dataAgeSeconds ?? missionState.stalenessSeconds;
   const isStale = isLive && freshnessSeconds > 60;
   const isFallback = missionHealth?.fallbackActive || false;
+  const earthDistanceDisplay = getEarthDistanceDisplay(missionState.distances.earthKm);
+  const radialVelocity = getRadialVelocity(missionState.position, missionState.velocity);
+  const nextEventEta = missionEvents?.nextEvent
+    ? formatEventETA(missionEvents.nextEvent.timestamp, missionState.sourceTimestamp)
+    : null;
 
   return (
     <div 
@@ -131,24 +117,36 @@ export function MissionInfo({ missionState, missionHealth, missionEvents }: Miss
       <div className="grid grid-cols-2 gap-3">
         <StatCard
           label="Mission Elapsed Time"
-          value={formatMET(missionState.missionElapsedTime)}
+          value={formatMissionMET(missionState.missionElapsedTime)}
           unit=""
           highlight={isLive}
         />
         <StatCard
           label="Current Velocity"
-          value={formatVelocity(missionState.velocity)}
+          value={formatVelocityKmH(missionState.velocity)}
           unit="km/h"
         />
         <StatCard
-          label="Distance from Earth"
-          value={formatNumber(missionState.distances.earthKm)}
-          unit="km"
+          label={earthDistanceDisplay.label}
+          value={earthDistanceDisplay.value}
+          unit={earthDistanceDisplay.unit}
         />
         <StatCard
           label="Distance to Moon"
-          value={formatNumber(missionState.distances.moonKm)}
+          value={formatDistanceKm(missionState.distances.moonKm)}
           unit="km"
+        />
+        <StatCard
+          label="Signal Latency"
+          value={formatSignalLatency(missionState.distances.earthKm)}
+          unit=""
+          note="One-way"
+        />
+        <StatCard
+          label="Radial Velocity"
+          value={radialVelocity.value}
+          unit={radialVelocity.unit}
+          note={radialVelocity.direction}
         />
       </div>
 
@@ -166,12 +164,35 @@ export function MissionInfo({ missionState, missionHealth, missionEvents }: Miss
           </span>
         </div>
 
+        <div className="flex justify-between items-center">
+          <span className="text-[10px] text-white/50 uppercase tracking-wider">Freshness</span>
+          <span className="text-[10px] text-white/70">
+            {isLive ? `${Math.round(freshnessSeconds)} s old` : isReplay ? 'Replay state' : 'Predicted state'}
+          </span>
+        </div>
+
+        {typeof missionState.solarRangeKm === 'number' && (
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] text-white/50 uppercase tracking-wider">Solar Range</span>
+            <span className="text-[10px] text-white/70 tabular-nums">
+              {formatSolarRange(missionState.solarRangeKm)}
+            </span>
+          </div>
+        )}
+
         {(isStale || isFallback) && (
           <div className={`mt-1 flex items-center gap-1.5 px-2 py-1 rounded text-[9px] font-bold uppercase ${
             isFallback ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
           }`}>
             <span>⚠️</span>
             <span>{isFallback ? 'Fallback Data Active' : `Stale Data: ${Math.round(freshnessSeconds)}s`}</span>
+          </div>
+        )}
+
+        {missionState.lineOfSightStatus === 'lunar_occultation' && (
+          <div className="mt-1 flex items-center gap-1.5 px-2 py-1 rounded text-[9px] font-bold uppercase bg-red-500/20 text-red-400 border border-red-500/30">
+            <span>📡</span>
+            <span>LOS - Lunar Occultation</span>
           </div>
         )}
       </div>
@@ -189,6 +210,11 @@ export function MissionInfo({ missionState, missionHealth, missionEvents }: Miss
             <span className="text-[11px] text-white/60">
               {missionEvents.nextEvent.description}
             </span>
+            {nextEventEta && (
+              <span className="text-[10px] text-indigo-200/80 uppercase tracking-wide tabular-nums">
+                {nextEventEta}
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -203,7 +229,19 @@ export function MissionInfo({ missionState, missionHealth, missionEvents }: Miss
   );
 }
 
-function StatCard({ label, value, unit, highlight = false }: { label: string; value: string; unit: string, highlight?: boolean }) {
+function StatCard({
+  label,
+  value,
+  unit,
+  highlight = false,
+  note,
+}: {
+  label: string;
+  value: string;
+  unit: string;
+  highlight?: boolean;
+  note?: string;
+}) {
   return (
     <div className={`rounded-lg p-3 border transition-colors flex flex-col justify-between min-w-0 ${
       highlight 
@@ -216,7 +254,7 @@ function StatCard({ label, value, unit, highlight = false }: { label: string; va
         {label}
       </div>
       <div className="flex items-baseline gap-1 flex-wrap min-w-0">
-        <span className={`text-base font-semibold truncate ${highlight ? 'text-blue-100' : 'text-white'}`}>
+        <span className={`text-base font-semibold truncate tabular-nums ${highlight ? 'text-blue-100' : 'text-white'}`}>
           {value}
         </span>
         {unit && (
@@ -225,6 +263,11 @@ function StatCard({ label, value, unit, highlight = false }: { label: string; va
           </span>
         )}
       </div>
+      {note && (
+        <div className={`mt-1 text-[10px] uppercase tracking-wide ${highlight ? 'text-blue-300/80' : 'text-white/40'}`}>
+          {note}
+        </div>
+      )}
     </div>
   );
 }

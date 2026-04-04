@@ -20,6 +20,8 @@ describe('MissionInfo', () => {
     velocity: { x: 1, y: 0.5, z: 0.2 },
     distances: { earthKm: 350000, moonKm: 50000 },
     missionElapsedTime: '2-04:30:15',
+    solarRangeKm: 149600000,
+    lineOfSightStatus: 'lunar_occultation' as const,
   };
 
   const mockMissionHealth = {
@@ -68,6 +70,10 @@ describe('MissionInfo', () => {
     
     // Check formatted velocity (1^2 + 0.5^2 + 0.2^2 = 1 + 0.25 + 0.04 = 1.29. Sqrt(1.29) approx 1.135. 1.135 * 3600 approx 4088)
     expect(screen.getByText('4,089')).toBeInTheDocument();
+    expect(screen.getByText('1.17 s')).toBeInTheDocument();
+    expect(screen.getByText('+1.14')).toBeInTheDocument();
+    expect(screen.getByText('149.6M km')).toBeInTheDocument();
+    expect(screen.getByText('LOS - Lunar Occultation')).toBeInTheDocument();
   });
 
   it('shows next event when available', () => {
@@ -81,6 +87,7 @@ describe('MissionInfo', () => {
 
     expect(screen.getByText('Upcoming Event')).toBeInTheDocument();
     expect(screen.getByText('Lunar Orbit Insertion')).toBeInTheDocument();
+    expect(screen.getByText('in 22h 00m')).toBeInTheDocument();
   });
 
   it('shows stale data warning', () => {
@@ -108,5 +115,25 @@ describe('MissionInfo', () => {
     );
 
     expect(screen.getByText('Fallback Data Active')).toBeInTheDocument();
+  });
+
+  it('switches to altitude near Earth', () => {
+    const nearEarthState = {
+      ...mockMissionState,
+      distances: { earthKm: 6_771, moonKm: 380_000 },
+      lineOfSightStatus: 'clear' as const,
+      solarRangeKm: undefined,
+    };
+
+    render(
+      <MissionInfo
+        missionState={nearEarthState}
+        missionHealth={mockMissionHealth}
+        missionEvents={mockMissionEvents}
+      />,
+    );
+
+    expect(screen.getByText('Altitude')).toBeInTheDocument();
+    expect(screen.getByText('400')).toBeInTheDocument();
   });
 });
