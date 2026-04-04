@@ -19,7 +19,7 @@ const MODEL_MODE_THRESHOLD_PX = 18;
 function createCircleTexture(color: string) {
   // If we are in a test environment without DOM, return empty texture
   if (typeof document === 'undefined') return new THREE.Texture();
-  
+
   const canvas = document.createElement('canvas');
   canvas.width = 64;
   canvas.height = 64;

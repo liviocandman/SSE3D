@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Hoist safety for Next.js 15+ internal config checks
 vi.mock('next/config', () => ({
@@ -35,38 +35,50 @@ vi.mock('framer-motion', () => ({
   },
 }));
 
-// Mock hooks and stores
-const { useSolarStoreMock } = vi.hoisted(() => {
-  const state = {
-    selectedPlanet: { bodyId: '399', englishName: 'Earth' },
-    currentDate: '2026-03-26',
-    currentTime: new Date('2026-03-26T00:00:00.000Z'),
-    viewMode: 'didactic' as const,
-    timeMultiplier: 1,
-    isPlaying: false,
-    toggleViewMode: vi.fn(),
-    setIsPlaying: vi.fn(),
-    setTimeMultiplier: vi.fn(),
-    setCurrentDate: vi.fn(),
-    advanceTime: vi.fn(),
-    masterTrajectorySegments: {},
-    fullOrbits: {},
-    appendTrajectoryData: vi.fn(),
-    appendFullOrbits: vi.fn(),
+vi.mock('zustand/react/shallow', () => ({
+  useShallow: (s: any) => s,
+}));
+
+// Setup hoisted mocks
+const { solarState, missionStateMock } = vi.hoisted(() => {
+  return {
+    solarState: {
+      selectedPlanet: { bodyId: '399', englishName: 'Earth' },
+      currentDate: '2026-03-26',
+      currentTime: new Date('2026-03-26T00:00:00.000Z'),
+      viewMode: 'didactic' as const,
+      isPlaying: false,
+      toggleViewMode: vi.fn(),
+      setIsPlaying: vi.fn(),
+      setCurrentDate: vi.fn(),
+      setSelectedPlanet: vi.fn(),
+      setTravelTarget: vi.fn(),
+      advanceTime: vi.fn(),
+    },
+    missionStateMock: {
+      missionMode: 'live',
+      isLive: true,
+      selectedMissionTargetId: null as string | null,
+      missionState: null as any,
+      missionHealth: null,
+      missionEvents: null,
+      setIsLive: vi.fn(),
+      setSelectedMissionTargetId: vi.fn(),
+    }
   };
-
-  const mock = vi.fn((selector?: (s: typeof state) => unknown) =>
-    selector ? selector(state) : state
-  );
-  // @ts-expect-error - Mocking the store object
-  mock.getState = vi.fn(() => state);
-
-  return { useSolarStoreMock: mock };
 });
 
-vi.mock('@/store/solarStore', () => ({
-  useSolarStore: useSolarStoreMock,
-}));
+vi.mock('@/store/solarStore', () => {
+  const mock = vi.fn((selector) => selector ? selector(solarState) : solarState);
+  // @ts-expect-error - Mocking the store object
+  mock.getState = vi.fn(() => solarState);
+  return { useSolarStore: mock };
+});
+
+vi.mock('@/store/missionStore', () => {
+  const mock = vi.fn((selector) => selector ? selector(missionStateMock) : missionStateMock);
+  return { useMissionStore: mock };
+});
 
 const mockUIState = {
   isMobile: false,
@@ -89,6 +101,7 @@ vi.mock('@/hooks/useFavorites', () => ({
 
 // Mock sub-components
 vi.mock('./PlanetInfo', () => ({ PlanetInfo: () => <div data-testid="planet-info" /> }));
+vi.mock('./MissionInfo', () => ({ MissionInfo: () => <div data-testid="mission-info" /> }));
 vi.mock('./DateSelector', () => ({ DateSelector: () => <div data-testid="date-selector" /> }));
 vi.mock('./AstronomerModal', () => ({ AstronomerModal: () => <div data-testid="astronomer-modal" /> }));
 vi.mock('./AuthModal', () => ({ AuthModal: () => <div data-testid="auth-modal" /> }));
@@ -99,6 +112,7 @@ vi.mock('lucide-react', () => ({
   ChevronLeft: () => <div data-testid="chevron-left" />,
   ChevronRight: () => <div data-testid="chevron-right" />,
   Heart: () => <div data-testid="heart" />,
+  Rocket: () => <div data-testid="rocket" />,
   Telescope: () => <div data-testid="telescope" />,
   Calendar: () => <div data-testid="calendar" />,
   Clock: () => <div data-testid="clock" />,
@@ -113,21 +127,58 @@ vi.mock('lucide-react', () => ({
 }));
 
 describe('HUD', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    missionStateMock.selectedMissionTargetId = null;
+    missionStateMock.missionState = null;
+  });
+
   it('toggles minimize state when clicking the control tab', () => {
     render(<HUD onDateChange={vi.fn()} />);
 
-    // In a non-minimized state (default on desktop with a selected planet), we should see ChevronRight
     const toggleButton = screen.getByTitle('Hide panel');
     expect(toggleButton).toBeInTheDocument();
-    
-    // It should initially render with x: 0 (from our mocked framer-motion, we can't easily check the inline style if we strip it, but we can check the icon change)
     expect(screen.getByTestId('chevron-right')).toBeInTheDocument();
 
-    // Click to minimize
     fireEvent.click(toggleButton);
 
-    // After clicking, title should change and ChevronLeft should appear
     expect(screen.getByTitle('Show panel')).toBeInTheDocument();
     expect(screen.getByTestId('chevron-left')).toBeInTheDocument();
+  });
+
+  it('renders PlanetInfo by default when a planet is selected', () => {
+    render(<HUD onDateChange={vi.fn()} />);
+    expect(screen.getByTestId('planet-info')).toBeInTheDocument();
+    expect(screen.queryByTestId('mission-info')).not.toBeInTheDocument();
+  });
+
+  it('renders MissionInfo when orion is selected', () => {
+    missionStateMock.selectedMissionTargetId = 'orion';
+    missionStateMock.missionState = { vehicleId: 'orion', mode: 'live' } as any;
+
+    render(<HUD onDateChange={vi.fn()} />);
+    expect(screen.getByTestId('mission-info')).toBeInTheDocument();
+    expect(screen.queryByTestId('planet-info')).not.toBeInTheDocument();
+  });
+
+  it('keeps PlanetInfo when mission target is selected but mission state is not loaded', () => {
+    missionStateMock.selectedMissionTargetId = 'orion';
+    missionStateMock.missionState = null;
+
+    render(<HUD onDateChange={vi.fn()} />);
+    expect(screen.getByTestId('planet-info')).toBeInTheDocument();
+    expect(screen.queryByTestId('mission-info')).not.toBeInTheDocument();
+  });
+
+  it('uses the loaded mission vehicle id instead of hardcoded orion when toggling mission context', () => {
+    missionStateMock.missionState = { vehicleId: 'artemis-vehicle-1', mode: 'live' } as any;
+
+    render(<HUD onDateChange={vi.fn()} />);
+
+    const missionButton = screen.getByTitle('Mission Context');
+    fireEvent.click(missionButton);
+
+    expect(solarState.setSelectedPlanet).toHaveBeenCalledWith(null);
+    expect(missionStateMock.setSelectedMissionTargetId).toHaveBeenCalledWith('artemis-vehicle-1');
   });
 });
