@@ -109,9 +109,10 @@ def test_enrich_mission_geometry_offsets_earth_centered_telemetry_into_global_fr
     )
 
     # Global scene coordinates should include Earth's heliocentric offset.
+    # Mapping target: (x, z, -y)
     assert np.isclose(global_coords.x, 149_700_000.0)
     assert np.isclose(global_coords.y, 30000.0)
-    assert np.isclose(global_coords.z, 20000.0)
+    assert np.isclose(global_coords.z, -20000.0)
 
     # Mission-local coordinates remain Earth-centered in meaning.
     assert np.isclose(mission_coords.x, 100000.0)
@@ -123,12 +124,13 @@ def test_to_scene_frame_swaps_yz_axes():
     vel = MissionVelocity(x=1.0, y=2.0, z=3.0)
     scene_pos, scene_vel = to_scene_frame(pos, vel)
 
+    # Target convention: (x, y, z) -> (x, z, -y)
     assert scene_pos.x == 10.0
     assert scene_pos.y == 30.0
-    assert scene_pos.z == 20.0
+    assert scene_pos.z == -20.0
     assert scene_vel.x == 1.0
     assert scene_vel.y == 3.0
-    assert scene_vel.z == 2.0
+    assert scene_vel.z == -2.0
 
 
 def test_derive_scene_coordinates_keeps_orion_earth_relative():
@@ -144,9 +146,10 @@ def test_derive_scene_coordinates_keeps_orion_earth_relative():
 
     # The render-space coordinate remains Earth-relative and only applies
     # the scene-axis remapping used elsewhere in the project.
+    # Mapping target: (x, z, -y)
     assert scene_coords.x == 100000.0
     assert scene_coords.y == 30000.0
-    assert scene_coords.z == 20000.0
+    assert scene_coords.z == -20000.0
 
 
 def test_predicted_fallback_position_aligns_with_earth_moon_direction(monkeypatch):

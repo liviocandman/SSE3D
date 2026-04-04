@@ -64,12 +64,11 @@ def to_scene_frame(
 ) -> Tuple[MissionPosition, MissionVelocity]:
     """
     Maps ECLIPJ2000 coordinates into the project's scene frame.
-    Mirrors the existing SPICE `_to_scene_coords` convention:
-    x -> x, z -> y, y -> z.
+    Target convention: (x, y, z) -> (x, z, -y) for Right-Handed system.
     """
     return (
-        MissionPosition(x=position.x, y=position.z, z=position.y),
-        MissionVelocity(x=velocity.x, y=velocity.z, z=velocity.y),
+        MissionPosition(x=position.x, y=position.z, z=-position.y),
+        MissionVelocity(x=velocity.x, y=velocity.z, z=-velocity.y),
     )
 
 

@@ -44,7 +44,7 @@ def _to_scene_coords(state_xyz: np.ndarray) -> dict[str, float]:
     return {
         "x": float(state_xyz[0]),
         "y": float(state_xyz[2]),
-        "z": float(state_xyz[1]),
+        "z": -float(state_xyz[1]),
     }
 
 
