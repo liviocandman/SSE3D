@@ -256,8 +256,9 @@ export function CelestialBody({
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {/* Axial Tilt Pivot Group */}
-      <group rotation={[0, 0, THREE.MathUtils.degToRad(axialTilt)]}>
+      {/* Axial tilt is applied around scene X because the canonical scene frame is
+          (spice.x, spice.z, -spice.y). Tilting around Z belonged to the old mirrored frame. */}
+      <group rotation={[-THREE.MathUtils.degToRad(axialTilt), 0, 0]}>
         {/* Visible planet mesh */}
         <mesh
           ref={meshRef}

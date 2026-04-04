@@ -48,3 +48,30 @@ def test_replay_without_spice_keeps_earth_distance_consistent(monkeypatch):
     state = mission_data_service.get_replay_state("2026-04-03T13:07:09Z")
 
     assert state.distances.earth_km == 13.0
+
+
+def test_replay_without_spice_uses_right_handed_scene_fallback(monkeypatch):
+    monkeypatch.setattr(
+        mission_data_service,
+        "_resolve_orion_state_from_oem",
+        lambda _timestamp: {
+            "position": MissionPosition(x=10.0, y=20.0, z=30.0),
+            "velocity": MissionVelocity(x=0.0, y=0.0, z=0.0),
+            "input_frame": "UNKNOWN_FRAME",
+            "input_origin": "EARTH",
+        },
+    )
+    monkeypatch.setattr(
+        mission_data_service,
+        "compute_mission_relative_geometry",
+        lambda _timestamp: None,
+    )
+
+    state = mission_data_service.get_replay_state("2026-04-03T13:07:09Z")
+
+    assert state.global_coordinates.x == 10.0
+    assert state.global_coordinates.y == 30.0
+    assert state.global_coordinates.z == -20.0
+    assert state.scene_coordinates.x == 10.0
+    assert state.scene_coordinates.y == 30.0
+    assert state.scene_coordinates.z == -20.0

@@ -225,9 +225,9 @@ def get_predicted_fallback_state() -> MissionStateResponse:
         velocity=velocity,
         distances=MissionDistances(earthKm=_norm_km(position), moonKm=130000.0),
         missionElapsedTime="0-00:00:00",
-        globalCoordinates=MissionCoordinates(x=position.x, y=position.z, z=position.y),
+        globalCoordinates=MissionCoordinates(x=position.x, y=position.z, z=-position.y),
         missionCoordinates=MissionCoordinates(x=position.x, y=position.y, z=position.z),
-        sceneCoordinates=MissionCoordinates(x=position.x, y=position.z, z=position.y)
+        sceneCoordinates=MissionCoordinates(x=position.x, y=position.z, z=-position.y)
     )
     if geo_data:
         global_coords, mission_coords, scene_coords, distances = enrich_mission_geometry(
@@ -276,9 +276,9 @@ def get_replay_state(timestamp: str) -> MissionStateResponse:
         velocity=velocity,
         distances=MissionDistances(earthKm=_norm_km(position), moonKm=130000.0),
         missionElapsedTime="2-04:30:15",
-        globalCoordinates=MissionCoordinates(x=position.x, y=position.z, z=position.y),
+        globalCoordinates=MissionCoordinates(x=position.x, y=position.z, z=-position.y),
         missionCoordinates=MissionCoordinates(x=position.x, y=position.y, z=position.z),
-        sceneCoordinates=MissionCoordinates(x=position.x, y=position.z, z=position.y)
+        sceneCoordinates=MissionCoordinates(x=position.x, y=position.z, z=-position.y)
     )
 
     state.scene_coordinates = derive_scene_coordinates(
@@ -329,7 +329,7 @@ def get_mission_trajectory(at: str | None = None) -> MissionTrajectoryResponse:
         states = mission_oem_service.get_states_between(
             ephemeris.metadata.start_time,
             ephemeris.metadata.stop_time,
-            max_points=120,
+            max_points=1500,
         )
 
         for state in states:
