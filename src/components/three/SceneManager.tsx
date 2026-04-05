@@ -386,6 +386,59 @@ export function SceneContent({
     );
   }, [missionState?.sceneCoordinates]);
 
+  const spacecraftFallbackHeading = useMemo<[number, number, number] | null>(() => {
+    if (!missionState?.sceneCoordinates) return null;
+
+    const current = new THREE.Vector3(
+      missionState.sceneCoordinates.x,
+      missionState.sceneCoordinates.y,
+      missionState.sceneCoordinates.z
+    );
+    const EPS = 1e-12;
+
+    if (missionTrajectory?.planned?.length) {
+      const candidates = missionTrajectory.planned.slice(0, 3);
+      for (const candidate of candidates) {
+        const heading = new THREE.Vector3(
+          candidate.position.x - current.x,
+          candidate.position.y - current.y,
+          candidate.position.z - current.z
+        );
+        if (heading.lengthSq() > EPS) {
+          heading.normalize();
+          return [heading.x, heading.y, heading.z];
+        }
+      }
+    }
+
+    if (missionTrajectory?.past?.length) {
+      const lastPast = missionTrajectory.past[missionTrajectory.past.length - 1];
+      const heading = new THREE.Vector3(
+        current.x - lastPast.position.x,
+        current.y - lastPast.position.y,
+        current.z - lastPast.position.z
+      );
+      if (heading.lengthSq() > EPS) {
+        heading.normalize();
+        return [heading.x, heading.y, heading.z];
+      }
+    }
+
+    if (missionState.velocity) {
+      const sceneVelocityHeading = new THREE.Vector3(
+        missionState.velocity.x,
+        missionState.velocity.z,
+        -missionState.velocity.y
+      );
+      if (sceneVelocityHeading.lengthSq() > EPS) {
+        sceneVelocityHeading.normalize();
+        return [sceneVelocityHeading.x, sceneVelocityHeading.y, sceneVelocityHeading.z];
+      }
+    }
+
+    return null;
+  }, [missionState?.sceneCoordinates, missionState?.velocity, missionTrajectory]);
+
   const spacecraftWorldPosition = useMemo(() => {
     if (!earthPlanet || !spacecraftLocalPosition) return null;
 
@@ -593,6 +646,7 @@ export function SceneContent({
                     vehicleId={missionState.vehicleId}
                     label={missionState.vehicleId === 'orion' ? 'Orion' : missionState.vehicleId.toUpperCase()}
                     position={spacecraftLocalPosition}
+                    fallbackHeading={spacecraftFallbackHeading}
                     isSelected={selectedMissionTargetId === missionState.vehicleId}
                     attitudeQuaternion={missionState.attitudeQuaternion}
                     onClick={(id) => {

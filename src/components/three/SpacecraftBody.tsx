@@ -10,6 +10,7 @@ export interface SpacecraftBodyProps {
   vehicleId: string;
   label: string;
   position: [number, number, number];
+  fallbackHeading?: [number, number, number] | null;
   isSelected: boolean;
   onClick: (id: string) => void;
   onDoubleClick?: (id: string) => void;
@@ -55,10 +56,27 @@ function createCircleTexture(color: string) {
   return new THREE.CanvasTexture(canvas);
 }
 
+function buildProgradeQuaternion(direction: THREE.Vector3) {
+  const xAxis = direction.clone().normalize();
+  const upHint = new THREE.Vector3(0, 1, 0);
+
+  let yAxis = new THREE.Vector3().crossVectors(upHint, xAxis);
+  if (yAxis.lengthSq() <= 1e-12) {
+    yAxis = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 0, 1), xAxis);
+  }
+  yAxis.normalize();
+
+  const zAxis = new THREE.Vector3().crossVectors(xAxis, yAxis).normalize();
+  const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
+
+  return new THREE.Quaternion().setFromRotationMatrix(basis);
+}
+
 export function SpacecraftBody({
   vehicleId,
   label,
   position,
+  fallbackHeading = null,
   isSelected,
   onClick,
   onDoubleClick,
@@ -71,6 +89,9 @@ export function SpacecraftBody({
   const proxyRef = useRef<THREE.Group>(null);
   const detailedRef = useRef<THREE.Group>(null);
   const worldPositionRef = useRef(new THREE.Vector3());
+  const previousWorldPositionRef = useRef<THREE.Vector3 | null>(null);
+  const progradeQuaternionRef = useRef(new THREE.Quaternion());
+  const progradeDirectionRef = useRef(new THREE.Vector3(1, 0, 0));
   const lodModeRef = useRef<SpacecraftLodMode>('marker');
   const inspectionModeRef = useRef(false);
   const detailedLoadRequestedRef = useRef(false);
@@ -143,8 +164,40 @@ export function SpacecraftBody({
           .normalize()
           .multiply(meshToBodyAlignmentQuat);
       } else {
-        visualRootRef.current.quaternion.copy(meshToBodyAlignmentQuat);
+        let headingResolved = false;
+
+        if (fallbackHeading) {
+          const trajectoryHeading = new THREE.Vector3(
+            fallbackHeading[0],
+            fallbackHeading[1],
+            fallbackHeading[2]
+          );
+          if (trajectoryHeading.lengthSq() > 1e-18) {
+            progradeDirectionRef.current.copy(trajectoryHeading).normalize();
+            progradeQuaternionRef.current.copy(buildProgradeQuaternion(progradeDirectionRef.current));
+            headingResolved = true;
+          }
+        }
+
+        if (!headingResolved) {
+          const previousWorldPosition = previousWorldPositionRef.current;
+          if (previousWorldPosition) {
+            const travelDirection = worldPosition.clone().sub(previousWorldPosition);
+            if (travelDirection.lengthSq() > 1e-18) {
+              progradeDirectionRef.current.copy(travelDirection).normalize();
+              progradeQuaternionRef.current.copy(buildProgradeQuaternion(progradeDirectionRef.current));
+            }
+          }
+        }
+
+        visualRootRef.current.quaternion.copy(progradeQuaternionRef.current).multiply(meshToBodyAlignmentQuat);
       }
+    }
+
+    if (previousWorldPositionRef.current) {
+      previousWorldPositionRef.current.copy(worldPosition);
+    } else {
+      previousWorldPositionRef.current = worldPosition.clone();
     }
   });
 
