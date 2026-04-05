@@ -1,8 +1,8 @@
-import { useRef, useMemo } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
-import { SPACECRAFT_RADIUS_KM, KM_TO_UNIT } from '@/lib/scales';
+import { OrionProxyModel } from './OrionProxyModel';
 
 export interface SpacecraftBodyProps {
   vehicleId: string;
@@ -10,13 +10,29 @@ export interface SpacecraftBodyProps {
   position: [number, number, number];
   isSelected: boolean;
   onClick: (id: string) => void;
+  onDoubleClick?: (id: string) => void;
   attitude?: [number, number, number]; // [pitch, yaw, roll] in radians
   useAttitude?: boolean; // Story 8.3: Feature flag
 }
 
-// 5 meters in km converted to units
-const SPACECRAFT_ACTUAL_RADIUS_UNITS = SPACECRAFT_RADIUS_KM * KM_TO_UNIT;
-const MODEL_MODE_THRESHOLD_PX = 18;
+export const SPACECRAFT_SELECTION_RADIUS_UNITS = 0.0005;
+export const SPACECRAFT_CLOSEUP_RADIUS_UNITS = 0.00008;
+export const SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS = 0.0015;
+const SPACECRAFT_PROXY_DISTANCE_EXIT_UNITS = 0.02;
+const SPACECRAFT_INSPECTION_DISTANCE_ENTER_UNITS = 0.002;
+const SPACECRAFT_INSPECTION_DISTANCE_EXIT_UNITS = 0.0028;
+const MARKER_MIN_SCALE_UNITS = 0.0015;
+const MARKER_MAX_SCALE_UNITS = 1;
+const MARKER_DISTANCE_SCALE_FACTOR = 0.0005;
+const PROXY_TARGET_HEIGHT_UNITS = 0.0001;
+const DETAILED_TARGET_HEIGHT_UNITS = 0.00012;
+
+const LazyOrionDetailedModel = lazy(async () => {
+  const module = await import('./OrionDetailedModel');
+  return { default: module.OrionDetailedModel };
+});
+
+type SpacecraftLodMode = 'marker' | 'proxy' | 'detailed';
 
 function createCircleTexture(color: string) {
   if (typeof document === 'undefined') return new THREE.Texture();
@@ -31,7 +47,7 @@ function createCircleTexture(color: string) {
     context.fillStyle = color;
     context.fill();
     context.lineWidth = 4;
-    context.strokeStyle = '#ffffff';
+    context.strokeStyle = color;
     context.stroke();
   }
   return new THREE.CanvasTexture(canvas);
@@ -43,42 +59,77 @@ export function SpacecraftBody({
   position,
   isSelected,
   onClick,
+  onDoubleClick,
   attitude,
   useAttitude = false,
 }: SpacecraftBodyProps) {
   const groupRef = useRef<THREE.Group>(null);
   const markerRef = useRef<THREE.Sprite>(null);
-  const modelRef = useRef<THREE.Group>(null);
-  const internalModelRef = useRef<THREE.Group>(null);
+  const visualRootRef = useRef<THREE.Group>(null);
+  const proxyRef = useRef<THREE.Group>(null);
+  const detailedRef = useRef<THREE.Group>(null);
+  const worldPositionRef = useRef(new THREE.Vector3());
+  const lodModeRef = useRef<SpacecraftLodMode>('marker');
+  const inspectionModeRef = useRef(false);
+  const detailedLoadRequestedRef = useRef(false);
+  const [shouldLoadDetailed, setShouldLoadDetailed] = useState(false);
+  const [isDetailedReady, setIsDetailedReady] = useState(false);
 
-  const markerTexture = useMemo(() => createCircleTexture(isSelected ? '#ffffff' : '#00aaff'), [isSelected]);
+  const markerTexture = useMemo(() => createCircleTexture('#00aaff'), []);
+  const handleDetailedReady = useCallback(() => {
+    setIsDetailedReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (isSelected && !detailedLoadRequestedRef.current) {
+      detailedLoadRequestedRef.current = true;
+      setShouldLoadDetailed(true);
+    }
+  }, [isSelected]);
 
   useFrame((state) => {
-    if (!groupRef.current || !markerRef.current || !modelRef.current) return;
-
-    const dist = state.camera.position.distanceTo(groupRef.current.position);
-    const perspectiveCamera = state.camera as THREE.PerspectiveCamera;
-    const verticalFovRadians = THREE.MathUtils.degToRad(perspectiveCamera.fov);
-    const visibleHeightAtDistance = 2 * Math.tan(verticalFovRadians / 2) * dist;
-    const apparentPixelHeight =
-      visibleHeightAtDistance > 0
-        ? ((SPACECRAFT_ACTUAL_RADIUS_UNITS * 2) / visibleHeightAtDistance) * state.size.height
-        : 0;
-
-    const isModelMode = apparentPixelHeight >= MODEL_MODE_THRESHOLD_PX;
-
-    if (markerRef.current.visible === isModelMode) {
-      markerRef.current.visible = !isModelMode;
-      modelRef.current.visible = isModelMode;
+    if (!groupRef.current || !markerRef.current || !visualRootRef.current || !proxyRef.current || !detailedRef.current) {
+      return;
     }
 
-    // --- Story 8.3.1: Neutral fallback orientation ---
-    if (internalModelRef.current) {
+    const worldPosition = groupRef.current.getWorldPosition(worldPositionRef.current);
+    const dist = state.camera.position.distanceTo(worldPosition);
+    const currentLod = lodModeRef.current;
+
+    const inspectionMode = isSelected
+      ? inspectionModeRef.current
+        ? dist <= SPACECRAFT_INSPECTION_DISTANCE_EXIT_UNITS
+        : dist <= SPACECRAFT_INSPECTION_DISTANCE_ENTER_UNITS
+      : false;
+
+    inspectionModeRef.current = inspectionMode;
+    let nextLod: SpacecraftLodMode = currentLod;
+
+    if (inspectionMode) {
+      nextLod = isDetailedReady ? 'detailed' : 'proxy';
+    } else if (isSelected || dist <= SPACECRAFT_PROXY_DISTANCE_EXIT_UNITS) {
+      nextLod = 'proxy';
+    } else {
+      nextLod = 'marker';
+    }
+
+    lodModeRef.current = nextLod;
+    markerRef.current.visible = nextLod === 'marker';
+    proxyRef.current.visible = nextLod === 'proxy';
+    detailedRef.current.visible = nextLod === 'detailed';
+
+    const markerScale = THREE.MathUtils.clamp(
+      dist * MARKER_DISTANCE_SCALE_FACTOR,
+      MARKER_MIN_SCALE_UNITS,
+      MARKER_MAX_SCALE_UNITS
+    );
+    markerRef.current.scale.set(markerScale, markerScale, 1);
+
+    if (visualRootRef.current) {
       if (useAttitude && attitude) {
-        internalModelRef.current.rotation.set(attitude[0], attitude[1], attitude[2]);
+        visualRootRef.current.rotation.set(attitude[0], attitude[1], attitude[2]);
       } else {
-        // Keep neutral orientation (Story 8.3.1)
-        internalModelRef.current.rotation.set(Math.PI / 2, 0, 0);
+        visualRootRef.current.rotation.set(Math.PI / 2, 0, 0);
       }
     }
   });
@@ -92,10 +143,14 @@ export function SpacecraftBody({
         e.stopPropagation();
         onClick(vehicleId);
       }}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onDoubleClick?.(vehicleId);
+      }}
     >
       {/* Marker Mode */}
-      <sprite ref={markerRef} scale={[0.015, 0.015, 1]}>
-        <spriteMaterial map={markerTexture} sizeAttenuation={false} depthTest={false} />
+      <sprite ref={markerRef} scale={[MARKER_MIN_SCALE_UNITS, MARKER_MIN_SCALE_UNITS, 1]}>
+        <spriteMaterial map={markerTexture} depthTest={false} />
       </sprite>
 
       {/* Label */}
@@ -114,60 +169,22 @@ export function SpacecraftBody({
         </div>
       </Html>
 
-      {/* Model Mode (Premium Polished Placeholder) */}
-      <group ref={modelRef} visible={false}>
-        <group ref={internalModelRef}>
-          {/* Main Capsule Body */}
-          <mesh>
-            <coneGeometry
-              args={[
-                SPACECRAFT_ACTUAL_RADIUS_UNITS,
-                SPACECRAFT_ACTUAL_RADIUS_UNITS * 2,
-                16,
-              ]}
-            />
-            <meshStandardMaterial
-              color={isSelected ? '#ffffff' : '#dddddd'}
-              roughness={0.3}
-              metalness={0.8}
-              emissive={isSelected ? '#222222' : '#000000'}
-            />
-          </mesh>
-          
-          {/* Service Module Base */}
-          <mesh position={[0, -SPACECRAFT_ACTUAL_RADIUS_UNITS * 0.8, 0]}>
-            <cylinderGeometry
-              args={[
-                SPACECRAFT_ACTUAL_RADIUS_UNITS * 0.9,
-                SPACECRAFT_ACTUAL_RADIUS_UNITS * 0.9,
-                SPACECRAFT_ACTUAL_RADIUS_UNITS * 0.4,
-                16,
-              ]}
-            />
-            <meshStandardMaterial
-              color="#444444"
-              roughness={0.5}
-              metalness={0.5}
-            />
-          </mesh>
-
-          {/* Simple solar panel placeholders */}
-          {[0, Math.PI / 2, Math.PI, Math.PI * 1.5].map((angle, i) => (
-            <mesh 
-              key={i} 
-              position={[Math.cos(angle) * SPACECRAFT_ACTUAL_RADIUS_UNITS * 1.5, -SPACECRAFT_ACTUAL_RADIUS_UNITS * 0.8, Math.sin(angle) * SPACECRAFT_ACTUAL_RADIUS_UNITS * 1.5]}
-              rotation={[0, -angle, 0]}
-            >
-              <boxGeometry args={[SPACECRAFT_ACTUAL_RADIUS_UNITS * 1.2, 0.0001, SPACECRAFT_ACTUAL_RADIUS_UNITS * 0.4]} />
-              <meshStandardMaterial color="#1a2a6c" metalness={0.9} roughness={0.1} />
-            </mesh>
-          ))}
+      <group ref={visualRootRef}>
+        <group ref={proxyRef} visible={false}>
+          <OrionProxyModel unitScale={PROXY_TARGET_HEIGHT_UNITS} isSelected={isSelected} />
         </group>
 
-        {/* Dynamic Point Light when selected */}
-        {isSelected && (
-          <pointLight intensity={0.5} distance={0.5} color="#ffffff" />
-        )}
+        <group ref={detailedRef} visible={false}>
+          {shouldLoadDetailed && (
+            <Suspense fallback={null}>
+              <LazyOrionDetailedModel
+                targetHeight={DETAILED_TARGET_HEIGHT_UNITS}
+                onReady={handleDetailedReady}
+              />
+            </Suspense>
+          )}
+        </group>
+
       </group>
     </group>
   );

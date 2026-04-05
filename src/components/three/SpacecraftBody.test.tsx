@@ -8,9 +8,23 @@ vi.mock('three', () => {
     Group: class {},
     Mesh: class {},
     Sprite: class {},
+    Vector3: class {
+      x = 0;
+      y = 0;
+      z = 0;
+      set(x: number, y: number, z: number) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+        return this;
+      }
+    },
     PerspectiveCamera: class {},
     Texture: class {},
     CanvasTexture: class {},
+    MathUtils: {
+      degToRad: (value: number) => (value * Math.PI) / 180,
+    },
     DoubleSide: 2,
   };
 });

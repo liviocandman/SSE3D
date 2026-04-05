@@ -30,7 +30,12 @@ import { TrajectoryManager } from './TrajectoryManager';
 import { KM_TO_UNIT } from '@/lib/scales';
 import StaticOrbitLine from './StaticOrbitLine';
 import DynamicTrailLine from './DynamicTrailLine';
-import { SpacecraftBody } from './SpacecraftBody';
+import {
+  SpacecraftBody,
+  SPACECRAFT_CLOSEUP_RADIUS_UNITS,
+  SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS,
+  SPACECRAFT_SELECTION_RADIUS_UNITS,
+} from './SpacecraftBody';
 import { MissionTrajectoryLine } from './MissionTrajectoryLine';
 import { MissionMilestoneMarker } from './MissionMilestoneMarker';
 import { MissionPhase } from '@/lib/missionTypes';
@@ -348,6 +353,26 @@ export function SceneContent({
     : null;
 
   const earthPlanet = planetsToRender.find((planet) => planet?.bodyId === BODY_IDS.EARTH) ?? null;
+  const isEarthMissionContextActive = selectedPlanet?.bodyId === BODY_IDS.EARTH;
+
+  const earthSelectionContext = useMemo<SelectedPlanet | null>(() => {
+    if (!earthPlanet) return null;
+
+    return {
+      bodyId: earthPlanet.bodyId,
+      name: earthPlanet.name,
+      englishName: earthPlanet.englishName,
+      position: {
+        x: earthPlanet.position[0],
+        y: earthPlanet.position[1],
+        z: earthPlanet.position[2],
+      },
+      velocity: earthPlanet.velocity,
+      radius: earthPlanet.radius,
+      distanceFromSun: earthPlanet.distanceFromSun,
+      trajectory: earthPlanet.trajectory,
+    };
+  }, [earthPlanet]);
 
   const spacecraftLocalPosition = useMemo<[number, number, number] | null>(() => {
     if (!missionState?.sceneCoordinates) return null;
@@ -369,10 +394,10 @@ export function SceneContent({
     };
   }, [earthPlanet, spacecraftLocalPosition]);
 
-  // --- Story 8.1: Guided Event Camera (Refined P1/P2 Fix) ---
+  // --- Guided Event Camera ---
   const armedAutoFocusEventsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!autoFocusEvents || !missionEvents?.events || !spacecraftWorldPosition) return;
+    if (!autoFocusEvents || !missionEvents?.events || !spacecraftWorldPosition || !isEarthMissionContextActive) return;
 
     const majorPhases = [
       MissionPhase.EARTH_DEPARTURE,
@@ -398,20 +423,20 @@ export function SceneContent({
       }
 
       if (!armedAutoFocusEventsRef.current.has(ev.id)) {
-        // Trigger non-intrusive focus (P2 fix: only move camera, don't hijack selection)
-        setTravelTarget(spacecraftWorldPosition, 0.01);
+        // Trigger non-intrusive focus
+        setTravelTarget(spacecraftWorldPosition, SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS);
         armedAutoFocusEventsRef.current.add(ev.id);
 
         console.info(`[Camera] Auto-focus triggered for mission event: ${ev.name}`);
         break;
       }
     }
-  }, [missionEvents, currentTime, autoFocusEvents, spacecraftWorldPosition, setTravelTarget]);
+  }, [missionEvents, currentTime, autoFocusEvents, spacecraftWorldPosition, isEarthMissionContextActive, setTravelTarget]);
 
-  // --- Story 8.2.1: Event Anchor Resolution ---
+  // --- Event Anchor Resolution ---
   const missionMilestones = useMemo(() => {
     if (!missionEvents?.events || !missionTrajectory) return [];
-    
+
     const majorPhases = [
       MissionPhase.EARTH_DEPARTURE,
       MissionPhase.LUNAR_FLYBY,
@@ -560,7 +585,7 @@ export function SceneContent({
                   radius={selectedPlanetData.radius}
                 />
               )}
-              {planet.bodyId === BODY_IDS.EARTH && missionState && spacecraftLocalPosition && (
+              {planet.bodyId === BODY_IDS.EARTH && missionState && spacecraftLocalPosition && isEarthMissionContextActive && (
                 <>
                   <SpacecraftBody
                     vehicleId={missionState.vehicleId}
@@ -568,15 +593,28 @@ export function SceneContent({
                     position={spacecraftLocalPosition}
                     isSelected={selectedMissionTargetId === missionState.vehicleId}
                     onClick={(id) => {
-                      setSelectedPlanet(null);
+                      if (earthSelectionContext) {
+                        setSelectedPlanet(earthSelectionContext);
+                      }
                       setSelectedMissionTargetId(id);
 
                       if (spacecraftWorldPosition) {
-                        setTravelTarget(spacecraftWorldPosition, 0.01);
+                        setTravelTarget(spacecraftWorldPosition, SPACECRAFT_SELECTION_RADIUS_UNITS);
+                      }
+                    }}
+                    onDoubleClick={(id) => {
+                      if (earthSelectionContext) {
+                        setSelectedPlanet(earthSelectionContext);
+                      }
+                      setSelectedMissionTargetId(id);
+
+                      if (spacecraftWorldPosition) {
+                        setTravelTarget(spacecraftWorldPosition, SPACECRAFT_CLOSEUP_RADIUS_UNITS);
                       }
                     }}
                     useAttitude={MISSION_CONFIG.ENABLE_ATTITUDE}
                   />
+
                   {missionTrajectory && (
                     <MissionTrajectoryLine
                       past={missionTrajectory.past}
@@ -589,7 +627,7 @@ export function SceneContent({
                       smoothing={false}
                     />
                   )}
-                  {/* Story 8.2: 3D Mission Milestones */}
+                  {/*  3D Mission Milestones */}
                   {missionMilestones.map(milestone => (
                     <MissionMilestoneMarker
                       key={milestone.id}
@@ -604,10 +642,10 @@ export function SceneContent({
         );
       })}
 
-      <CameraController 
-        targetPosition={travelTarget} 
-        targetRadius={travelTargetRadius} 
-        targetName={selectedMissionTargetId ? (selectedMissionTargetId === 'orion' ? 'Orion' : selectedMissionTargetId.toUpperCase()) : selectedPlanet?.englishName} 
+      <CameraController
+        targetPosition={travelTarget}
+        targetRadius={travelTargetRadius}
+        targetName={selectedMissionTargetId ? (selectedMissionTargetId === 'orion' ? 'Orion' : selectedMissionTargetId.toUpperCase()) : selectedPlanet?.englishName}
       />
 
       {children}

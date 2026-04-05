@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Line, Sphere } from '@react-three/drei';
+import { Line } from '@react-three/drei';
 import { scalePositionFromKm } from '@/lib/scales';
 import { MissionTrajectoryPoint } from '@/lib/missionTypes';
 import { densifyWithCatmullRom } from '@/lib/catmullRom';
@@ -91,13 +91,6 @@ export const MissionTrajectoryLine: React.FC<MissionTrajectoryLineProps> = ({
     return pts;
   }, [planned, currentPoint, smoothing, velocityThreshold]);
 
-  // 3. Current Position Marker
-  const currentPosScaled = useMemo(() => {
-    if (!current) return null;
-    const scaled = scalePositionFromKm(current[0], current[1], current[2]);
-    return isValidPoint(scaled) ? scaled : null;
-  }, [current]);
-
   return (
     <group name="mission-trajectory">
       {/* Past Trajectory - Solid Blue/Cyan line */}
@@ -126,18 +119,6 @@ export const MissionTrajectoryLine: React.FC<MissionTrajectoryLineProps> = ({
           opacity={0.4}
           frustumCulled={false}
         />
-      )}
-
-      {/* Current Position Glow/Marker */}
-      {currentPosScaled && (
-        <Sphere position={currentPosScaled} args={[0.005, 16, 16]}>
-          <meshBasicMaterial 
-            color="#ffffff" 
-            transparent 
-            opacity={0.8} 
-            depthTest={false} 
-          />
-        </Sphere>
       )}
     </group>
   );

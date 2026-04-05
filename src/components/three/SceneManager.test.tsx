@@ -1,9 +1,10 @@
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SceneContent } from './SceneManager';
 import { useMissionStore } from '@/store/missionStore';
 import { useSolarStore } from '@/store/solarStore';
 import { MissionPhase } from '@/lib/missionTypes';
+import { SPACECRAFT_CLOSEUP_RADIUS_UNITS, SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS } from './SpacecraftBody';
 
 // Mock store
 vi.mock('@/store/missionStore', () => ({
@@ -39,7 +40,14 @@ vi.mock('@react-three/postprocessing', () => ({
 }));
 
 vi.mock('./SpacecraftBody', () => ({
-  SpacecraftBody: ({ vehicleId }: any) => <div data-testid="spacecraft">{vehicleId}</div>,
+  SpacecraftBody: ({ vehicleId, onClick, onDoubleClick }: any) => (
+    <div data-testid="spacecraft" onClick={() => onClick?.(vehicleId)} onDoubleClick={() => onDoubleClick?.(vehicleId)}>
+      {vehicleId}
+    </div>
+  ),
+  SPACECRAFT_CLOSEUP_RADIUS_UNITS: 0.00008,
+  SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS: 0.0015,
+  SPACECRAFT_SELECTION_RADIUS_UNITS: 0.0005,
 }));
 
 vi.mock('./MissionTrajectoryLine', () => ({
@@ -48,6 +56,10 @@ vi.mock('./MissionTrajectoryLine', () => ({
 
 vi.mock('./MissionMilestoneMarker', () => ({
   MissionMilestoneMarker: ({ label }: any) => <div data-testid="milestone-marker">{label}</div>,
+}));
+
+vi.mock('./MoonSystem', () => ({
+  MoonSystem: () => <div data-testid="moon-system" />,
 }));
 
 vi.mock('@/hooks/useCameraAnimation', () => ({
@@ -82,7 +94,16 @@ describe('SceneManager / SceneContent', () => {
     vi.mocked(useSolarStore).mockImplementation((selector: any) => 
       selector({
         currentTime: new Date('2026-04-01T12:00:00Z'),
-        selectedPlanet: null,
+        selectedPlanet: {
+          bodyId: '399',
+          name: 'Terra',
+          englishName: 'Earth',
+          position: { x: 0, y: 0, z: 0 },
+          velocity: { x: 0, y: 0, z: 0 },
+          radius: 1,
+          distanceFromSun: 0,
+          trajectory: [],
+        },
         setSelectedPlanet,
         viewMode: 'didactic',
         setViewMode: vi.fn(),
@@ -90,6 +111,7 @@ describe('SceneManager / SceneContent', () => {
         travelTargetRadius: 1,
         setTravelTarget,
         resetTravel: vi.fn(),
+        masterTrajectory: {},
         masterTrajectorySegments: {},
         fullOrbits: {},
         appendFullOrbits: vi.fn(),
@@ -122,6 +144,79 @@ describe('SceneManager / SceneContent', () => {
     expect(getByTestId('spacecraft')).toBeInTheDocument();
   });
 
+  it('does not render spacecraft when Earth is not the active parent context', () => {
+    vi.mocked(useMissionStore).mockImplementation((selector: any) =>
+      selector({
+        missionState: {
+          vehicleId: 'orion',
+          sceneCoordinates: { x: 1000, y: 0, z: 0 },
+        },
+        selectedMissionTargetId: null,
+        setSelectedMissionTargetId,
+        autoFocusEvents: false,
+      })
+    );
+
+    vi.mocked(useSolarStore).mockImplementation((selector: any) =>
+      selector({
+        currentTime: new Date('2026-04-01T12:00:00Z'),
+        selectedPlanet: null,
+        setSelectedPlanet,
+        viewMode: 'didactic',
+        setViewMode: vi.fn(),
+        travelTarget: null,
+        travelTargetRadius: 1,
+        setTravelTarget,
+        resetTravel: vi.fn(),
+        masterTrajectory: {},
+        masterTrajectorySegments: {},
+        fullOrbits: {},
+        appendFullOrbits: vi.fn(),
+        advanceTime: vi.fn(),
+      })
+    );
+
+    const mockEarthEphemeris = [{
+      bodyId: '399',
+      position: { x: 0, y: 0, z: 0 },
+      velocity: { x: 0, y: 0, z: 0 },
+      trajectory: [],
+    }];
+
+    const { queryByTestId } = render(<SceneContent ephemerisData={mockEarthEphemeris as any} />);
+    expect(queryByTestId('spacecraft')).not.toBeInTheDocument();
+  });
+
+  it('uses dedicated close-up radius when spacecraft is double-clicked', () => {
+    vi.mocked(useMissionStore).mockImplementation((selector: any) =>
+      selector({
+        missionState: {
+          vehicleId: 'orion',
+          sceneCoordinates: { x: 1000, y: 0, z: 0 },
+        },
+        selectedMissionTargetId: null,
+        setSelectedMissionTargetId,
+        autoFocusEvents: false,
+      })
+    );
+
+    const mockEarthEphemeris = [{
+      bodyId: '399',
+      position: { x: 0, y: 0, z: 0 },
+      velocity: { x: 0, y: 0, z: 0 },
+      trajectory: [],
+    }];
+
+    const { getByTestId } = render(<SceneContent ephemerisData={mockEarthEphemeris as any} />);
+    fireEvent.doubleClick(getByTestId('spacecraft'));
+
+    expect(setSelectedPlanet).toHaveBeenCalled();
+    expect(setTravelTarget).toHaveBeenCalledWith(
+      { x: 0.001, y: 0, z: 0 },
+      SPACECRAFT_CLOSEUP_RADIUS_UNITS
+    );
+  });
+
   it('triggers non-intrusive auto-focus on major mission events', async () => {
     vi.mocked(useMissionStore).mockImplementation((selector: any) => 
       selector({
@@ -151,8 +246,11 @@ describe('SceneManager / SceneContent', () => {
 
     render(<SceneContent ephemerisData={mockEarthEphemeris as any} />);
 
-    // Camera should move
-    expect(setTravelTarget).toHaveBeenCalled();
+    // Camera should move with mission-centric framing
+    expect(setTravelTarget).toHaveBeenCalledWith(
+      { x: 0.001, y: 0, z: 0 },
+      SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS
+    );
     
     // Selection should NOT be hijacked (P2 fix)
     expect(setSelectedMissionTargetId).not.toHaveBeenCalled();
@@ -186,7 +284,16 @@ describe('SceneManager / SceneContent', () => {
     const solarSelectorImpl = (currentTimeIso: string) => (selector: any) =>
       selector({
         currentTime: new Date(currentTimeIso),
-        selectedPlanet: null,
+        selectedPlanet: {
+          bodyId: '399',
+          name: 'Terra',
+          englishName: 'Earth',
+          position: { x: 0, y: 0, z: 0 },
+          velocity: { x: 0, y: 0, z: 0 },
+          radius: 1,
+          distanceFromSun: 0,
+          trajectory: [],
+        },
         setSelectedPlanet,
         viewMode: 'didactic',
         setViewMode: vi.fn(),
@@ -194,6 +301,7 @@ describe('SceneManager / SceneContent', () => {
         travelTargetRadius: 1,
         setTravelTarget,
         resetTravel: vi.fn(),
+        masterTrajectory: {},
         masterTrajectorySegments: {},
         fullOrbits: {},
         appendFullOrbits: vi.fn(),
