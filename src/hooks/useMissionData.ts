@@ -68,8 +68,6 @@ export function useMissionData() {
             if (!Number.isNaN(timestampDate.getTime())) {
               useSolarStore.getState().setCurrentTime(timestampDate);
             }
-          } else if (!isLive) {
-            setLiveTimestamp(null);
           }
         }
       } catch (err: any) {

@@ -62,3 +62,6 @@ sse3d-api/kernels/**
 !sse3d-api/kernels/.gitkeep
 !sse3d-api/kernels/lsk/.gitkeep
 !sse3d-api/kernels/spk/.gitkeep
+
+# api cache
+sse3d-api/.cache/

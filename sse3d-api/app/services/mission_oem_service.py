@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import io
+import zipfile
 import numpy as np
 from bisect import bisect_left
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Iterable
+from typing import Optional
+from urllib.parse import urlparse
 
+import httpx
 from loguru import logger
 
 from app.core.config import settings
@@ -56,20 +60,75 @@ def _normalize(vec: np.ndarray) -> np.ndarray:
     return vec / norm
 
 
+def _as_optional_path(value: Optional[str]) -> Optional[Path]:
+    if not value:
+        return None
+    return Path(value).expanduser().resolve()
+
+
 class MissionOEMService:
-    def __init__(self, file_path: Optional[str] = None):
-        self.file_path = Path(file_path or settings.mission_oem_path)
+    def __init__(
+        self,
+        file_path: Optional[str] = None,
+        source_url: Optional[str] = None,
+        cache_dir: Optional[str] = None,
+    ):
+        self.file_path = _as_optional_path(file_path if file_path is not None else settings.mission_oem_path)
+        raw_source_url = source_url if source_url is not None else settings.mission_oem_url
+        self.source_url = raw_source_url.strip().strip("'\"")
+        self.cache_dir = _as_optional_path(cache_dir if cache_dir is not None else settings.mission_oem_cache_dir)
+        self.refresh_seconds = max(0, int(settings.mission_oem_refresh_seconds))
+        self.download_timeout_seconds = max(1.0, float(settings.mission_oem_download_timeout_seconds))
+        if self.file_path is None and not self.source_url:
+            autodetected = self._discover_workspace_oem_file()
+            if autodetected is not None:
+                logger.info(f"Mission OEM autodetected from workspace: {autodetected}")
+                self.file_path = autodetected
+
         self._ephemeris: Optional[OEMEphemeris] = None
         self._adaptive_states: Optional[tuple[OEMStateVector, ...]] = None
+        self._loaded_source_file: Optional[Path] = None
+        self._cached_download_file: Optional[Path] = None
+
+    def _discover_workspace_oem_file(self) -> Optional[Path]:
+        try:
+            repo_root = Path(__file__).resolve().parents[3]
+            ephemeris_dir = repo_root / "public" / "ephemeris"
+            if not ephemeris_dir.exists():
+                return None
+
+            candidates = sorted(
+                (
+                    path for path in ephemeris_dir.glob("*")
+                    if path.is_file() and path.suffix.lower() in {".asc", ".oem", ".txt"}
+                ),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            return candidates[0] if candidates else None
+        except Exception:
+            return None
 
     def is_available(self) -> bool:
-        return settings.mission_oem_enabled and self.file_path.exists()
+        if not settings.mission_oem_enabled:
+            return False
+        return self._resolve_source_file() is not None
 
     def get_ephemeris(self) -> Optional[OEMEphemeris]:
-        if not self.is_available():
+        if not settings.mission_oem_enabled:
             return None
+
+        source_file = self._resolve_source_file()
+        if source_file is None:
+            return None
+
+        if self._loaded_source_file != source_file:
+            self._ephemeris = None
+            self._adaptive_states = None
+            self._loaded_source_file = source_file
+
         if self._ephemeris is None:
-            self._ephemeris = self._load_ephemeris()
+            self._ephemeris = self._load_ephemeris(source_file)
             if self._ephemeris:
                 logger.info(f"Building adaptive trajectory cache from {len(self._ephemeris.states)} states")
                 self._adaptive_states = self._build_adaptive_trajectory(self._ephemeris.states)
@@ -129,7 +188,6 @@ class MissionOEMService:
         if ephemeris is None:
             return []
 
-        # If adaptive is requested and available, slice from it
         source_states = ephemeris.states
         if use_adaptive and self._adaptive_states is not None:
             source_states = self._adaptive_states
@@ -154,15 +212,135 @@ class MissionOEMService:
             sampled.append(filtered[-1])
         return sampled[:max_points]
 
+    def _resolve_source_file(self) -> Optional[Path]:
+        if self.source_url:
+            remote = self._ensure_remote_oem_cached()
+            if remote is not None:
+                return remote
+
+        if self.file_path and self.file_path.exists():
+            logger.warning("Mission OEM remote source unavailable; falling back to local OEM file.")
+            return self.file_path
+
+        return None
+
+    def _ensure_remote_oem_cached(self) -> Optional[Path]:
+        if self.cache_dir is None:
+            return None
+
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        cached_file = self._cached_download_file
+        if cached_file is None:
+            existing = self.cache_dir / "artemis2_latest.oem"
+            if existing.exists():
+                cached_file = existing
+                self._cached_download_file = existing
+
+        if cached_file and cached_file.exists() and self.refresh_seconds > 0:
+            age_seconds = max(0.0, datetime.now(timezone.utc).timestamp() - cached_file.stat().st_mtime)
+            if age_seconds <= self.refresh_seconds:
+                return cached_file
+
+        try:
+            payload, name_hint = self._download_source_payload(self.source_url)
+            downloaded_file = self._write_oem_payload(payload, name_hint)
+            if downloaded_file:
+                self._cached_download_file = downloaded_file
+                return downloaded_file
+        except Exception as exc:
+            logger.warning(f"Mission OEM download failed: {exc}")
+
+        if cached_file and cached_file.exists():
+            logger.warning(f"Using last cached OEM file after download failure: {cached_file}")
+            return cached_file
+
+        return None
+
+    def _download_source_payload(self, source_url: str) -> tuple[bytes, str]:
+        parsed = urlparse(source_url)
+        scheme = parsed.scheme.lower()
+
+        if scheme in ("http", "https"):
+            response = httpx.get(
+                source_url,
+                timeout=self.download_timeout_seconds,
+                follow_redirects=True,
+                headers={
+                    "User-Agent": settings.arow_user_agent,
+                    "Accept": "application/zip, application/octet-stream, */*",
+                },
+            )
+            response.raise_for_status()
+            hint = Path(parsed.path).name or "remote.oem"
+            content_type = (response.headers.get("content-type") or "").lower()
+            if "text/html" in content_type:
+                raise RuntimeError(
+                    f"OEM URL returned HTML instead of a zip/oem payload (content-type={content_type}). "
+                    "Check if the URL is a landing page, expired signed URL, or blocked by network policy."
+                )
+            return response.content, hint
+
+        if scheme == "s3":
+            try:
+                import boto3  # type: ignore
+            except Exception as exc:
+                raise RuntimeError("boto3 is required for s3:// mission_oem_url sources") from exc
+
+            bucket = parsed.netloc
+            key = parsed.path.lstrip("/")
+            if not bucket or not key:
+                raise ValueError(f"Invalid s3 URL for mission OEM source: {source_url}")
+
+            client = boto3.client("s3")
+            obj = client.get_object(Bucket=bucket, Key=key)
+            body = obj["Body"].read()
+            return body, Path(key).name
+
+        raise ValueError(f"Unsupported mission_oem_url scheme: {source_url}")
+
+    def _write_oem_payload(self, payload: bytes, name_hint: str) -> Optional[Path]:
+        if self.cache_dir is None:
+            return None
+
+        if zipfile.is_zipfile(io.BytesIO(payload)):
+            with zipfile.ZipFile(io.BytesIO(payload), "r") as zf:
+                names = [name for name in zf.namelist() if not name.endswith("/")]
+                if not names:
+                    raise ValueError("OEM zip payload is empty")
+
+                preferred = [
+                    name for name in names
+                    if Path(name).suffix.lower() in {".asc", ".oem", ".txt"}
+                ]
+                selected_name = preferred[0] if preferred else names[0]
+                extracted_payload = zf.read(selected_name)
+                return self._write_atomic(extracted_payload, Path(selected_name).suffix.lower() or ".oem")
+
+        suffix = Path(name_hint).suffix.lower() or ".oem"
+        return self._write_atomic(payload, suffix)
+
+    def _write_atomic(self, payload: bytes, suffix: str) -> Path:
+        target = self.cache_dir / f"artemis2_latest{suffix}"
+        tmp_target = target.with_suffix(f"{target.suffix}.tmp")
+        tmp_target.write_bytes(payload)
+        tmp_target.replace(target)
+
+        canonical = self.cache_dir / "artemis2_latest.oem"
+        if canonical != target:
+            canonical.write_bytes(target.read_bytes())
+            target = canonical
+
+        return target
+
     def _build_adaptive_trajectory(
-        self, 
+        self,
         states: tuple[OEMStateVector, ...],
         near_earth_dense_km: float = 250000.0,
         angular_dot_threshold: float = 0.998,
         segment_dot_threshold: float = 0.9985,
         lunar_window_points: int = 260,
         lunar_min_distance_km: float = 300000.0,
-        hard_limit: int = 1500
+        hard_limit: int = 1500,
     ) -> tuple[OEMStateVector, ...]:
         if not states:
             return ()
@@ -179,10 +357,7 @@ class MissionOEMService:
         kept_states: list[OEMStateVector] = [states[0]]
         protected_indices: set[int] = {0, len(states) - 1}
         kept_index_set: set[int] = {0}
-        
-        # Track both Earth-centered heading and local segment direction. The first
-        # catches the tight departure loop around Earth; the second preserves
-        # curvature far from Earth, such as the lunar flyby arc.
+
         last_pos_vec = positions[0]
         last_unit_vec = _normalize(last_pos_vec)
 
@@ -195,7 +370,6 @@ class MissionOEMService:
                 and dist_km >= lunar_min_distance_km
             )
 
-            # Condition 0: preserve a dense lunar-flyby region around geocentric apogee.
             if lunar_zone:
                 kept_states.append(state)
                 kept_index_set.add(i)
@@ -203,8 +377,7 @@ class MissionOEMService:
                 last_pos_vec = pos_vec
                 last_unit_vec = _normalize(pos_vec)
                 continue
-            
-            # Condition 1: High density near Earth
+
             if dist_km <= near_earth_dense_km:
                 kept_states.append(state)
                 kept_index_set.add(i)
@@ -212,11 +385,10 @@ class MissionOEMService:
                 last_pos_vec = pos_vec
                 last_unit_vec = _normalize(pos_vec)
                 continue
-            
-            # Condition 2: Earth-centered angular change (global heading)
+
             unit_vec = _normalize(pos_vec)
             dot = np.dot(last_unit_vec, unit_vec)
-            
+
             if dot < angular_dot_threshold:
                 kept_states.append(state)
                 kept_index_set.add(i)
@@ -224,10 +396,6 @@ class MissionOEMService:
                 last_unit_vec = unit_vec
                 continue
 
-            # Condition 3: local turn preservation.
-            # This catches geometry like the lunar flyby, where the path can bend
-            # meaningfully even when the Earth-centered pointing direction changes
-            # only a little between sparse samples.
             prev_state = states[i - 1]
             next_state = states[i + 1]
             incoming_vec = np.array([
@@ -252,14 +420,10 @@ class MissionOEMService:
                     last_unit_vec = unit_vec
                     continue
 
-        # Always keep the very last point
         if (len(states) - 1) not in kept_index_set:
             kept_states.append(states[-1])
             kept_index_set.add(len(states) - 1)
 
-        # Payload safety with hierarchical decimation:
-        # preserve protected regions (Earth + lunar flyby + endpoints) first and
-        # decimate the remaining transition points if needed.
         if len(kept_states) <= hard_limit:
             return tuple(kept_states)
 
@@ -268,8 +432,6 @@ class MissionOEMService:
         flexible_kept = [idx for idx in ordered_kept if idx not in protected_indices]
 
         if len(protected_kept) >= hard_limit:
-            # Extreme safety fallback: keep a uniform sample of protected points,
-            # but always include trajectory endpoints.
             sampled = set(np.linspace(0, len(protected_kept) - 1, hard_limit, dtype=int).tolist())
             selected = [protected_kept[i] for i in sorted(sampled)]
             selected[0] = 0
@@ -289,11 +451,11 @@ class MissionOEMService:
         selected_indices = sorted(set(protected_kept + selected_flexible))
         return tuple(states[idx] for idx in selected_indices)
 
-    def _load_ephemeris(self) -> Optional[OEMEphemeris]:
+    def _load_ephemeris(self, source_file: Path) -> Optional[OEMEphemeris]:
         try:
-            raw_lines = self.file_path.read_text(encoding="utf-8").splitlines()
+            raw_lines = source_file.read_text(encoding="utf-8").splitlines()
         except Exception as exc:
-            logger.error(f"Failed to read OEM file {self.file_path}: {exc}")
+            logger.error(f"Failed to read OEM file {source_file}: {exc}")
             return None
 
         metadata_map: dict[str, str] = {}
@@ -318,7 +480,6 @@ class MissionOEMService:
                 continue
 
             if "=" in line:
-                # Top-level header fields like CCSDS_OEM_VERS / ORIGINATOR are ignored for now.
                 continue
 
             parts = line.split()
@@ -342,7 +503,7 @@ class MissionOEMService:
             )
 
         if not states:
-            logger.warning(f"OEM file {self.file_path} produced no state vectors")
+            logger.warning(f"OEM file {source_file} produced no state vectors")
             return None
 
         metadata = OEMMetadata(

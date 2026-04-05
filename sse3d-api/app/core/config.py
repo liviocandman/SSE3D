@@ -29,7 +29,11 @@ class Settings(BaseSettings):
     arow_input_frame: str = "J2000"
     arow_position_origin: str = "EARTH"
     mission_oem_enabled: bool = True
-    mission_oem_path: str = r"C:\Users\Reuther\Downloads\artemis-ii-oem-2026-04-03-to-ei\Artemis_II_OEM_2026_04_03_to_EI.asc"
+    mission_oem_path: str = ""
+    mission_oem_url: str = ""
+    mission_oem_cache_dir: str = ".cache/mission_oem"
+    mission_oem_refresh_seconds: int = 900
+    mission_oem_download_timeout_seconds: float = 15.0
     mission_policy_spin_enabled: bool = True
     mission_policy_tail_to_sun_spin_rate_deg_per_sec: float = 0.25
 

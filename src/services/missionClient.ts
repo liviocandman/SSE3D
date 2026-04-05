@@ -8,6 +8,7 @@ import type {
 const LOCAL_CACHE_TTL_MS = 5_000;
 const DEFAULT_RETRIES = 2;
 const BASE_DELAY_MS = 300;
+const MAX_CACHE_ENTRIES = 50;
 
 type CacheEntry<T> = {
   expiresAt: number;
@@ -34,7 +35,31 @@ function getCached<T>(key: string): T | null {
   return cached.value as T;
 }
 
+function pruneExpiredEntries(): void {
+  const now = Date.now();
+  for (const [k, entry] of requestCache) {
+    if (entry.expiresAt <= now) {
+      requestCache.delete(k);
+    }
+  }
+}
+
 function setCached<T>(key: string, value: T): T {
+  if (requestCache.size >= MAX_CACHE_ENTRIES) {
+    pruneExpiredEntries();
+
+    // If still over limit after expiry sweep, drop oldest entries
+    if (requestCache.size >= MAX_CACHE_ENTRIES) {
+      const keysToRemove = [...requestCache.keys()].slice(
+        0,
+        requestCache.size - MAX_CACHE_ENTRIES + 1
+      );
+      for (const k of keysToRemove) {
+        requestCache.delete(k);
+      }
+    }
+  }
+
   requestCache.set(key, {
     value,
     expiresAt: Date.now() + LOCAL_CACHE_TTL_MS,
