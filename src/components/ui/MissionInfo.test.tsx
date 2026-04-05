@@ -18,6 +18,8 @@ const { missionStoreState } = vi.hoisted(() => ({
   missionStoreState: {
     autoFocusEvents: false,
     setAutoFocusEvents: vi.fn(),
+    estimatedAttitudeEnabled: true,
+    setEstimatedAttitudeEnabled: vi.fn(),
   }
 }));
 
@@ -44,6 +46,10 @@ describe('MissionInfo', () => {
     missionElapsedTime: '2-04:30:15',
     solarRangeKm: 149600000,
     lineOfSightStatus: 'lunar_occultation' as const,
+    attitudeSource: 'GEOMETRIC_FALLBACK' as const,
+    attitudeMode: 'HOLD' as const,
+    attitudeConfidence: 0.65,
+    referenceFrame: 'ECLIPJ2000' as const,
   };
 
   const mockMissionHealth = {
@@ -95,6 +101,7 @@ describe('MissionInfo', () => {
     expect(screen.getByText('+1.14')).toBeInTheDocument();
     expect(screen.getByText('149.6M km')).toBeInTheDocument();
     expect(screen.getByText('LOS - Lunar Occultation')).toBeInTheDocument();
+    expect(screen.getByText(/GEOMETRIC FALLBACK \| HOLD \| ECLIPJ2000 \| 65%/)).toBeInTheDocument();
   });
 
   it('shows next event when available', () => {
@@ -211,5 +218,21 @@ describe('MissionInfo', () => {
     const toggle = screen.getByText('Auto Focus');
     fireEvent.click(toggle);
     expect(missionStoreState.setAutoFocusEvents).toHaveBeenCalledWith(true);
+  });
+
+  it('toggles estimated attitude rendering', () => {
+    render(
+      <MissionInfo
+        missionState={mockMissionState}
+        missionHealth={mockMissionHealth}
+        missionEvents={mockMissionEvents}
+      />
+    );
+
+    const toggleLabel = screen.getAllByText('Attitude')[0];
+    const toggle = toggleLabel.closest('button');
+    expect(toggle).toBeTruthy();
+    fireEvent.click(toggle!);
+    expect(missionStoreState.setEstimatedAttitudeEnabled).toHaveBeenCalledWith(false);
   });
 });

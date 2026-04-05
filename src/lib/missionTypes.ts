@@ -38,12 +38,22 @@ export interface MissionCoordinates {
   z: number;
 }
 
+export interface MissionQuaternion {
+  x: number;
+  y: number;
+  z: number;
+  w: number;
+}
+
 export interface MissionDistances {
   earthKm: number;
   moonKm: number;
 }
 
 export type MissionLineOfSightStatus = 'clear' | 'lunar_occultation';
+export type MissionAttitudeSource = 'CK_SPICE' | 'POLICY_ESTIMATED' | 'GEOMETRIC_FALLBACK';
+export type MissionAttitudeFrame = 'ECLIPJ2000' | 'LVLH_MISSION' | 'SCENE';
+export type MissionAttitudeMode = 'TAIL_TO_SUN' | 'BURN_ALIGN' | 'SPIN_STABILIZED' | 'HOLD';
 
 export interface MissionEvent {
   id: string;
@@ -85,6 +95,13 @@ export interface MissionState {
   // Single render-space coordinate for Orion in the frontend.
   // It is Earth-relative and must be mounted under Earth's transform.
   sceneCoordinates?: MissionCoordinates;
+  attitudeQuaternion?: MissionQuaternion;
+  inertialAttitudeQuaternion?: MissionQuaternion;
+  lvlhAttitudeQuaternion?: MissionQuaternion;
+  attitudeSource?: MissionAttitudeSource;
+  attitudeMode?: MissionAttitudeMode;
+  attitudeConfidence?: number;
+  referenceFrame?: MissionAttitudeFrame;
   solarRangeKm?: number;
   lineOfSightStatus?: MissionLineOfSightStatus;
 }

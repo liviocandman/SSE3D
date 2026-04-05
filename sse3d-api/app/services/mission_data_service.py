@@ -23,6 +23,7 @@ from app.services.mission_cache_service import MissionCacheService
 from app.services.spice_engine import compute_mission_relative_geometry, compute_mission_trajectory
 from app.services.mission_oem_service import mission_oem_service
 from app.services.mission_geometry_service import (
+    compute_mission_attitude,
     enrich_mission_geometry,
     transform_to_eclipj2000,
     to_scene_frame,
@@ -151,6 +152,7 @@ def _classify_lunar_occultation(orion_rel_eclip: "np.ndarray", moon_rel_eclip: "
 
 def _compute_spacecraft_context(
     *,
+    phase: MissionPhase,
     position: MissionPosition,
     velocity: MissionVelocity,
     input_frame: str,
@@ -159,8 +161,19 @@ def _compute_spacecraft_context(
 ):
     import numpy as np
 
+    attitude_context = compute_mission_attitude(
+        orion_pos=position,
+        orion_vel=velocity,
+        phase=phase,
+        input_frame=input_frame,
+        input_origin=input_origin,
+        et=geo_data["et"] if geo_data else 0.0,
+        earth_pos_eclip=geo_data["earth_pos"] if geo_data else None,
+        moon_pos_eclip=geo_data["moon_pos"] if geo_data else None,
+    )
+
     if not geo_data:
-        return {}
+        return attitude_context
 
     rotated_pos, _ = transform_to_eclipj2000(position, velocity, input_frame, geo_data["et"])
     relative_orion_eclip = np.array([rotated_pos.x, rotated_pos.y, rotated_pos.z], dtype=float)
@@ -177,7 +190,20 @@ def _compute_spacecraft_context(
     return {
         "solar_range_km": float(np.linalg.norm(orion_global_eclip)),
         "line_of_sight_status": _classify_lunar_occultation(orion_rel_eclip, moon_rel_eclip),
+        **attitude_context,
     }
+
+
+def _apply_spacecraft_context(state: MissionStateResponse, context: dict) -> None:
+    state.solar_range_km = context.get("solar_range_km")
+    state.line_of_sight_status = context.get("line_of_sight_status")
+    state.attitude_quaternion = context.get("attitude_quaternion")
+    state.inertial_attitude_quaternion = context.get("inertial_attitude_quaternion")
+    state.lvlh_attitude_quaternion = context.get("lvlh_attitude_quaternion")
+    state.attitude_source = context.get("attitude_source")
+    state.attitude_mode = context.get("attitude_mode")
+    state.attitude_confidence = context.get("attitude_confidence")
+    state.reference_frame = context.get("reference_frame")
 
 
 def _build_trajectory_point_from_state(
@@ -314,14 +340,24 @@ async def get_live_mission_state() -> MissionStateResponse:
             live_state.scene_coordinates = scene_coords
             live_state.distances = distances
             context = _compute_spacecraft_context(
+                phase=live_state.phase,
                 position=live_state.position,
                 velocity=live_state.velocity,
                 input_frame=oem_state["input_frame"] if oem_state else settings.arow_input_frame,
                 input_origin=oem_state["input_origin"] if oem_state else settings.arow_position_origin,
                 geo_data=geo_data,
             )
-            live_state.solar_range_km = context.get("solar_range_km")
-            live_state.line_of_sight_status = context.get("line_of_sight_status")
+            _apply_spacecraft_context(live_state, context)
+        else:
+            context = _compute_spacecraft_context(
+                phase=live_state.phase,
+                position=live_state.position,
+                velocity=live_state.velocity,
+                input_frame=oem_state["input_frame"] if oem_state else settings.arow_input_frame,
+                input_origin=oem_state["input_origin"] if oem_state else settings.arow_position_origin,
+                geo_data=None,
+            )
+            _apply_spacecraft_context(live_state, context)
         
         # 5. Create Health and update Cache
         live_health = create_mission_health(
@@ -393,14 +429,14 @@ def get_predicted_fallback_state() -> MissionStateResponse:
         state.scene_coordinates = scene_coords
         state.distances = distances
         context = _compute_spacecraft_context(
+            phase=state.phase,
             position=state.position,
             velocity=state.velocity,
             input_frame=input_frame,
             input_origin=input_origin,
             geo_data=geo_data,
         )
-        state.solar_range_km = context.get("solar_range_km")
-        state.line_of_sight_status = context.get("line_of_sight_status")
+        _apply_spacecraft_context(state, context)
     else:
         state.scene_coordinates = derive_scene_coordinates(
             state.position,
@@ -408,6 +444,15 @@ def get_predicted_fallback_state() -> MissionStateResponse:
             input_frame=input_frame,
         )
         state.distances = MissionDistances(earthKm=_norm_km(state.position), moonKm=state.distances.moon_km)
+        context = _compute_spacecraft_context(
+            phase=state.phase,
+            position=state.position,
+            velocity=state.velocity,
+            input_frame=input_frame,
+            input_origin=input_origin,
+            geo_data=None,
+        )
+        _apply_spacecraft_context(state, context)
     return state
 
 def get_replay_state(timestamp: str) -> MissionStateResponse:
@@ -461,16 +506,25 @@ def get_replay_state(timestamp: str) -> MissionStateResponse:
         state.scene_coordinates = scene_coords
         state.distances = distances
         context = _compute_spacecraft_context(
+            phase=state.phase,
             position=state.position,
             velocity=state.velocity,
             input_frame=input_frame,
             input_origin=input_origin,
             geo_data=geo_data,
         )
-        state.solar_range_km = context.get("solar_range_km")
-        state.line_of_sight_status = context.get("line_of_sight_status")
+        _apply_spacecraft_context(state, context)
     else:
         state.distances = MissionDistances(earthKm=_norm_km(state.position), moonKm=state.distances.moon_km)
+        context = _compute_spacecraft_context(
+            phase=state.phase,
+            position=state.position,
+            velocity=state.velocity,
+            input_frame=input_frame,
+            input_origin=input_origin,
+            geo_data=None,
+        )
+        _apply_spacecraft_context(state, context)
         
     return state
 

@@ -104,3 +104,31 @@ def test_replay_with_geometry_adds_solar_range_and_los(monkeypatch):
 
     assert state.solar_range_km == 3100.0
     assert state.line_of_sight_status.value == "lunar_occultation"
+
+
+def test_replay_exposes_attitude_metadata(monkeypatch):
+    monkeypatch.setattr(
+        mission_data_service,
+        "_resolve_orion_state_from_oem",
+        lambda _timestamp: {
+            "position": MissionPosition(x=1000.0, y=0.0, z=0.0),
+            "velocity": MissionVelocity(x=0.0, y=1.0, z=0.0),
+            "input_frame": "EME2000",
+            "input_origin": "EARTH",
+        },
+    )
+    monkeypatch.setattr(
+        mission_data_service,
+        "compute_mission_relative_geometry",
+        lambda _timestamp: None,
+    )
+
+    state = mission_data_service.get_replay_state("2026-04-03T13:07:09Z")
+
+    assert state.attitude_quaternion is not None
+    assert state.inertial_attitude_quaternion is not None
+    assert state.lvlh_attitude_quaternion is not None
+    assert state.attitude_source.value == "POLICY_ESTIMATED"
+    assert state.attitude_mode.value == "TAIL_TO_SUN"
+    assert state.reference_frame.value == "ECLIPJ2000"
+    assert state.attitude_confidence > 0.0

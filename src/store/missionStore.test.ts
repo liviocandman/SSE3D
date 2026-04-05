@@ -11,6 +11,7 @@ describe('missionStore', () => {
   it('should initialize with correct default state', () => {
     const state = useMissionStore.getState();
     expect(state.missionMode).toBe(MissionMode.LIVE);
+    expect(state.estimatedAttitudeEnabled).toBe(true);
     expect(state.selectedMissionTargetId).toBeNull();
     expect(state.missionState).toBeNull();
     expect(state.missionTrajectory).toBeNull();
@@ -46,12 +47,19 @@ describe('missionStore', () => {
   it('should reset mission state correctly', () => {
     useMissionStore.getState().setMissionMode(MissionMode.REPLAY);
     useMissionStore.getState().setLiveTimestamp('2026-04-01T12:00:00Z');
+    useMissionStore.getState().setEstimatedAttitudeEnabled(false);
     
     useMissionStore.getState().resetMissionState();
     
     const state = useMissionStore.getState();
     expect(state.missionMode).toBe(MissionMode.LIVE);
     expect(state.liveTimestamp).toBeNull();
+    expect(state.estimatedAttitudeEnabled).toBe(true);
+  });
+
+  it('should update estimated attitude toggle', () => {
+    useMissionStore.getState().setEstimatedAttitudeEnabled(false);
+    expect(useMissionStore.getState().estimatedAttitudeEnabled).toBe(false);
   });
 
   it('should update selected mission target id', () => {

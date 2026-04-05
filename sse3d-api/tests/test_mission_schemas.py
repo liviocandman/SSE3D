@@ -1,4 +1,6 @@
 from app.models.mission_schemas import (
+    MissionAttitudeFrame,
+    MissionAttitudeSource,
     MissionDataSource,
     MissionMode,
     MissionPhase,
@@ -13,6 +15,9 @@ def test_mission_enums():
     assert MissionDataSource.AROW_LIVE == "AROW_LIVE"
     assert MissionMode.LIVE == "live"
     assert MissionPhase.LAUNCH == "launch"
+    assert MissionAttitudeSource.GEOMETRIC_FALLBACK == "GEOMETRIC_FALLBACK"
+    assert MissionAttitudeSource.POLICY_ESTIMATED == "POLICY_ESTIMATED"
+    assert MissionAttitudeFrame.ECLIPJ2000 == "ECLIPJ2000"
 
 def test_mission_state_serialization():
     data = {
@@ -29,6 +34,13 @@ def test_mission_state_serialization():
         "missionElapsedTime": "1-02:03:04",
         "globalCoordinates": {"x": 1.0, "y": 2.0, "z": 3.0},
         "missionCoordinates": {"x": 4.0, "y": 5.0, "z": 6.0},
+        "attitudeQuaternion": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+        "inertialAttitudeQuaternion": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+        "lvlhAttitudeQuaternion": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+        "attitudeSource": "GEOMETRIC_FALLBACK",
+        "attitudeMode": "HOLD",
+        "attitudeConfidence": 0.65,
+        "referenceFrame": "ECLIPJ2000",
         "solarRangeKm": 149600000.0,
         "lineOfSightStatus": "lunar_occultation",
     }
@@ -39,6 +51,10 @@ def test_mission_state_serialization():
     assert serialized["distances"]["earthKm"] == 1000.0
     assert serialized["globalCoordinates"]["x"] == 1.0
     assert serialized["missionCoordinates"]["z"] == 6.0
+    assert serialized["attitudeQuaternion"]["w"] == 1.0
+    assert serialized["attitudeSource"] == "GEOMETRIC_FALLBACK"
+    assert serialized["attitudeMode"] == "HOLD"
+    assert serialized["referenceFrame"] == "ECLIPJ2000"
     assert serialized["solarRangeKm"] == 149600000.0
     assert serialized["lineOfSightStatus"] == "lunar_occultation"
 

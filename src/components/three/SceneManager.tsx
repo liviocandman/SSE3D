@@ -194,6 +194,7 @@ export function SceneContent({
     missionTrajectory,
     missionEvents,
     autoFocusEvents,
+    estimatedAttitudeEnabled,
     selectedMissionTargetId,
     setSelectedMissionTargetId,
   } = useMissionStore(
@@ -202,6 +203,7 @@ export function SceneContent({
       missionTrajectory: state.missionTrajectory,
       missionEvents: state.missionEvents,
       autoFocusEvents: state.autoFocusEvents,
+      estimatedAttitudeEnabled: state.estimatedAttitudeEnabled,
       selectedMissionTargetId: state.selectedMissionTargetId,
       setSelectedMissionTargetId: state.setSelectedMissionTargetId,
     }))
@@ -592,6 +594,7 @@ export function SceneContent({
                     label={missionState.vehicleId === 'orion' ? 'Orion' : missionState.vehicleId.toUpperCase()}
                     position={spacecraftLocalPosition}
                     isSelected={selectedMissionTargetId === missionState.vehicleId}
+                    attitudeQuaternion={missionState.attitudeQuaternion}
                     onClick={(id) => {
                       if (earthSelectionContext) {
                         setSelectedPlanet(earthSelectionContext);
@@ -612,7 +615,13 @@ export function SceneContent({
                         setTravelTarget(spacecraftWorldPosition, SPACECRAFT_CLOSEUP_RADIUS_UNITS);
                       }
                     }}
-                    useAttitude={MISSION_CONFIG.ENABLE_ATTITUDE}
+                    useAttitude={
+                      MISSION_CONFIG.ENABLE_ATTITUDE &&
+                      (
+                        missionState.attitudeSource === 'CK_SPICE' ||
+                        (MISSION_CONFIG.ENABLE_POLICY_ATTITUDE && estimatedAttitudeEnabled)
+                      )
+                    }
                   />
 
                   {missionTrajectory && (

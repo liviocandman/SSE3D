@@ -3,6 +3,8 @@ import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { OrionProxyModel } from './OrionProxyModel';
+import type { MissionQuaternion } from '@/lib/missionTypes';
+import { ORION_MESH_TO_BODY_QUATERNION } from '@/lib/missionAttitudeCalibration';
 
 export interface SpacecraftBodyProps {
   vehicleId: string;
@@ -11,7 +13,7 @@ export interface SpacecraftBodyProps {
   isSelected: boolean;
   onClick: (id: string) => void;
   onDoubleClick?: (id: string) => void;
-  attitude?: [number, number, number]; // [pitch, yaw, roll] in radians
+  attitudeQuaternion?: MissionQuaternion;
   useAttitude?: boolean; // Story 8.3: Feature flag
 }
 
@@ -60,7 +62,7 @@ export function SpacecraftBody({
   isSelected,
   onClick,
   onDoubleClick,
-  attitude,
+  attitudeQuaternion,
   useAttitude = false,
 }: SpacecraftBodyProps) {
   const groupRef = useRef<THREE.Group>(null);
@@ -74,6 +76,10 @@ export function SpacecraftBody({
   const detailedLoadRequestedRef = useRef(false);
   const [shouldLoadDetailed, setShouldLoadDetailed] = useState(false);
   const [isDetailedReady, setIsDetailedReady] = useState(false);
+  const meshToBodyAlignmentQuat = useMemo(
+    () => new THREE.Quaternion().copy(ORION_MESH_TO_BODY_QUATERNION),
+    []
+  );
 
   const markerTexture = useMemo(() => createCircleTexture('#00aaff'), []);
   const handleDetailedReady = useCallback(() => {
@@ -126,10 +132,18 @@ export function SpacecraftBody({
     markerRef.current.scale.set(markerScale, markerScale, 1);
 
     if (visualRootRef.current) {
-      if (useAttitude && attitude) {
-        visualRootRef.current.rotation.set(attitude[0], attitude[1], attitude[2]);
+      if (useAttitude && attitudeQuaternion) {
+        visualRootRef.current.quaternion
+          .set(
+            attitudeQuaternion.x,
+            attitudeQuaternion.y,
+            attitudeQuaternion.z,
+            attitudeQuaternion.w
+          )
+          .normalize()
+          .multiply(meshToBodyAlignmentQuat);
       } else {
-        visualRootRef.current.rotation.set(Math.PI / 2, 0, 0);
+        visualRootRef.current.quaternion.copy(meshToBodyAlignmentQuat);
       }
     }
   });

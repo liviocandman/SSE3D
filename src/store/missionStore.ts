@@ -11,6 +11,7 @@ interface MissionStoreState {
   missionMode: MissionMode;
   isLive: boolean;
   autoFocusEvents: boolean;
+  estimatedAttitudeEnabled: boolean;
   selectedMissionTargetId: string | null;
   missionState: MissionState | null;
   missionTrajectory: MissionTrajectory | null;
@@ -29,6 +30,7 @@ interface MissionStoreActions {
   setMissionHealth: (health: MissionHealth | null) => void;
   setLiveTimestamp: (timestamp: string | null) => void;
   setAutoFocusEvents: (enabled: boolean) => void;
+  setEstimatedAttitudeEnabled: (enabled: boolean) => void;
   resetMissionState: () => void;
 }
 
@@ -36,6 +38,7 @@ export const useMissionStore = create<MissionStoreState & MissionStoreActions>((
   missionMode: MissionMode.LIVE,
   isLive: true,
   autoFocusEvents: false, // Default conservative as per Story 8.1.1
+  estimatedAttitudeEnabled: true,
   selectedMissionTargetId: null,
   missionState: null,
   missionTrajectory: null,
@@ -62,10 +65,12 @@ export const useMissionStore = create<MissionStoreState & MissionStoreActions>((
   setMissionHealth: (health) => set({ missionHealth: health }),
   setLiveTimestamp: (timestamp) => set({ liveTimestamp: timestamp }),
   setAutoFocusEvents: (autoFocusEvents) => set({ autoFocusEvents }),
+  setEstimatedAttitudeEnabled: (estimatedAttitudeEnabled) => set({ estimatedAttitudeEnabled }),
   resetMissionState: () => set({
     missionMode: MissionMode.LIVE,
     isLive: true,
     autoFocusEvents: false,
+    estimatedAttitudeEnabled: true,
     selectedMissionTargetId: null,
     missionState: null,
     missionTrajectory: null,

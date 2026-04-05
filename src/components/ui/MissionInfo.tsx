@@ -53,14 +53,22 @@ function getSourceLabel(source: MissionDataSource): string {
   return labels[source] || source;
 }
 
+function formatAttitudeConfidence(confidence?: number): string {
+  if (typeof confidence !== 'number') return 'n/a';
+  const pct = Math.max(0, Math.min(100, Math.round(confidence * 100)));
+  return `${pct}%`;
+}
+
 // --- Component ---
 
 export function MissionInfo({ missionState, missionHealth, missionEvents, isMobile = false }: MissionInfoProps) {
   const [showSourceInfo, setShowSourceInfo] = useState(false);
-  const { autoFocusEvents, setAutoFocusEvents } = useMissionStore(
+  const { autoFocusEvents, setAutoFocusEvents, estimatedAttitudeEnabled, setEstimatedAttitudeEnabled } = useMissionStore(
     useShallow((state) => ({
       autoFocusEvents: state.autoFocusEvents,
       setAutoFocusEvents: state.setAutoFocusEvents,
+      estimatedAttitudeEnabled: state.estimatedAttitudeEnabled,
+      setEstimatedAttitudeEnabled: state.setEstimatedAttitudeEnabled,
     }))
   );
 
@@ -129,6 +137,20 @@ export function MissionInfo({ missionState, missionHealth, missionEvents, isMobi
               <span className="text-[8px] font-black uppercase tracking-tighter">Auto Focus</span>
               <div className={`w-4 h-2 rounded-full relative ${autoFocusEvents ? 'bg-indigo-500' : 'bg-zinc-700'}`}>
                 <div className={`absolute top-0.5 w-1 h-1 rounded-full bg-white transition-all ${autoFocusEvents ? 'left-2.5' : 'left-0.5'}`} />
+              </div>
+            </button>
+            <button 
+              onClick={() => setEstimatedAttitudeEnabled(!estimatedAttitudeEnabled)}
+              className={`px-2 py-1 rounded border transition-all flex items-center gap-1.5 ${
+                estimatedAttitudeEnabled
+                  ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300'
+                  : 'bg-white/5 border-white/10 text-white/30'
+              }`}
+              title="Estimated Attitude rotation"
+            >
+              <span className="text-[8px] font-black uppercase tracking-tighter">Attitude</span>
+              <div className={`w-4 h-2 rounded-full relative ${estimatedAttitudeEnabled ? 'bg-cyan-500' : 'bg-zinc-700'}`}>
+                <div className={`absolute top-0.5 w-1 h-1 rounded-full bg-white transition-all ${estimatedAttitudeEnabled ? 'left-2.5' : 'left-0.5'}`} />
               </div>
             </button>
             <div className="flex flex-col items-end gap-0.5 text-right">
@@ -211,6 +233,15 @@ export function MissionInfo({ missionState, missionHealth, missionEvents, isMobi
                 {isLive ? `${Math.round(freshnessSeconds)}s old` : 'Static / Replay'}
               </span>
             </div>
+
+            {(missionState.attitudeSource || missionState.referenceFrame) && (
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] text-white/40 uppercase tracking-wider">Attitude</span>
+                <span className="text-[10px] text-white/70 tabular-nums text-right max-w-[170px] truncate">
+                  {(missionState.attitudeSource ?? 'n/a').replace('_', ' ')} | {(missionState.attitudeMode ?? 'n/a').replace('_', ' ')} | {missionState.referenceFrame ?? 'n/a'} | {formatAttitudeConfidence(missionState.attitudeConfidence)}
+                </span>
+              </div>
+            )}
 
             {missionState.lineOfSightStatus === 'lunar_occultation' && (
               <div className="mt-1 flex items-center gap-1.5 px-2 py-1.5 rounded text-[10px] font-black uppercase bg-red-500/20 text-red-400 border border-red-500/30">
@@ -326,6 +357,19 @@ export function MissionInfo({ missionState, missionHealth, missionEvents, isMobi
               <div className={`absolute top-0.5 w-1.5 h-1.5 rounded-full bg-white transition-all ${autoFocusEvents ? 'left-3' : 'left-0.5'}`} />
             </div>
           </button>
+          <button 
+            onClick={() => setEstimatedAttitudeEnabled(!estimatedAttitudeEnabled)}
+            className={`flex items-center gap-2 px-2 py-1 rounded border text-[9px] font-bold uppercase transition-all ${
+              estimatedAttitudeEnabled
+                ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-400'
+                : 'bg-white/5 border-white/10 text-white/30 hover:text-white/50'
+            }`}
+          >
+            <span>Attitude</span>
+            <div className={`w-5 h-2.5 rounded-full relative ${estimatedAttitudeEnabled ? 'bg-cyan-500' : 'bg-zinc-700'}`}>
+              <div className={`absolute top-0.5 w-1.5 h-1.5 rounded-full bg-white transition-all ${estimatedAttitudeEnabled ? 'left-3' : 'left-0.5'}`} />
+            </div>
+          </button>
         </div>
       </div>
 
@@ -398,6 +442,15 @@ export function MissionInfo({ missionState, missionHealth, missionEvents, isMobi
             {isLive ? `${Math.round(freshnessSeconds)} s old` : isReplay ? 'Replay state' : 'Predicted state'}
           </span>
         </div>
+
+        {(missionState.attitudeSource || missionState.referenceFrame) && (
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] text-white/50 uppercase tracking-wider">Attitude</span>
+            <span className="text-[10px] text-white/70 tabular-nums text-right max-w-[190px] truncate">
+              {(missionState.attitudeSource ?? 'n/a').replace('_', ' ')} | {(missionState.attitudeMode ?? 'n/a').replace('_', ' ')} | {missionState.referenceFrame ?? 'n/a'} | {formatAttitudeConfidence(missionState.attitudeConfidence)}
+            </span>
+          </div>
+        )}
 
         {typeof missionState.solarRangeKm === 'number' && (
           <div className="flex justify-between items-center">

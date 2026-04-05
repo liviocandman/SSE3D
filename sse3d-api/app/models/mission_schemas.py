@@ -30,6 +30,22 @@ class MissionLineOfSightStatus(str, Enum):
     CLEAR = "clear"
     LUNAR_OCCULTATION = "lunar_occultation"
 
+class MissionAttitudeSource(str, Enum):
+    CK_SPICE = "CK_SPICE"
+    POLICY_ESTIMATED = "POLICY_ESTIMATED"
+    GEOMETRIC_FALLBACK = "GEOMETRIC_FALLBACK"
+
+class MissionAttitudeFrame(str, Enum):
+    ECLIPJ2000 = "ECLIPJ2000"
+    LVLH_MISSION = "LVLH_MISSION"
+    SCENE = "SCENE"
+
+class MissionAttitudeMode(str, Enum):
+    TAIL_TO_SUN = "TAIL_TO_SUN"
+    BURN_ALIGN = "BURN_ALIGN"
+    SPIN_STABILIZED = "SPIN_STABILIZED"
+    HOLD = "HOLD"
+
 class MissionPosition(BaseModel):
     x: float
     y: float
@@ -44,6 +60,12 @@ class MissionCoordinates(BaseModel):
     x: float
     y: float
     z: float
+
+class MissionQuaternion(BaseModel):
+    x: float
+    y: float
+    z: float
+    w: float
 
 class MissionDistances(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -90,6 +112,13 @@ class MissionStateResponse(BaseModel):
         alias="sceneCoordinates",
         description="Earth-relative position already rotated/mapped into the scene frame, still expressed in km."
     )
+    attitude_quaternion: Optional[MissionQuaternion] = Field(default=None, alias="attitudeQuaternion")
+    inertial_attitude_quaternion: Optional[MissionQuaternion] = Field(default=None, alias="inertialAttitudeQuaternion")
+    lvlh_attitude_quaternion: Optional[MissionQuaternion] = Field(default=None, alias="lvlhAttitudeQuaternion")
+    attitude_source: Optional[MissionAttitudeSource] = Field(default=None, alias="attitudeSource")
+    attitude_mode: Optional[MissionAttitudeMode] = Field(default=None, alias="attitudeMode")
+    attitude_confidence: Optional[float] = Field(default=None, alias="attitudeConfidence")
+    reference_frame: Optional[MissionAttitudeFrame] = Field(default=None, alias="referenceFrame")
     solar_range_km: Optional[float] = Field(default=None, alias="solarRangeKm")
     line_of_sight_status: Optional[MissionLineOfSightStatus] = Field(default=None, alias="lineOfSightStatus")
 

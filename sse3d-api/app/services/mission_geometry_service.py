@@ -1,13 +1,31 @@
 import numpy as np
 import spiceypy as spice
-from typing import Tuple
+from typing import Optional, Tuple
 from loguru import logger
-from app.models.mission_schemas import MissionPosition, MissionVelocity, MissionCoordinates, MissionDistances
+from app.models.mission_schemas import (
+    MissionAttitudeFrame,
+    MissionAttitudeMode,
+    MissionAttitudeSource,
+    MissionCoordinates,
+    MissionDistances,
+    MissionPhase,
+    MissionPosition,
+    MissionQuaternion,
+    MissionVelocity,
+)
+from app.services.mission_attitude_service import compute_policy_attitude_rotation
 
 
 FRAME_ALIASES = {
     "EME2000": "J2000",
 }
+
+CK_FRAME_CANDIDATES = (
+    "ORION_SC_BODY",
+    "ORION_SPACECRAFT",
+    "ORION_MPCV",
+    "ORION",
+)
 
 
 def normalize_spice_frame(frame_name: str) -> str:
@@ -21,6 +39,101 @@ def normalize_spice_frame(frame_name: str) -> str:
     """
     normalized = frame_name.upper()
     return FRAME_ALIASES.get(normalized, normalized)
+
+
+def _normalize(vec: np.ndarray, fallback: np.ndarray) -> np.ndarray:
+    norm = float(np.linalg.norm(vec))
+    if norm <= 1e-9:
+        return fallback
+    return vec / norm
+
+
+def _rotation_matrix_to_quaternion_xyzw(rot_matrix: np.ndarray) -> MissionQuaternion:
+    """Converts a 3x3 rotation matrix to an XYZW quaternion."""
+    m = rot_matrix
+    trace = float(m[0, 0] + m[1, 1] + m[2, 2])
+
+    if trace > 0.0:
+        s = (trace + 1.0) ** 0.5 * 2.0
+        w = 0.25 * s
+        x = (m[2, 1] - m[1, 2]) / s
+        y = (m[0, 2] - m[2, 0]) / s
+        z = (m[1, 0] - m[0, 1]) / s
+    elif m[0, 0] > m[1, 1] and m[0, 0] > m[2, 2]:
+        s = (1.0 + m[0, 0] - m[1, 1] - m[2, 2]) ** 0.5 * 2.0
+        w = (m[2, 1] - m[1, 2]) / s
+        x = 0.25 * s
+        y = (m[0, 1] + m[1, 0]) / s
+        z = (m[0, 2] + m[2, 0]) / s
+    elif m[1, 1] > m[2, 2]:
+        s = (1.0 + m[1, 1] - m[0, 0] - m[2, 2]) ** 0.5 * 2.0
+        w = (m[0, 2] - m[2, 0]) / s
+        x = (m[0, 1] + m[1, 0]) / s
+        y = 0.25 * s
+        z = (m[1, 2] + m[2, 1]) / s
+    else:
+        s = (1.0 + m[2, 2] - m[0, 0] - m[1, 1]) ** 0.5 * 2.0
+        w = (m[1, 0] - m[0, 1]) / s
+        x = (m[0, 2] + m[2, 0]) / s
+        y = (m[1, 2] + m[2, 1]) / s
+        z = 0.25 * s
+
+    quat = np.array([x, y, z, w], dtype=float)
+    quat /= max(float(np.linalg.norm(quat)), 1e-9)
+    return MissionQuaternion(x=float(quat[0]), y=float(quat[1]), z=float(quat[2]), w=float(quat[3]))
+
+
+def _build_rotation_from_prograde_nadir(
+    prograde_vec: np.ndarray,
+    nadir_vec: np.ndarray,
+) -> np.ndarray:
+    x_axis = _normalize(prograde_vec, np.array([1.0, 0.0, 0.0], dtype=float))
+    z_axis = _normalize(nadir_vec, np.array([0.0, 0.0, 1.0], dtype=float))
+
+    y_axis = np.cross(x_axis, z_axis)
+    if float(np.linalg.norm(y_axis)) <= 1e-9:
+        fallback_up = np.array([0.0, 0.0, 1.0], dtype=float)
+        y_axis = np.cross(x_axis, fallback_up)
+    y_axis = _normalize(y_axis, np.array([0.0, 1.0, 0.0], dtype=float))
+
+    # Re-orthogonalize Z so the triad remains right-handed and numerically stable.
+    z_axis = _normalize(np.cross(y_axis, x_axis), np.array([0.0, 0.0, 1.0], dtype=float))
+
+    # Columns are body axes in world coordinates: body->world rotation.
+    return np.column_stack((x_axis, y_axis, z_axis))
+
+
+def _mission_local_basis(earth_pos_eclip: np.ndarray, moon_pos_eclip: np.ndarray) -> np.ndarray:
+    earth_to_moon = moon_pos_eclip - earth_pos_eclip
+    x_axis = _normalize(earth_to_moon, np.array([1.0, 0.0, 0.0], dtype=float))
+
+    ref_up = np.array([0.0, 0.0, 1.0], dtype=float)
+    y_axis = np.cross(ref_up, x_axis)
+    if float(np.linalg.norm(y_axis)) <= 1e-9:
+        ref_up = np.array([0.0, 1.0, 0.0], dtype=float)
+        y_axis = np.cross(ref_up, x_axis)
+    y_axis = _normalize(y_axis, np.array([0.0, 1.0, 0.0], dtype=float))
+
+    z_axis = _normalize(np.cross(x_axis, y_axis), np.array([0.0, 0.0, 1.0], dtype=float))
+    return np.column_stack((x_axis, y_axis, z_axis))
+
+
+def _to_scene_vector(vec: np.ndarray) -> np.ndarray:
+    return np.array([vec[0], vec[2], -vec[1]], dtype=float)
+
+
+def _try_ck_body_to_inertial(et: float) -> Optional[np.ndarray]:
+    for frame_name in CK_FRAME_CANDIDATES:
+        try:
+            frame_code = spice.namfrm(frame_name)
+            if frame_code == 0:
+                continue
+            rot = spice.pxform(frame_name, "ECLIPJ2000", et)
+            logger.debug(f"Mission attitude CK frame resolved: {frame_name}")
+            return np.array(rot, dtype=float)
+        except Exception:
+            continue
+    return None
 
 def transform_to_eclipj2000(
     position: MissionPosition, 
@@ -193,3 +306,98 @@ def enrich_mission_geometry(
     distances = MissionDistances(earthKm=earth_dist, moonKm=moon_dist)
     
     return global_coords, mission_coords, scene_coords, distances
+
+
+def compute_mission_attitude(
+    *,
+    orion_pos: MissionPosition,
+    orion_vel: MissionVelocity,
+    phase: MissionPhase,
+    input_frame: str,
+    input_origin: str,
+    et: float,
+    earth_pos_eclip: Optional[np.ndarray] = None,
+    moon_pos_eclip: Optional[np.ndarray] = None,
+) -> dict:
+    """
+    Computes Orion attitude with source priority:
+    1) CK/SPICE frame transform if available and valid.
+    2) Geometric fallback using prograde+nadir construction.
+
+    Returns quaternions for scene rendering and explicit inertial/LVLH references.
+    """
+    rel_pos_eclip, rel_vel_eclip = transform_to_eclipj2000(orion_pos, orion_vel, input_frame, et)
+    relative_orion = np.array([rel_pos_eclip.x, rel_pos_eclip.y, rel_pos_eclip.z], dtype=float)
+    velocity_vec = np.array([rel_vel_eclip.x, rel_vel_eclip.y, rel_vel_eclip.z], dtype=float)
+
+    if input_origin.upper() == "EARTH":
+        earth_relative_orion = relative_orion
+        orion_global = (earth_pos_eclip + relative_orion) if earth_pos_eclip is not None else relative_orion
+    else:
+        orion_global = relative_orion
+        earth_relative_orion = (
+            relative_orion - earth_pos_eclip
+            if earth_pos_eclip is not None
+            else relative_orion
+        )
+
+    body_to_eclip = _try_ck_body_to_inertial(et)
+    attitude_mode = MissionAttitudeMode.HOLD
+    if body_to_eclip is not None:
+        attitude_source = MissionAttitudeSource.CK_SPICE
+        attitude_confidence = 0.98
+    else:
+        earth_nadir = -earth_relative_orion
+        moon_nadir = None
+        if moon_pos_eclip is not None:
+            moon_nadir = moon_pos_eclip - orion_global
+
+        sun_to_orion = orion_global
+
+        try:
+            body_to_eclip, attitude_mode, attitude_confidence = compute_policy_attitude_rotation(
+                phase=phase,
+                et=et,
+                velocity_vec=velocity_vec,
+                earth_nadir_vec=earth_nadir,
+                sun_to_orion_vec=sun_to_orion,
+                moon_nadir_vec=moon_nadir,
+            )
+            attitude_source = MissionAttitudeSource.POLICY_ESTIMATED
+        except Exception:
+            nadir_vec = earth_nadir
+            if moon_nadir is not None:
+                if float(np.linalg.norm(moon_nadir)) < float(np.linalg.norm(earth_nadir)):
+                    nadir_vec = moon_nadir
+            body_to_eclip = _build_rotation_from_prograde_nadir(velocity_vec, nadir_vec)
+            attitude_source = MissionAttitudeSource.GEOMETRIC_FALLBACK
+            attitude_mode = MissionAttitudeMode.HOLD
+            attitude_confidence = 0.45
+
+    inertial_quat = _rotation_matrix_to_quaternion_xyzw(body_to_eclip)
+
+    if earth_pos_eclip is not None and moon_pos_eclip is not None:
+        lvlh_basis = _mission_local_basis(earth_pos_eclip, moon_pos_eclip)
+        eclip_to_lvlh = lvlh_basis.T
+        body_to_lvlh = eclip_to_lvlh @ body_to_eclip
+    else:
+        body_to_lvlh = np.identity(3)
+    lvlh_quat = _rotation_matrix_to_quaternion_xyzw(body_to_lvlh)
+
+    # Frontend renders in scene frame, so provide a render-ready quaternion.
+    scene_axes = np.column_stack((
+        _to_scene_vector(body_to_eclip[:, 0]),
+        _to_scene_vector(body_to_eclip[:, 1]),
+        _to_scene_vector(body_to_eclip[:, 2]),
+    ))
+    scene_quat = _rotation_matrix_to_quaternion_xyzw(scene_axes)
+
+    return {
+        "attitude_quaternion": scene_quat,
+        "inertial_attitude_quaternion": inertial_quat,
+        "lvlh_attitude_quaternion": lvlh_quat,
+        "attitude_source": attitude_source,
+        "attitude_mode": attitude_mode,
+        "attitude_confidence": attitude_confidence,
+        "reference_frame": MissionAttitudeFrame.ECLIPJ2000,
+    }

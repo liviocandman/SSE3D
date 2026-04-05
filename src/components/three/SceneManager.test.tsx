@@ -130,6 +130,7 @@ describe('SceneManager / SceneContent', () => {
         selectedMissionTargetId: null,
         setSelectedMissionTargetId,
         autoFocusEvents: false,
+        estimatedAttitudeEnabled: true,
       })
     );
 
@@ -154,6 +155,7 @@ describe('SceneManager / SceneContent', () => {
         selectedMissionTargetId: null,
         setSelectedMissionTargetId,
         autoFocusEvents: false,
+        estimatedAttitudeEnabled: true,
       })
     );
 
@@ -197,6 +199,7 @@ describe('SceneManager / SceneContent', () => {
         selectedMissionTargetId: null,
         setSelectedMissionTargetId,
         autoFocusEvents: false,
+        estimatedAttitudeEnabled: true,
       })
     );
 
@@ -234,6 +237,7 @@ describe('SceneManager / SceneContent', () => {
         selectedMissionTargetId: null,
         setSelectedMissionTargetId,
         autoFocusEvents: true,
+        estimatedAttitudeEnabled: true,
       })
     );
 
@@ -279,6 +283,7 @@ describe('SceneManager / SceneContent', () => {
         selectedMissionTargetId: null,
         setSelectedMissionTargetId,
         autoFocusEvents: true,
+        estimatedAttitudeEnabled: true,
       });
 
     const solarSelectorImpl = (currentTimeIso: string) => (selector: any) =>
@@ -357,6 +362,7 @@ describe('SceneManager / SceneContent', () => {
         selectedMissionTargetId: null,
         setSelectedMissionTargetId,
         autoFocusEvents: false,
+        estimatedAttitudeEnabled: true,
       })
     );
 

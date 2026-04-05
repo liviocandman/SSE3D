@@ -8,6 +8,26 @@ vi.mock('three', () => {
     Group: class {},
     Mesh: class {},
     Sprite: class {},
+    Quaternion: class {
+      x = 0;
+      y = 0;
+      z = 0;
+      w = 1;
+      setFromEuler() { return this; }
+      set(x: number, y: number, z: number, w: number) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+        this.w = w;
+        return this;
+      }
+      normalize() { return this; }
+      multiply() { return this; }
+      copy() { return this; }
+    },
+    Euler: class {
+      constructor(public x: number, public y: number, public z: number) {}
+    },
     Vector3: class {
       x = 0;
       y = 0;
@@ -24,6 +44,7 @@ vi.mock('three', () => {
     CanvasTexture: class {},
     MathUtils: {
       degToRad: (value: number) => (value * Math.PI) / 180,
+      clamp: (value: number, min: number, max: number) => Math.min(max, Math.max(min, value)),
     },
     DoubleSide: 2,
   };
