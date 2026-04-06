@@ -3,13 +3,15 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { PlanetInfo } from "./PlanetInfo";
+import { MissionInfo } from "./MissionInfo";
 import { AstronomerModal } from "./AstronomerModal";
 import { AuthModal } from "./AuthModal";
 import { FavoritesModal } from "./FavoritesModal";
 import { useSolarStore } from "@/store/solarStore";
+import { useMissionStore } from "@/store/missionStore";
 import { useUIStore } from "@/store/uiStore";
 import { useShallow } from "zustand/react/shallow";
-import { ChevronLeft, ChevronRight, Heart } from "lucide-react";
+import { ChevronLeft, ChevronRight, Heart, Rocket } from "lucide-react";
 import { useFavorites } from "@/hooks/useFavorites";
 import { TimeTravelControls } from "./TimeTravelControls";
 
@@ -66,35 +68,66 @@ export function HUD({
 }: HUDProps) {
   const isMobile = useIsMobile();
   
-  const { selectedPlanet, viewMode, toggleViewMode } = useSolarStore(
+  const { selectedPlanet, viewMode, toggleViewMode, setSelectedPlanet } = useSolarStore(
     useShallow((state) => ({
       selectedPlanet: state.selectedPlanet,
       viewMode: state.viewMode,
       toggleViewMode: state.toggleViewMode,
+      setSelectedPlanet: state.setSelectedPlanet,
+    }))
+  );
+
+  const { 
+    missionState, 
+    missionHealth, 
+    missionEvents, 
+    selectedMissionTargetId, 
+    setSelectedMissionTargetId 
+  } = useMissionStore(
+    useShallow((state) => ({
+      missionState: state.missionState,
+      missionHealth: state.missionHealth,
+      missionEvents: state.missionEvents,
+      selectedMissionTargetId: state.selectedMissionTargetId,
+      setSelectedMissionTargetId: state.setSelectedMissionTargetId,
     }))
   );
 
   const openFavorites = useUIStore((state) => state.openFavorites);
   const { data: favorites = [] } = useFavorites();
   const [isAstronomerOpen, setIsAstronomerOpen] = useState(false);
-  // Start expanded if planet is already selected, otherwise collapsed
-  const [isExpanded, setIsExpanded] = useState(() => !!selectedPlanet);
+  // Start expanded if planet or mission is already selected, otherwise collapsed
+  const [isExpanded, setIsExpanded] = useState(() => !!selectedPlanet || !!selectedMissionTargetId);
   const [isMinimized, setIsMinimized] = useState(false);
+  const missionVehicleId = missionState?.vehicleId ?? null;
+  const isMissionSelected = !!missionVehicleId && selectedMissionTargetId === missionVehicleId;
 
   const toggleExpand = () => {
     setIsExpanded(!isExpanded);
   };
 
-  // Always reopen the desktop drawer when a different planet is selected.
+  // Always reopen the desktop drawer when a different planet or mission is selected.
   useEffect(() => {
-    if (!isMobile && selectedPlanet?.bodyId) {
+    if (!isMobile && (selectedPlanet?.bodyId || selectedMissionTargetId)) {
       setIsMinimized(false);
     }
-  }, [isMobile, selectedPlanet?.bodyId]);
+  }, [isMobile, selectedPlanet?.bodyId, selectedMissionTargetId]);
 
-  const accentClass = selectedPlanet
-    ? getPlanetAccentClass(selectedPlanet.bodyId)
-    : "border-white/10 shadow-black/40";
+  const handleMissionToggle = () => {
+    if (selectedMissionTargetId) {
+      setSelectedMissionTargetId(null);
+    } else if (missionVehicleId) {
+      setSelectedPlanet(null);
+      setSelectedMissionTargetId(missionVehicleId);
+    }
+  };
+  const missionToggleDisabled = !missionVehicleId;
+
+  const accentClass = isMissionSelected
+    ? "border-blue-500 shadow-blue-500/20"
+    : selectedPlanet
+      ? getPlanetAccentClass(selectedPlanet.bodyId)
+      : "border-white/10 shadow-black/40";
 
   const hudContent = (
     <div className="space-y-6 pt-2">
@@ -112,6 +145,21 @@ export function HUD({
               </span>
             )}
           </button>
+
+          <button
+            onClick={handleMissionToggle}
+            className={`inline-flex items-center gap-1.5 px-2 py-1 border rounded-md text-[10px] font-bold uppercase transition-all ${
+              isMissionSelected 
+                ? 'bg-blue-600 border-blue-400 text-white shadow-[0_0_10px_rgba(37,99,235,0.5)]' 
+                : 'bg-zinc-800/50 border-white/10 text-zinc-400 hover:bg-zinc-700/50 hover:border-white/20'
+            }`}
+            title={missionToggleDisabled ? "Mission data unavailable" : "Toggle Mission Context"}
+            disabled={missionToggleDisabled}
+          >
+            <Rocket size={12} className={isMissionSelected ? 'animate-pulse' : ''} />
+            <span>Mission</span>
+          </button>
+
           <button
             onClick={toggleViewMode}
             className="inline-flex items-center gap-1 px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-md text-[10px] font-bold text-blue-400 uppercase transition-colors"
@@ -135,12 +183,21 @@ export function HUD({
         )}
       </div>
 
-      {/* Planet Info */}
-      <PlanetInfo
-        planet={selectedPlanet}
-        earthPosition={earthPosition}
-        onAskAstronomer={() => setIsAstronomerOpen(true)}
-      />
+      {/* Info Routing */}
+      {isMissionSelected ? (
+        <MissionInfo 
+          missionState={missionState}
+          missionHealth={missionHealth}
+          missionEvents={missionEvents}
+          isMobile={isMobile}
+        />
+      ) : (
+        <PlanetInfo
+          planet={selectedPlanet}
+          earthPosition={earthPosition}
+          onAskAstronomer={() => setIsAstronomerOpen(true)}
+        />
+      )}
     </div>
   );
 
@@ -175,7 +232,7 @@ export function HUD({
               onClick={toggleExpand}
             >
               <span className="font-semibold text-lg tracking-tight">
-                {selectedPlanet ? selectedPlanet.englishName : "Solar Explorer"}
+                {isMissionSelected ? "Artemis II" : selectedPlanet ? selectedPlanet.englishName : "Solar Explorer"}
               </span>
               <span className="text-xs font-medium text-white/50 uppercase tracking-widest">
                 Tap to explore
@@ -209,7 +266,7 @@ export function HUD({
         initial={false}
         animate={{
           x: isMinimized ? "calc(100% - 48px)" : 0,
-          opacity: selectedPlanet ? 1 : 0.95,
+          opacity: (selectedPlanet || isMissionSelected) ? 1 : 0.95,
         }}
         transition={{ type: "spring", stiffness: 320, damping: 34 }}
         className={`fixed top-4 right-0 bottom-4 w-80 glass-panel rounded-l-2xl z-100 flex flex-col overflow-hidden hardware-accel border-l-2 ${accentClass}`}
@@ -227,7 +284,7 @@ export function HUD({
         {/* Header */}
         <div className="p-6 pb-4 border-b border-white/10 flex items-center justify-between">
           <h1 className="text-sm font-bold text-white/70 tracking-[0.15em] uppercase">
-            Solar Explorer
+            {isMissionSelected ? "Mission Control" : "Solar Explorer"}
           </h1>
           <div className="flex items-center gap-1.5">
             {/* Favorites Toggle */}
@@ -243,6 +300,21 @@ export function HUD({
                 </span>
               )}
             </button>
+
+            {/* Mission Toggle */}
+            <button
+              onClick={handleMissionToggle}
+              className={`p-1.5 border rounded-md transition-all ${
+                isMissionSelected 
+                  ? 'bg-blue-600 border-blue-400 text-white shadow-[0_0_10px_rgba(37,99,235,0.5)]' 
+                  : 'bg-zinc-800/50 border-white/10 text-zinc-400 hover:bg-zinc-700/50 hover:border-white/20'
+              }`}
+              title={missionToggleDisabled ? "Mission data unavailable" : "Mission Context"}
+              disabled={missionToggleDisabled}
+            >
+              <Rocket size={14} />
+            </button>
+
             {/* Scale Toggle Button */}
             <button
               onClick={toggleViewMode}

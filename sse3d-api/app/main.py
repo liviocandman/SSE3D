@@ -9,7 +9,7 @@ from loguru import logger
 
 from app.core.config import settings
 from app.core.database import init_db
-from app.routers import ephemeris, astronomer, users
+from app.routers import ephemeris, astronomer, users, missions
 from app.services.spice_kernel_manager import (
     get_spice_runtime_status,
     initialize_spice_kernels,
@@ -51,17 +51,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-origins = [
-    "http://localhost:3000",          
-    "https://sse3d.vercel.app",       
-]
 # Compression Middleware
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
+    allow_origins=settings.allowed_origins,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -103,6 +99,7 @@ async def request_error_handler(request: Request, exc: httpx.RequestError):
 app.include_router(ephemeris.router, prefix="/api")
 app.include_router(astronomer.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
+app.include_router(missions.router, prefix="/api")
 
 
 @app.get("/health")

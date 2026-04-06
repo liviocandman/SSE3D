@@ -49,9 +49,9 @@ const MID_TIER_SETTINGS: QualitySettings = {
 const LOW_TIER_SETTINGS: QualitySettings = {
   tier: 'low',
   textureResolution: 1024,
-  shadowsEnabled: false,
-  shadowType: 'none',
-  antialias: false,
+  shadowsEnabled: true,
+  shadowType: 'basic',
+  antialias: true,
   devicePixelRatio: 1,
 };
 
@@ -137,7 +137,7 @@ interface QualityTierProviderProps {
 
 export function QualityTierProvider({ children }: QualityTierProviderProps) {
   // Use state to ensure detection only happens once on client
-  const [tier] = useState<QualityTier>(() => 
+  const [tier] = useState<QualityTier>(() =>
     typeof window === 'undefined' ? 'mid' : detectQualityTier()
   );
 

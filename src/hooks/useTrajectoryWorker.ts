@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import type { EphemerisData } from "../lib/types";
-import { API_BASE_URL } from "@/lib/api";
+
 interface WorkerRequest {
   resolve: (data: EphemerisData[]) => void;
   reject: (reason: unknown) => void;
@@ -77,7 +77,7 @@ export function useTrajectoryWorker() {
             spanDays,
             ids,
             tier,
-            origin: API_BASE_URL,
+            origin: "",
           },
         });
       });

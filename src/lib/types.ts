@@ -58,6 +58,14 @@ export interface EphemerisResponse {
   };
 }
 
+export const MISSION_CONFIG = {
+  // Mission attitude flags are product decisions, not environment secrets.
+  // Keep them as booleans here so the frontend does not depend on deploy-time env parsing.
+  ENABLE_ATTITUDE: true,
+  ENABLE_POLICY_ATTITUDE: true,
+  ENABLE_SPIN_MODE: true,
+} as const;
+
 // Body ID constants - same as nasaClient
 export const BODY_IDS = {
   SUN: '10',

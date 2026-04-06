@@ -17,6 +17,26 @@ class Settings(BaseSettings):
     nextauth_secret: str = ""
     bff_jwt_secret: str = ""
 
+    # AROW Live Mission configuration
+    arow_live_enabled: bool = True
+    arow_live_url: str = "https://www.nasa.gov/specials/trackartemis/data/trackartemis_locations.json"
+    arow_timeout_seconds: float = 5.0
+    arow_cache_ttl_seconds: int = 20
+    arow_stale_warning_seconds: int = 300
+    arow_stale_fallback_seconds: int = 600
+    arow_user_agent: str = "SolarExplore3D/1.0"
+    arow_retry_count: int = 1
+    arow_input_frame: str = "J2000"
+    arow_position_origin: str = "EARTH"
+    mission_oem_enabled: bool = True
+    mission_oem_path: str = ""
+    mission_oem_url: str = ""
+    mission_oem_cache_dir: str = ".cache/mission_oem"
+    mission_oem_refresh_seconds: int = 900
+    mission_oem_download_timeout_seconds: float = 15.0
+    mission_policy_spin_enabled: bool = True
+    mission_policy_tail_to_sun_spin_rate_deg_per_sec: float = 0.25
+
     # SPICE kernel configuration
     spice_enabled: bool = True
     spice_strict_kernels: bool = False

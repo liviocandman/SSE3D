@@ -1,7 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { getMoonOrbitScale, MOON_ORBIT_PADDING, getRadius, KM_TO_UNIT } from './scales';
+import { getMoonOrbitScale, MOON_ORBIT_PADDING, getRadius, KM_TO_UNIT, SPACECRAFT_RADIUS_KM } from './scales';
 
 describe('scales', () => {
+  describe('getRadius - SPACECRAFT', () => {
+    it('should handle SPACECRAFT body class in didactic mode without inflating', () => {
+      const radius = getRadius('orion', 'SPACECRAFT', 'didactic');
+      expect(radius).toBe(SPACECRAFT_RADIUS_KM * KM_TO_UNIT);
+    });
+
+    it('should handle SPACECRAFT body class in realistic mode', () => {
+      const radius = getRadius('orion', 'SPACECRAFT', 'realistic');
+      expect(radius).toBe(SPACECRAFT_RADIUS_KM * KM_TO_UNIT);
+    });
+  });
+
   describe('getMoonOrbitScale', () => {
     it('should return 1 in realistic mode', () => {
       const scale = getMoonOrbitScale('399', 'ROCKY_PLANET', 384400, 'realistic');

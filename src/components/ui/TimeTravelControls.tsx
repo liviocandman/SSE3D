@@ -8,6 +8,7 @@ import {
   RotateCcw
 } from 'lucide-react';
 import { useSolarStore } from '@/store/solarStore';
+import { useMissionStore } from '@/store/missionStore';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -40,12 +41,20 @@ export function TimeTravelControls() {
     currentDate, 
     isPlaying, 
     setIsPlaying, 
-    setCurrentDate
+    setCurrentDate,
+    setCurrentTime
   } = useSolarStore(useShallow(s => ({
     currentDate: s.currentDate,
     isPlaying: s.isPlaying,
     setIsPlaying: s.setIsPlaying,
     setCurrentDate: s.setCurrentDate,
+    setCurrentTime: s.setCurrentTime,
+  })));
+
+  const { isLive, setIsLive, liveTimestamp } = useMissionStore(useShallow(s => ({
+    isLive: s.isLive,
+    setIsLive: s.setIsLive,
+    liveTimestamp: s.liveTimestamp,
   })));
 
   const [localDate, setLocalDate] = useState(currentDate);
@@ -54,17 +63,35 @@ export function TimeTravelControls() {
     setLocalDate(currentDate);
   }, [currentDate]);
 
-  const togglePlay = () => setIsPlaying(!isPlaying);
+  const exitLive = () => {
+    if (isLive) {
+      setIsLive(false);
+    }
+  };
+
+  const togglePlay = () => {
+    exitLive();
+    setIsPlaying(!isPlaying);
+  };
 
   const handleDateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    exitLive();
     setCurrentDate(localDate);
   };
 
   const resetTime = () => {
+    exitLive();
     const today = new Date().toISOString().split('T')[0];
     setCurrentDate(today);
     setIsPlaying(false);
+  };
+
+  const handleGoLive = () => {
+    if (liveTimestamp) {
+      setIsLive(true);
+      setCurrentTime(new Date(liveTimestamp));
+    }
   };
 
   return (
@@ -79,11 +106,28 @@ export function TimeTravelControls() {
       onTouchMove={(e) => e.stopPropagation()}
     >
       {/* Date Display */}
-      <div className="glass-panel px-4 py-2 flex items-center gap-4 text-white/90 animate-in fade-in slide-in-from-bottom-4">
+      <div className="glass-panel px-4 py-2 flex items-center gap-4 text-white/90 animate-in fade-in slide-in-from-bottom-4 relative group">
         <div className="flex items-center gap-2">
           <Calendar className="w-4 h-4 text-blue-400" />
           <ClockDisplay />
         </div>
+
+        <div className="h-4 w-[1px] bg-white/10" />
+
+        <button
+          onClick={handleGoLive}
+          disabled={!liveTimestamp}
+          className={cn(
+            "px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all flex items-center gap-1",
+            isLive 
+              ? "bg-green-500 text-white shadow-[0_0_10px_rgba(34,197,94,0.5)]" 
+              : "bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/80",
+            !liveTimestamp && "opacity-50 cursor-not-allowed"
+          )}
+        >
+          <span className={cn("w-1.5 h-1.5 rounded-full bg-current", isLive && "animate-pulse")} />
+          Live
+        </button>
       </div>
 
       {/* Main Controls Panel */}
