@@ -8,7 +8,7 @@ export async function GET() {
   const url = `${pythonUrl}/api/missions/artemis2/health`;
 
   try {
-    const res = await fetch(url, { next: { revalidate: 0 } });
+    const res = await fetch(url, { cache: 'no-store' });
 
     if (!res.ok) {
       return NextResponse.json(

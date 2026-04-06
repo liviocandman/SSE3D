@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   const url = `${pythonUrl}/api/missions/artemis2/trajectory${at ? `?at=${encodeURIComponent(at)}` : ''}`;
 
   try {
-    const res = await fetch(url, { next: { revalidate: 0 } });
+    const res = await fetch(url, { cache: 'no-store' });
 
     if (!res.ok) {
       return NextResponse.json(

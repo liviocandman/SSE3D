@@ -157,10 +157,19 @@ export async function fetchMissionTrajectory(
   );
 }
 
-export async function fetchMissionEvents(options?: MissionRequestOptions): Promise<MissionEventsResponse> {
+export async function fetchMissionEvents(
+  at?: string,
+  options?: MissionRequestOptions
+): Promise<MissionEventsResponse> {
+  const params = new URLSearchParams();
+  if (at) {
+    params.set('at', at);
+  }
+  const query = params.toString();
+
   return fetchJsonWithRetry<MissionEventsResponse>(
-    '/api/missions/artemis2/events',
-    'mission-events',
+    `/api/missions/artemis2/events${query ? `?${query}` : ''}`,
+    `mission-events:${query || 'live'}`,
     options
   );
 }

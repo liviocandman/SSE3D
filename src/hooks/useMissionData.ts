@@ -106,7 +106,8 @@ export function useMissionData() {
     const fetchEvents = async () => {
       if (!isMounted) return;
       try {
-        const data = await withAbortController((options) => fetchMissionEvents(options));
+        const atParam = getReplayTimestampParam();
+        const data = await withAbortController((options) => fetchMissionEvents(atParam, options));
         if (isMounted) {
           setMissionEvents(data);
         }

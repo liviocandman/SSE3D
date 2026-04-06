@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const res = await fetch(url.toString(), { next: { revalidate: 0 } });
+    const res = await fetch(url.toString(), { cache: 'no-store' });
 
     if (!res.ok) {
       return NextResponse.json(

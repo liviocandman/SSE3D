@@ -5,6 +5,7 @@ from loguru import logger
 from app.models.mission_schemas import (
     MissionStateResponse,
     MissionTrajectoryResponse,
+    MissionEventsResponse,
     MissionHealthResponse,
     MissionPhase,
     MissionDataSource,
@@ -14,7 +15,8 @@ from app.models.mission_schemas import (
     MissionDistances,
     MissionCoordinates,
     MissionTrajectoryPoint,
-    MissionTrajectorySegment
+    MissionTrajectorySegment,
+    MissionEvent,
 )
 from app.core.config import settings
 from app.services.mission_arow_client import AROWClient
@@ -42,6 +44,15 @@ MOON_MEAN_RADIUS_KM = 1_737.4
 _last_source: Optional[MissionDataSource] = None
 _last_fallback_state: Optional[bool] = None
 _last_stale_state: bool = False
+_events_cache_signature: Optional[tuple[str, str, int]] = None
+_events_cache: Optional[list[MissionEvent]] = None
+
+MISSION_LAUNCH_TIMESTAMP = "2026-04-01T14:00:00Z"
+MISSION_TLI_TIMESTAMP = "2026-04-01T16:30:00Z"
+DEFAULT_LUNAR_FLYBY_TIMESTAMP = "2026-04-05T08:00:00Z"
+DEFAULT_SPLASHDOWN_TIMESTAMP = "2026-04-11T18:00:00Z"
+LUNAR_FLYBY_WINDOW_HOURS = 6
+REENTRY_LEAD_HOURS = 2
 
 
 async def get_health() -> MissionHealthResponse:
@@ -125,6 +136,206 @@ def _resolve_orion_state_from_oem(timestamp: str):
         "input_frame": "EME2000",
         "input_origin": "EARTH",
     }
+
+
+def _format_iso_z(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _format_mission_elapsed_time(timestamp: str) -> str:
+    current_dt = _parse_split_timestamp(timestamp)
+    launch_dt = _parse_split_timestamp(MISSION_LAUNCH_TIMESTAMP)
+    if current_dt <= launch_dt:
+        return "0-00:00:00"
+
+    total_seconds = int((current_dt - launch_dt).total_seconds())
+    days, rem = divmod(total_seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, seconds = divmod(rem, 60)
+    return f"{days}-{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def _derive_lunar_flyby_timestamp(ephemeris) -> str:
+    if not settings.spice_enabled:
+        return DEFAULT_LUNAR_FLYBY_TIMESTAMP
+
+    states = mission_oem_service.get_states_between(
+        ephemeris.metadata.start_time,
+        ephemeris.metadata.stop_time,
+        max_points=1500,
+        use_adaptive=True,
+    )
+    if not states:
+        return DEFAULT_LUNAR_FLYBY_TIMESTAMP
+
+    best_timestamp = DEFAULT_LUNAR_FLYBY_TIMESTAMP
+    best_distance = float("inf")
+    input_frame = ephemeris.metadata.ref_frame or "EME2000"
+
+    for state in states:
+        timestamp = state.timestamp if state.timestamp.endswith("Z") else f"{state.timestamp}Z"
+        geo_data = compute_mission_relative_geometry(timestamp)
+        if not geo_data:
+            continue
+
+        rotated_pos, _ = transform_to_eclipj2000(state.position, state.velocity, input_frame, geo_data["et"])
+        moon_rel_eclip = geo_data["moon_pos"] - geo_data["earth_pos"]
+        dx = rotated_pos.x - float(moon_rel_eclip[0])
+        dy = rotated_pos.y - float(moon_rel_eclip[1])
+        dz = rotated_pos.z - float(moon_rel_eclip[2])
+        distance = float((dx ** 2 + dy ** 2 + dz ** 2) ** 0.5)
+
+        if distance < best_distance:
+            best_distance = distance
+            best_timestamp = timestamp
+
+    return best_timestamp
+
+
+def _build_mission_events() -> list[MissionEvent]:
+    global _events_cache_signature, _events_cache
+
+    ephemeris = mission_oem_service.get_ephemeris()
+    if ephemeris and ephemeris.states:
+        signature = (
+            ephemeris.metadata.start_time,
+            ephemeris.metadata.stop_time,
+            len(ephemeris.states),
+            1 if settings.spice_enabled else 0,
+        )
+        if _events_cache_signature == signature and _events_cache is not None:
+            return _events_cache
+
+        launch_dt = _parse_split_timestamp(MISSION_LAUNCH_TIMESTAMP)
+        tli_dt = _parse_split_timestamp(MISSION_TLI_TIMESTAMP)
+        flyby_dt = _parse_split_timestamp(_derive_lunar_flyby_timestamp(ephemeris))
+        splashdown_dt = _parse_split_timestamp(ephemeris.metadata.stop_time)
+    else:
+        signature = (
+            MISSION_LAUNCH_TIMESTAMP,
+            DEFAULT_SPLASHDOWN_TIMESTAMP,
+            0,
+            1 if settings.spice_enabled else 0,
+        )
+        if _events_cache_signature == signature and _events_cache is not None:
+            return _events_cache
+
+        launch_dt = _parse_split_timestamp(MISSION_LAUNCH_TIMESTAMP)
+        tli_dt = _parse_split_timestamp(MISSION_TLI_TIMESTAMP)
+        flyby_dt = _parse_split_timestamp(DEFAULT_LUNAR_FLYBY_TIMESTAMP)
+        splashdown_dt = _parse_split_timestamp(DEFAULT_SPLASHDOWN_TIMESTAMP)
+
+    reentry_dt = splashdown_dt
+    if splashdown_dt > flyby_dt:
+        candidate = splashdown_dt.timestamp() - REENTRY_LEAD_HOURS * 3600
+        reentry_dt = datetime.fromtimestamp(max(candidate, flyby_dt.timestamp() + 3600), tz=timezone.utc)
+
+    events = [
+        MissionEvent(
+            id="launch",
+            name="Launch",
+            description="SLS launch from KSC",
+            timestamp=_format_iso_z(launch_dt),
+            phase=MissionPhase.LAUNCH,
+            isCompleted=False,
+        ),
+        MissionEvent(
+            id="tli",
+            name="Trans-Lunar Injection",
+            description="ICPS TLI burn",
+            timestamp=_format_iso_z(tli_dt),
+            phase=MissionPhase.EARTH_DEPARTURE,
+            isCompleted=False,
+        ),
+        MissionEvent(
+            id="lunar-flyby",
+            name="Lunar Flyby",
+            description="Closest approach to Moon",
+            timestamp=_format_iso_z(flyby_dt),
+            phase=MissionPhase.LUNAR_FLYBY,
+            isCompleted=False,
+        ),
+        MissionEvent(
+            id="reentry",
+            name="Reentry Interface",
+            description="Earth return entry corridor",
+            timestamp=_format_iso_z(reentry_dt),
+            phase=MissionPhase.REENTRY,
+            isCompleted=False,
+        ),
+        MissionEvent(
+            id="splashdown",
+            name="Splashdown",
+            description="Mission end and recovery",
+            timestamp=_format_iso_z(splashdown_dt),
+            phase=MissionPhase.SPLASHDOWN,
+            isCompleted=False,
+        ),
+    ]
+
+    _events_cache_signature = signature
+    _events_cache = events
+    return events
+
+
+def _derive_current_phase(reference_dt: datetime, events: list[MissionEvent]) -> MissionPhase:
+    event_times = {event.id: _parse_split_timestamp(event.timestamp) for event in events}
+    launch_dt = event_times["launch"]
+    tli_dt = event_times["tli"]
+    flyby_dt = event_times["lunar-flyby"]
+    reentry_dt = event_times["reentry"]
+    splashdown_dt = event_times["splashdown"]
+    flyby_window_start = datetime.fromtimestamp(
+        flyby_dt.timestamp() - LUNAR_FLYBY_WINDOW_HOURS * 3600,
+        tz=timezone.utc,
+    )
+    flyby_window_end = datetime.fromtimestamp(
+        flyby_dt.timestamp() + LUNAR_FLYBY_WINDOW_HOURS * 3600,
+        tz=timezone.utc,
+    )
+
+    if reference_dt < launch_dt:
+        return MissionPhase.LAUNCH
+    if reference_dt < tli_dt:
+        return MissionPhase.EARTH_DEPARTURE
+    if reference_dt < flyby_window_start:
+        return MissionPhase.TRANSLUNAR_COAST
+    if reference_dt <= flyby_window_end:
+        return MissionPhase.LUNAR_FLYBY
+    if reference_dt < reentry_dt:
+        return MissionPhase.RETURN_COAST
+    if reference_dt < splashdown_dt:
+        return MissionPhase.REENTRY
+    return MissionPhase.SPLASHDOWN
+
+
+def get_mission_events(at: Optional[str] = None) -> MissionEventsResponse:
+    events = _build_mission_events()
+    reference_dt = _parse_split_timestamp(at)
+    current_phase = _derive_current_phase(reference_dt, events)
+
+    resolved_events: list[MissionEvent] = []
+    next_event: Optional[MissionEvent] = None
+    for event in events:
+        completed = _parse_split_timestamp(event.timestamp) <= reference_dt
+        resolved = MissionEvent(
+            id=event.id,
+            name=event.name,
+            description=event.description,
+            timestamp=event.timestamp,
+            phase=event.phase,
+            isCompleted=completed,
+        )
+        resolved_events.append(resolved)
+        if next_event is None and not completed:
+            next_event = resolved
+
+    return MissionEventsResponse(
+        missionId=ARTEMIS2_ID,
+        events=resolved_events,
+        currentPhase=current_phase,
+        nextEvent=next_event,
+    )
 
 
 def _norm_km(position: MissionPosition) -> float:
@@ -292,6 +503,8 @@ async def get_live_mission_state() -> MissionStateResponse:
     # 1. Check Cache
     state, _ = await cache_service.get_live_state()
     if state:
+        state.phase = get_mission_events(state.source_timestamp).current_phase
+        state.mission_elapsed_time = _format_mission_elapsed_time(state.source_timestamp)
         is_stale = state.staleness_seconds > 60
         fallback_active = state.mode == "predicted" or state.source == MissionDataSource.SPICE_PREDICTED
         _log_source_transition(state.source, fallback_active, is_stale)
@@ -313,6 +526,8 @@ async def get_live_mission_state() -> MissionStateResponse:
         if oem_state:
             live_state.position = oem_state["position"]
             live_state.velocity = oem_state["velocity"]
+        live_state.phase = get_mission_events(live_state.source_timestamp).current_phase
+        live_state.mission_elapsed_time = _format_mission_elapsed_time(live_state.source_timestamp)
 
         # Orion must always expose a single Earth-relative render coordinate to the frontend,
         # even when the full SPICE enrichment path is unavailable.
@@ -387,6 +602,7 @@ async def get_live_mission_state() -> MissionStateResponse:
 
 def get_predicted_fallback_state() -> MissionStateResponse:
     now = datetime.now(timezone.utc).isoformat()
+    phase = get_mission_events(now).current_phase
     oem_state = _resolve_orion_state_from_oem(now)
     if oem_state:
         position = oem_state["position"]
@@ -402,14 +618,14 @@ def get_predicted_fallback_state() -> MissionStateResponse:
         missionId=ARTEMIS2_ID,
         vehicleId=ORION_VEHICLE_ID,
         mode="predicted",
-        phase=MissionPhase.TRANSLUNAR_COAST,
+        phase=phase,
         source=MissionDataSource.SPICE_PREDICTED,
         sourceTimestamp=now,
         stalenessSeconds=999.9,
         position=position,
         velocity=velocity,
         distances=MissionDistances(earthKm=_norm_km(position), moonKm=130000.0),
-        missionElapsedTime="0-00:00:00",
+        missionElapsedTime=_format_mission_elapsed_time(now),
         globalCoordinates=MissionCoordinates(x=position.x, y=position.z, z=-position.y),
         missionCoordinates=MissionCoordinates(x=position.x, y=position.y, z=position.z),
         sceneCoordinates=MissionCoordinates(x=position.x, y=position.z, z=-position.y)
@@ -456,6 +672,7 @@ def get_predicted_fallback_state() -> MissionStateResponse:
     return state
 
 def get_replay_state(timestamp: str) -> MissionStateResponse:
+    phase = get_mission_events(timestamp).current_phase
     oem_state = _resolve_orion_state_from_oem(timestamp)
     if oem_state:
         position = oem_state["position"]
@@ -471,14 +688,14 @@ def get_replay_state(timestamp: str) -> MissionStateResponse:
         missionId=ARTEMIS2_ID,
         vehicleId=ORION_VEHICLE_ID,
         mode="replay",
-        phase=MissionPhase.TRANSLUNAR_COAST,
+        phase=phase,
         source=MissionDataSource.ARCHIVE,
         sourceTimestamp=timestamp,
         stalenessSeconds=0.0,
         position=position,
         velocity=velocity,
         distances=MissionDistances(earthKm=_norm_km(position), moonKm=130000.0),
-        missionElapsedTime="2-04:30:15",
+        missionElapsedTime=_format_mission_elapsed_time(timestamp),
         globalCoordinates=MissionCoordinates(x=position.x, y=position.z, z=-position.y),
         missionCoordinates=MissionCoordinates(x=position.x, y=position.y, z=position.z),
         sceneCoordinates=MissionCoordinates(x=position.x, y=position.z, z=-position.y)
@@ -532,8 +749,13 @@ def _parse_split_timestamp(timestamp: str | None) -> datetime:
     if not timestamp:
         return datetime.now(timezone.utc)
 
-    normalized = timestamp if timestamp.endswith("Z") else f"{timestamp}Z"
-    return datetime.fromisoformat(normalized.replace("Z", "+00:00")).astimezone(timezone.utc)
+    raw = timestamp.strip()
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    parsed = datetime.fromisoformat(raw)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def get_mission_trajectory(at: str | None = None) -> MissionTrajectoryResponse:

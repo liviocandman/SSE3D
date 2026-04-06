@@ -25,6 +25,8 @@ def test_get_artemis2_state_replay():
     data = response.json()
     assert data["mode"] == "replay"
     assert data["sourceTimestamp"] == "2026-04-05T12:00:00Z"
+    assert data["missionElapsedTime"] == "3-22:00:00"
+    assert data["phase"] in ["translunar_coast", "lunar_flyby", "return_coast", "reentry", "splashdown"]
 
 def test_get_artemis2_trajectory_segments():
     response = client.get("/api/missions/artemis2/trajectory")
@@ -49,6 +51,15 @@ def test_get_artemis2_events():
     data = response.json()
     assert "events" in data
     assert len(data["events"]) > 0
+    assert "currentPhase" in data
+
+def test_get_artemis2_events_replay_timestamp():
+    response = client.get("/api/missions/artemis2/events?at=2026-04-05T12:00:00Z")
+    assert response.status_code == 200
+    data = response.json()
+    assert "currentPhase" in data
+    if data.get("nextEvent"):
+        assert data["nextEvent"]["timestamp"] >= "2026-04-05T12:00:00Z"
 
 def test_get_artemis2_health_fields():
     response = client.get("/api/missions/artemis2/health")
