@@ -2,6 +2,8 @@ import { render, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { SpacecraftBody } from './SpacecraftBody';
 
+type MockCanvasProps = { children?: React.ReactNode };
+
 // Mock Three
 vi.mock('three', () => {
   return {
@@ -53,12 +55,12 @@ vi.mock('three', () => {
 // Mock fiber
 vi.mock('@react-three/fiber', () => ({
   useFrame: vi.fn(),
-  Canvas: ({ children }: any) => <div data-testid="canvas">{children}</div>,
+  Canvas: ({ children }: MockCanvasProps) => <div data-testid="canvas">{children}</div>,
 }));
 
 // Mock drei
 vi.mock('@react-three/drei', () => ({
-  Html: ({ children }: any) => <div data-testid="html">{children}</div>,
+  Html: ({ children }: MockCanvasProps) => <div data-testid="html">{children}</div>,
 }));
 
 describe('SpacecraftBody', () => {

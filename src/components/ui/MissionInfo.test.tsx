@@ -6,11 +6,10 @@ import {
   MissionPhase, 
   MissionDataSource 
 } from '@/lib/missionTypes';
-import { useMissionStore } from '@/store/missionStore';
 
 // Mock zustand shallow
 vi.mock('zustand/react/shallow', () => ({
-  useShallow: (s: any) => s,
+  useShallow: <T,>(selector: T) => selector,
 }));
 
 // Setup hoisted mock state

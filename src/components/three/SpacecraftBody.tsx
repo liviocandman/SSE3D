@@ -35,8 +35,8 @@ const PROXY_TARGET_HEIGHT_UNITS = 0.0001;
 const DETAILED_TARGET_HEIGHT_UNITS = 0.00012;
 
 const LazyOrionDetailedModel = lazy(async () => {
-  const module = await import('./OrionDetailedModel');
-  return { default: module.OrionDetailedModel };
+  const orionDetailedModule = await import('./OrionDetailedModel');
+  return { default: orionDetailedModule.OrionDetailedModel };
 });
 
 type SpacecraftLodMode = 'marker' | 'proxy' | 'detailed';

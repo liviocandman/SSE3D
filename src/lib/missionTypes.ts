@@ -127,5 +127,5 @@ export interface MissionHealth {
   fallbackActive: boolean;
   coverageStart: string;
   coverageEnd: string;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
 }

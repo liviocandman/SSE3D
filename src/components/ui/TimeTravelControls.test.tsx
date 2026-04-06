@@ -4,7 +4,7 @@ import { TimeTravelControls } from './TimeTravelControls';
 
 // Mock zustand shallow
 vi.mock('zustand/react/shallow', () => ({
-  useShallow: (s: any) => s,
+  useShallow: <T,>(selector: T) => selector,
 }));
 
 // Setup hoisted mocks

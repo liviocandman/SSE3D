@@ -1,6 +1,15 @@
 import { render } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { MissionMilestoneMarker } from './MissionMilestoneMarker';
+import type { ReactNode } from 'react';
+
+type MockChildrenProps = {
+  children?: ReactNode;
+};
+
+type MockLineProps = {
+  points?: unknown;
+};
 
 // Mock fiber
 vi.mock('@react-three/fiber', () => ({
@@ -9,9 +18,9 @@ vi.mock('@react-three/fiber', () => ({
 
 // Mock drei
 vi.mock('@react-three/drei', () => ({
-  Billboard: ({ children }: any) => <div data-testid="billboard">{children}</div>,
-  Text: ({ children }: any) => <div data-testid="text">{children}</div>,
-  Line: ({ points }: any) => <div data-testid="line" data-points={JSON.stringify(points)} />,
+  Billboard: ({ children }: MockChildrenProps) => <div data-testid="billboard">{children}</div>,
+  Text: ({ children }: MockChildrenProps) => <div data-testid="text">{children}</div>,
+  Line: ({ points }: MockLineProps) => <div data-testid="line" data-points={JSON.stringify(points)} />,
 }));
 
 describe('MissionMilestoneMarker', () => {

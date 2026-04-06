@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { useMissionData } from './useMissionData';
 import { useMissionStore } from '@/store/missionStore';
 import { useSolarStore } from '@/store/solarStore';
-import { MissionMode } from '@/lib/missionTypes';
+import { MissionMode, type MissionEventsResponse, type MissionHealth, type MissionState, type MissionTrajectory } from '@/lib/missionTypes';
 import * as missionClient from '@/services/missionClient';
 
 // Mock the client
@@ -20,9 +20,9 @@ describe('useMissionData hook', () => {
     useMissionStore.getState().resetMissionState();
     
     // Default mock responses
-    vi.mocked(missionClient.fetchMissionTrajectory).mockResolvedValue({} as any);
-    vi.mocked(missionClient.fetchMissionEvents).mockResolvedValue({} as any);
-    vi.mocked(missionClient.fetchMissionHealth).mockResolvedValue({} as any);
+    vi.mocked(missionClient.fetchMissionTrajectory).mockResolvedValue({} as MissionTrajectory);
+    vi.mocked(missionClient.fetchMissionEvents).mockResolvedValue({} as MissionEventsResponse);
+    vi.mocked(missionClient.fetchMissionHealth).mockResolvedValue({} as MissionHealth);
   });
 
   afterEach(() => {
@@ -30,7 +30,7 @@ describe('useMissionData hook', () => {
   });
 
   it('should fetch mission data even when no mission target is selected yet', async () => {
-    vi.mocked(missionClient.fetchMissionState).mockResolvedValue({} as any);
+    vi.mocked(missionClient.fetchMissionState).mockResolvedValue({} as MissionState);
     const { unmount } = renderHook(() => useMissionData());
 
     await waitFor(() => {
@@ -47,7 +47,7 @@ describe('useMissionData hook', () => {
       sourceTimestamp: '2026-04-03T12:00:00Z'
     };
 
-    vi.mocked(missionClient.fetchMissionState).mockResolvedValue(mockState as any);
+    vi.mocked(missionClient.fetchMissionState).mockResolvedValue(mockState as MissionState);
 
     const { unmount } = renderHook(() => useMissionData());
 
@@ -68,7 +68,7 @@ describe('useMissionData hook', () => {
     useMissionStore.getState().setMissionMode(MissionMode.REPLAY);
     useSolarStore.getState().setCurrentTime(new Date('2026-04-05T12:00:00.123Z'));
 
-    vi.mocked(missionClient.fetchMissionState).mockResolvedValue({} as any);
+    vi.mocked(missionClient.fetchMissionState).mockResolvedValue({} as MissionState);
 
     const { unmount } = renderHook(() => useMissionData());
 

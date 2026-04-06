@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useMissionStore } from '@/store/missionStore';
 import { useSolarStore } from '@/store/solarStore';
 import {
@@ -20,7 +20,7 @@ export function useMissionData() {
   const isLive = missionMode === MissionMode.LIVE;
   const controllersRef = useRef<Set<AbortController>>(new Set());
 
-  const getReplayTimestampParam = (): string | undefined => {
+  const getReplayTimestampParam = useCallback((): string | undefined => {
     if (isLive) {
       return undefined;
     }
@@ -28,7 +28,7 @@ export function useMissionData() {
     const currentTime = useSolarStore.getState().currentTime;
     const date = new Date(currentTime);
     return date.toISOString().split('.')[0] + 'Z';
-  };
+  }, [isLive]);
 
   useEffect(() => {
     let stateTimeout: NodeJS.Timeout;
@@ -70,7 +70,7 @@ export function useMissionData() {
             }
           }
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (err instanceof DOMException && err.name === 'AbortError') {
           return;
         }
@@ -91,7 +91,7 @@ export function useMissionData() {
         if (isMounted) {
           setMissionTrajectory(data);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (err instanceof DOMException && err.name === 'AbortError') {
           return;
         }
@@ -111,7 +111,7 @@ export function useMissionData() {
         if (isMounted) {
           setMissionEvents(data);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (err instanceof DOMException && err.name === 'AbortError') {
           return;
         }
@@ -130,7 +130,7 @@ export function useMissionData() {
         if (isMounted) {
           setMissionHealth(data);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (err instanceof DOMException && err.name === 'AbortError') {
           return;
         }
@@ -147,14 +147,16 @@ export function useMissionData() {
     fetchEvents();
     fetchHealth();
 
+    const controllers = controllersRef.current;
+
     return () => {
       isMounted = false;
-      controllersRef.current.forEach((controller) => controller.abort());
-      controllersRef.current.clear();
+      controllers.forEach((controller) => controller.abort());
+      controllers.clear();
       clearTimeout(stateTimeout);
       clearTimeout(trajectoryTimeout);
       clearTimeout(eventsTimeout);
       clearTimeout(healthTimeout);
     };
-  }, [isLive, setLiveTimestamp, setMissionEvents, setMissionHealth, setMissionState, setMissionTrajectory]);
+  }, [getReplayTimestampParam, isLive, setLiveTimestamp, setMissionEvents, setMissionHealth, setMissionState, setMissionTrajectory]);
 }

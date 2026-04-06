@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
-from typing import Optional, Tuple
+from typing import Optional
 from loguru import logger
+import numpy as np
 
 from app.models.mission_schemas import (
     MissionStateResponse,
@@ -342,9 +343,7 @@ def _norm_km(position: MissionPosition) -> float:
     return float((position.x ** 2 + position.y ** 2 + position.z ** 2) ** 0.5)
 
 
-def _classify_lunar_occultation(orion_rel_eclip: "np.ndarray", moon_rel_eclip: "np.ndarray") -> MissionLineOfSightStatus:
-    import numpy as np
-
+def _classify_lunar_occultation(orion_rel_eclip: np.ndarray, moon_rel_eclip: np.ndarray) -> MissionLineOfSightStatus:
     segment_norm_sq = float(np.dot(orion_rel_eclip, orion_rel_eclip))
     if segment_norm_sq <= 0:
         return MissionLineOfSightStatus.CLEAR
@@ -370,8 +369,6 @@ def _compute_spacecraft_context(
     input_origin: str,
     geo_data: dict | None,
 ):
-    import numpy as np
-
     attitude_context = compute_mission_attitude(
         orion_pos=position,
         orion_vel=velocity,

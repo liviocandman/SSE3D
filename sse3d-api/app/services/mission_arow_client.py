@@ -1,6 +1,6 @@
 import httpx
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from loguru import logger
 from app.core.config import settings
 

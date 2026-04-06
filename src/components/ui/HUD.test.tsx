@@ -36,7 +36,7 @@ vi.mock('framer-motion', () => ({
 }));
 
 vi.mock('zustand/react/shallow', () => ({
-  useShallow: (s: any) => s,
+  useShallow: <T,>(selector: T) => selector,
 }));
 
 // Setup hoisted mocks
@@ -59,7 +59,7 @@ const { solarState, missionStateMock } = vi.hoisted(() => {
       missionMode: 'live',
       isLive: true,
       selectedMissionTargetId: null as string | null,
-      missionState: null as any,
+      missionState: null as { vehicleId: string; mode: string } | null,
       missionHealth: null,
       missionEvents: null,
       setIsLive: vi.fn(),
@@ -154,7 +154,7 @@ describe('HUD', () => {
 
   it('renders MissionInfo when orion is selected', () => {
     missionStateMock.selectedMissionTargetId = 'orion';
-    missionStateMock.missionState = { vehicleId: 'orion', mode: 'live' } as any;
+    missionStateMock.missionState = { vehicleId: 'orion', mode: 'live' };
 
     render(<HUD onDateChange={vi.fn()} />);
     expect(screen.getByTestId('mission-info')).toBeInTheDocument();
@@ -171,7 +171,7 @@ describe('HUD', () => {
   });
 
   it('uses the loaded mission vehicle id instead of hardcoded orion when toggling mission context', () => {
-    missionStateMock.missionState = { vehicleId: 'artemis-vehicle-1', mode: 'live' } as any;
+    missionStateMock.missionState = { vehicleId: 'artemis-vehicle-1', mode: 'live' };
 
     render(<HUD onDateChange={vi.fn()} />);
 

@@ -1,6 +1,8 @@
 import { render } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { MissionTrajectoryLine } from './MissionTrajectoryLine';
+import { densifyWithCatmullRom } from '@/lib/catmullRom';
+import type { MissionTrajectoryPoint } from '@/lib/missionTypes';
 
 // Mock scales
 vi.mock('@/lib/scales', () => ({
@@ -9,34 +11,44 @@ vi.mock('@/lib/scales', () => ({
 
 // Mock catmullRom to track if it's called
 vi.mock('@/lib/catmullRom', async (importOriginal) => {
-  const actual = await importOriginal() as any;
+  const actual = await importOriginal<typeof import('@/lib/catmullRom')>();
   return {
     ...actual,
     densifyWithCatmullRom: vi.fn(actual.densifyWithCatmullRom),
   };
 });
 
+type MockLineProps = {
+  points: unknown;
+  dashed?: boolean;
+};
+
+type MockSphereProps = {
+  position: unknown;
+  children?: React.ReactNode;
+};
+
 // Mock drei
 vi.mock('@react-three/drei', () => ({
-  Line: ({ points, dashed }: any) => (
+  Line: ({ points, dashed }: MockLineProps) => (
     <div 
       data-testid="line" 
       data-dashed={dashed ? 'true' : 'false'} 
       data-points={JSON.stringify(points)} 
     />
   ),
-  Sphere: ({ position, children }: any) => (
+  Sphere: ({ position, children }: MockSphereProps) => (
     <div data-testid="marker" data-position={JSON.stringify(position)}>{children}</div>
   ),
 }));
 
 describe('MissionTrajectoryLine', () => {
   const mockPast = [
-    { timestamp: '2026-01-01T00:00:00Z', position: { x: 1000, y: 0, z: 0 }, segment: 'past' as any },
-  ];
+    { timestamp: '2026-01-01T00:00:00Z', position: { x: 1000, y: 0, z: 0 }, segment: 'past' },
+  ] satisfies MissionTrajectoryPoint[];
   const mockPlanned = [
-    { timestamp: '2026-01-01T02:00:00Z', position: { x: 3000, y: 0, z: 0 }, segment: 'planned' as any },
-  ];
+    { timestamp: '2026-01-01T02:00:00Z', position: { x: 3000, y: 0, z: 0 }, segment: 'planned' },
+  ] satisfies MissionTrajectoryPoint[];
   const mockCurrent: [number, number, number] = [2000, 0, 0];
 
   it('renders past and planned lines when data is provided', () => {
@@ -66,10 +78,10 @@ describe('MissionTrajectoryLine', () => {
 
   it('filters out invalid coordinates (NaN, Infinity)', () => {
     const badPast = [
-      { timestamp: '2026-01-01T00:00:00Z', position: { x: NaN, y: 0, z: 0 }, segment: 'past' as any },
-      { timestamp: '2026-01-01T00:01:00Z', position: { x: Infinity, y: 0, z: 0 }, segment: 'past' as any },
-      { timestamp: '2026-01-01T00:02:00Z', position: { x: 1000, y: 0, z: 0 }, segment: 'past' as any },
-    ];
+      { timestamp: '2026-01-01T00:00:00Z', position: { x: NaN, y: 0, z: 0 }, segment: 'past' },
+      { timestamp: '2026-01-01T00:01:00Z', position: { x: Infinity, y: 0, z: 0 }, segment: 'past' },
+      { timestamp: '2026-01-01T00:02:00Z', position: { x: 1000, y: 0, z: 0 }, segment: 'past' },
+    ] satisfies MissionTrajectoryPoint[];
     
     const { getAllByTestId } = render(
       <MissionTrajectoryLine past={badPast} current={mockCurrent} planned={[]} />
@@ -84,13 +96,11 @@ describe('MissionTrajectoryLine', () => {
   });
 
   it('calls smoothing (densifyWithCatmullRom) when smoothing prop is true', async () => {
-    const { densifyWithCatmullRom } = await import('@/lib/catmullRom');
-    
     const longPast = [
-      { timestamp: '2026-01-01T00:00:00Z', position: { x: 0, y: 0, z: 0 }, segment: 'past' as any },
-      { timestamp: '2026-01-01T01:00:00Z', position: { x: 1000, y: 0, z: 0 }, segment: 'past' as any },
-      { timestamp: '2026-01-01T02:00:00Z', position: { x: 2000, y: 0, z: 0 }, segment: 'past' as any },
-    ];
+      { timestamp: '2026-01-01T00:00:00Z', position: { x: 0, y: 0, z: 0 }, segment: 'past' },
+      { timestamp: '2026-01-01T01:00:00Z', position: { x: 1000, y: 0, z: 0 }, segment: 'past' },
+      { timestamp: '2026-01-01T02:00:00Z', position: { x: 2000, y: 0, z: 0 }, segment: 'past' },
+    ] satisfies MissionTrajectoryPoint[];
 
     render(
       <MissionTrajectoryLine past={longPast} planned={[]} smoothing={true} />
@@ -100,14 +110,13 @@ describe('MissionTrajectoryLine', () => {
   });
 
   it('does not call smoothing when smoothing prop is false', async () => {
-    const { densifyWithCatmullRom } = await import('@/lib/catmullRom');
     vi.mocked(densifyWithCatmullRom).mockClear();
 
     const longPast = [
-      { timestamp: '2026-01-01T00:00:00Z', position: { x: 0, y: 0, z: 0 }, segment: 'past' as any },
-      { timestamp: '2026-01-01T01:00:00Z', position: { x: 1000, y: 0, z: 0 }, segment: 'past' as any },
-      { timestamp: '2026-01-01T02:00:00Z', position: { x: 2000, y: 0, z: 0 }, segment: 'past' as any },
-    ];
+      { timestamp: '2026-01-01T00:00:00Z', position: { x: 0, y: 0, z: 0 }, segment: 'past' },
+      { timestamp: '2026-01-01T01:00:00Z', position: { x: 1000, y: 0, z: 0 }, segment: 'past' },
+      { timestamp: '2026-01-01T02:00:00Z', position: { x: 2000, y: 0, z: 0 }, segment: 'past' },
+    ] satisfies MissionTrajectoryPoint[];
 
     render(
       <MissionTrajectoryLine past={longPast} planned={[]} smoothing={false} />
