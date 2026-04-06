@@ -21,9 +21,13 @@ export interface SpacecraftBodyProps {
 export const SPACECRAFT_SELECTION_RADIUS_UNITS = 0.0005;
 export const SPACECRAFT_CLOSEUP_RADIUS_UNITS = 0.00008;
 export const SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS = 0.0015;
-const SPACECRAFT_PROXY_DISTANCE_EXIT_UNITS = 0.02;
-const SPACECRAFT_INSPECTION_DISTANCE_ENTER_UNITS = 0.002;
-const SPACECRAFT_INSPECTION_DISTANCE_EXIT_UNITS = 0.0028;
+const SPACECRAFT_PROXY_DISTANCE_ENTER_UNITS = 0.06;
+const SPACECRAFT_PROXY_DISTANCE_EXIT_UNITS = 0.1;
+const SPACECRAFT_INSPECTION_DISTANCE_ENTER_UNITS = 0.01;
+const SPACECRAFT_INSPECTION_DISTANCE_EXIT_UNITS = 0.05;
+const SPACECRAFT_INSPECTION_DISTANCE_EXIT_UNLOCKED_UNITS = 0.02;
+const SPACECRAFT_INSPECTION_DISTANCE_EXIT_SELECTED_UNITS = 0.03;
+const SPACECRAFT_DETAILED_PRELOAD_DISTANCE_UNITS = 0.02;
 const MARKER_MIN_SCALE_UNITS = 0.002;
 const MARKER_MAX_SCALE_UNITS = 0.2;
 const MARKER_DISTANCE_SCALE_FACTOR = 0.02;
@@ -91,8 +95,8 @@ export function SpacecraftBody({
   const progradeQuaternionRef = useRef(new THREE.Quaternion());
   const progradeDirectionRef = useRef(new THREE.Vector3(1, 0, 0));
   const lodModeRef = useRef<SpacecraftLodMode>('marker');
-  const inspectionModeRef = useRef(false);
   const detailedLoadRequestedRef = useRef(false);
+  const detailedUnlockedRef = useRef(false);
   const [shouldLoadDetailed, setShouldLoadDetailed] = useState(false);
   const [isDetailedReady, setIsDetailedReady] = useState(false);
   const meshToBodyAlignmentQuat = useMemo(
@@ -120,22 +124,45 @@ export function SpacecraftBody({
     const worldPosition = groupRef.current.getWorldPosition(worldPositionRef.current);
     const dist = state.camera.position.distanceTo(worldPosition);
     const currentLod = lodModeRef.current;
-
-    const inspectionMode = isSelected
-      ? inspectionModeRef.current
-        ? dist <= SPACECRAFT_INSPECTION_DISTANCE_EXIT_UNITS
-        : dist <= SPACECRAFT_INSPECTION_DISTANCE_ENTER_UNITS
-      : false;
-
-    inspectionModeRef.current = inspectionMode;
     let nextLod: SpacecraftLodMode = currentLod;
 
-    if (inspectionMode) {
-      nextLod = isDetailedReady ? 'detailed' : 'proxy';
-    } else if (isSelected || dist <= SPACECRAFT_PROXY_DISTANCE_EXIT_UNITS) {
-      nextLod = 'proxy';
-    } else {
-      nextLod = 'marker';
+    if (!detailedLoadRequestedRef.current && (isSelected || dist <= SPACECRAFT_DETAILED_PRELOAD_DISTANCE_UNITS)) {
+      detailedLoadRequestedRef.current = true;
+      setShouldLoadDetailed(true);
+    }
+
+    const detailedExitThreshold = isSelected
+      ? SPACECRAFT_INSPECTION_DISTANCE_EXIT_SELECTED_UNITS
+      : detailedUnlockedRef.current
+        ? SPACECRAFT_INSPECTION_DISTANCE_EXIT_UNLOCKED_UNITS
+        : SPACECRAFT_INSPECTION_DISTANCE_EXIT_UNITS;
+
+    switch (currentLod) {
+      case 'marker':
+        if (dist <= SPACECRAFT_INSPECTION_DISTANCE_ENTER_UNITS) {
+          nextLod = isDetailedReady ? 'detailed' : 'proxy';
+        } else if (isSelected || dist <= SPACECRAFT_PROXY_DISTANCE_ENTER_UNITS) {
+          nextLod = 'proxy';
+        }
+        break;
+      case 'proxy':
+        if (dist <= SPACECRAFT_INSPECTION_DISTANCE_ENTER_UNITS) {
+          nextLod = isDetailedReady ? 'detailed' : 'proxy';
+        } else if (!isSelected && dist >= SPACECRAFT_PROXY_DISTANCE_EXIT_UNITS) {
+          nextLod = 'marker';
+        }
+        break;
+      case 'detailed':
+        if (!isDetailedReady) {
+          nextLod = 'proxy';
+        } else if (dist >= detailedExitThreshold) {
+          nextLod = 'proxy';
+        }
+        break;
+    }
+
+    if (nextLod === 'detailed') {
+      detailedUnlockedRef.current = true;
     }
 
     lodModeRef.current = nextLod;
