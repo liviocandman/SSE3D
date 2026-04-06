@@ -53,7 +53,7 @@ export interface MissionDistances {
 export type MissionLineOfSightStatus = 'clear' | 'lunar_occultation';
 export type MissionAttitudeSource = 'CK_SPICE' | 'POLICY_ESTIMATED' | 'GEOMETRIC_FALLBACK';
 export type MissionAttitudeFrame = 'ECLIPJ2000' | 'LVLH_MISSION' | 'SCENE';
-export type MissionAttitudeMode = 'TAIL_TO_SUN' | 'BURN_ALIGN' | 'SPIN_STABILIZED' | 'HOLD';
+export type MissionAttitudeMode = 'TAIL_TO_SUN' | 'NOSE_TO_MOON' | 'BURN_ALIGN' | 'SPIN_STABILIZED' | 'HOLD';
 
 export interface MissionEvent {
   id: string;

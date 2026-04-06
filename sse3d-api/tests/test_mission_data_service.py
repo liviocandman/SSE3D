@@ -1,7 +1,10 @@
 import numpy as np
+from types import SimpleNamespace
+from datetime import datetime, timezone
 
 from app.models.mission_schemas import MissionPosition, MissionVelocity
 from app.services import mission_data_service
+from app.services.mission_oem_service import OEMStateVector
 
 
 def test_replay_prefers_oem_geometry(monkeypatch):
@@ -132,3 +135,96 @@ def test_replay_exposes_attitude_metadata(monkeypatch):
     assert state.attitude_mode.value == "TAIL_TO_SUN"
     assert state.reference_frame.value == "ECLIPJ2000"
     assert state.attitude_confidence > 0.0
+
+
+def test_derive_lunar_flyby_window_covers_full_moon_centered_arc(monkeypatch):
+    timestamps = [
+        "2026-04-05T06:00:00Z",
+        "2026-04-05T07:00:00Z",
+        "2026-04-05T08:00:00Z",
+        "2026-04-05T09:00:00Z",
+        "2026-04-05T10:00:00Z",
+    ]
+
+    states = tuple(
+        OEMStateVector(
+            timestamp=timestamp,
+            dt=datetime.fromisoformat(timestamp.replace("Z", "+00:00")).astimezone(timezone.utc),
+            position=MissionPosition(x=300_000.0, y=0.0, z=0.0),
+            velocity=MissionVelocity(x=0.0, y=1.0, z=0.0),
+        )
+        for timestamp in timestamps
+    )
+    ephemeris = SimpleNamespace(
+        metadata=SimpleNamespace(
+            start_time=timestamps[0],
+            stop_time=timestamps[-1],
+            ref_frame="EME2000",
+        ),
+        states=states,
+    )
+    moon_positions = {
+        timestamps[0]: np.array([700_000.0, 0.0, 0.0], dtype=float),
+        timestamps[1]: np.array([550_000.0, 0.0, 0.0], dtype=float),
+        timestamps[2]: np.array([400_000.0, 0.0, 0.0], dtype=float),
+        timestamps[3]: np.array([550_000.0, 0.0, 0.0], dtype=float),
+        timestamps[4]: np.array([700_000.0, 0.0, 0.0], dtype=float),
+    }
+
+    monkeypatch.setattr(
+        mission_data_service.mission_oem_service,
+        "get_states_between",
+        lambda *_args, **_kwargs: list(states),
+    )
+    monkeypatch.setattr(
+        mission_data_service,
+        "compute_mission_relative_geometry",
+        lambda timestamp: {
+            "et": 0.0,
+            "earth_pos": np.array([0.0, 0.0, 0.0], dtype=float),
+            "moon_pos": moon_positions[timestamp],
+        },
+    )
+
+    start_ts, center_ts, end_ts = mission_data_service._derive_lunar_flyby_window(ephemeris)
+
+    assert start_ts == timestamps[1]
+    assert center_ts == timestamps[2]
+    assert end_ts == timestamps[3]
+
+
+def test_replay_uses_nose_to_moon_during_lunar_flyby_window(monkeypatch):
+    monkeypatch.setattr(
+        mission_data_service,
+        "_resolve_orion_state_from_oem",
+        lambda _timestamp: {
+            "position": MissionPosition(x=300_000.0, y=0.0, z=0.0),
+            "velocity": MissionVelocity(x=0.0, y=1.0, z=0.0),
+            "input_frame": "EME2000",
+            "input_origin": "EARTH",
+        },
+    )
+    monkeypatch.setattr(
+        mission_data_service,
+        "_get_lunar_flyby_window",
+        lambda _ephemeris=None: (
+            "2026-04-05T07:00:00Z",
+            "2026-04-05T08:00:00Z",
+            "2026-04-05T09:00:00Z",
+        ),
+    )
+    monkeypatch.setattr(
+        mission_data_service,
+        "compute_mission_relative_geometry",
+        lambda _timestamp: {
+            "et": 0.0,
+            "earth_pos": np.array([0.0, 0.0, 0.0], dtype=float),
+            "moon_pos": np.array([400_000.0, 0.0, 0.0], dtype=float),
+        },
+    )
+
+    state = mission_data_service.get_replay_state("2026-04-05T08:00:00Z")
+
+    assert state.phase.value == "lunar_flyby"
+    assert state.attitude_source.value == "POLICY_ESTIMATED"
+    assert state.attitude_mode.value == "NOSE_TO_MOON"

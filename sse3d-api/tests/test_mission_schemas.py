@@ -1,4 +1,5 @@
 from app.models.mission_schemas import (
+    MissionAttitudeMode,
     MissionAttitudeFrame,
     MissionAttitudeSource,
     MissionDataSource,
@@ -18,6 +19,7 @@ def test_mission_enums():
     assert MissionAttitudeSource.GEOMETRIC_FALLBACK == "GEOMETRIC_FALLBACK"
     assert MissionAttitudeSource.POLICY_ESTIMATED == "POLICY_ESTIMATED"
     assert MissionAttitudeFrame.ECLIPJ2000 == "ECLIPJ2000"
+    assert MissionAttitudeMode.NOSE_TO_MOON == "NOSE_TO_MOON"
 
 def test_mission_state_serialization():
     data = {

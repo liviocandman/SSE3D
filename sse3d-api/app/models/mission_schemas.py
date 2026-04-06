@@ -42,6 +42,7 @@ class MissionAttitudeFrame(str, Enum):
 
 class MissionAttitudeMode(str, Enum):
     TAIL_TO_SUN = "TAIL_TO_SUN"
+    NOSE_TO_MOON = "NOSE_TO_MOON"
     BURN_ALIGN = "BURN_ALIGN"
     SPIN_STABILIZED = "SPIN_STABILIZED"
     HOLD = "HOLD"

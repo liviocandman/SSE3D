@@ -45,8 +45,10 @@ MOON_MEAN_RADIUS_KM = 1_737.4
 _last_source: Optional[MissionDataSource] = None
 _last_fallback_state: Optional[bool] = None
 _last_stale_state: bool = False
-_events_cache_signature: Optional[tuple[str, str, int]] = None
+_events_cache_signature: Optional[tuple[str, str, int, int]] = None
 _events_cache: Optional[list[MissionEvent]] = None
+_lunar_flyby_window_cache_signature: Optional[tuple[str, str, int, int]] = None
+_lunar_flyby_window_cache: Optional[tuple[str, str, str]] = None
 
 MISSION_LAUNCH_TIMESTAMP = "2026-04-01T14:00:00Z"
 MISSION_TLI_TIMESTAMP = "2026-04-01T16:30:00Z"
@@ -156,9 +158,26 @@ def _format_mission_elapsed_time(timestamp: str) -> str:
     return f"{days}-{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
-def _derive_lunar_flyby_timestamp(ephemeris) -> str:
+def _fallback_lunar_flyby_window(center_timestamp: str) -> tuple[str, str, str]:
+    center_dt = _parse_split_timestamp(center_timestamp)
+    start_dt = datetime.fromtimestamp(
+        center_dt.timestamp() - LUNAR_FLYBY_WINDOW_HOURS * 3600,
+        tz=timezone.utc,
+    )
+    end_dt = datetime.fromtimestamp(
+        center_dt.timestamp() + LUNAR_FLYBY_WINDOW_HOURS * 3600,
+        tz=timezone.utc,
+    )
+    return (
+        _format_iso_z(start_dt),
+        _format_iso_z(center_dt),
+        _format_iso_z(end_dt),
+    )
+
+
+def _derive_lunar_flyby_window(ephemeris) -> tuple[str, str, str]:
     if not settings.spice_enabled:
-        return DEFAULT_LUNAR_FLYBY_TIMESTAMP
+        return _fallback_lunar_flyby_window(DEFAULT_LUNAR_FLYBY_TIMESTAMP)
 
     states = mission_oem_service.get_states_between(
         ephemeris.metadata.start_time,
@@ -167,10 +186,9 @@ def _derive_lunar_flyby_timestamp(ephemeris) -> str:
         use_adaptive=True,
     )
     if not states:
-        return DEFAULT_LUNAR_FLYBY_TIMESTAMP
+        return _fallback_lunar_flyby_window(DEFAULT_LUNAR_FLYBY_TIMESTAMP)
 
-    best_timestamp = DEFAULT_LUNAR_FLYBY_TIMESTAMP
-    best_distance = float("inf")
+    valid_samples: list[tuple[str, datetime, float, float]] = []
     input_frame = ephemeris.metadata.ref_frame or "EME2000"
 
     for state in states:
@@ -180,17 +198,71 @@ def _derive_lunar_flyby_timestamp(ephemeris) -> str:
             continue
 
         rotated_pos, _ = transform_to_eclipj2000(state.position, state.velocity, input_frame, geo_data["et"])
+        earth_distance = float((rotated_pos.x ** 2 + rotated_pos.y ** 2 + rotated_pos.z ** 2) ** 0.5)
         moon_rel_eclip = geo_data["moon_pos"] - geo_data["earth_pos"]
         dx = rotated_pos.x - float(moon_rel_eclip[0])
         dy = rotated_pos.y - float(moon_rel_eclip[1])
         dz = rotated_pos.z - float(moon_rel_eclip[2])
-        distance = float((dx ** 2 + dy ** 2 + dz ** 2) ** 0.5)
+        moon_distance = float((dx ** 2 + dy ** 2 + dz ** 2) ** 0.5)
+        valid_samples.append((timestamp, state.dt, earth_distance, moon_distance))
 
-        if distance < best_distance:
-            best_distance = distance
-            best_timestamp = timestamp
+    if not valid_samples:
+        return _fallback_lunar_flyby_window(DEFAULT_LUNAR_FLYBY_TIMESTAMP)
 
-    return best_timestamp
+    closest_idx = min(range(len(valid_samples)), key=lambda index: valid_samples[index][3])
+    if valid_samples[closest_idx][3] >= valid_samples[closest_idx][2]:
+        return _fallback_lunar_flyby_window(valid_samples[closest_idx][0])
+
+    start_idx = closest_idx
+    while start_idx > 0 and valid_samples[start_idx - 1][3] < valid_samples[start_idx - 1][2]:
+        start_idx -= 1
+
+    end_idx = closest_idx
+    while end_idx < len(valid_samples) - 1 and valid_samples[end_idx + 1][3] < valid_samples[end_idx + 1][2]:
+        end_idx += 1
+
+    if start_idx == end_idx:
+        return _fallback_lunar_flyby_window(valid_samples[closest_idx][0])
+
+    return (
+        valid_samples[start_idx][0],
+        valid_samples[closest_idx][0],
+        valid_samples[end_idx][0],
+    )
+
+
+def _get_lunar_flyby_window(ephemeris=None) -> tuple[str, str, str]:
+    global _lunar_flyby_window_cache_signature, _lunar_flyby_window_cache
+
+    target_ephemeris = ephemeris or mission_oem_service.get_ephemeris()
+    if target_ephemeris and target_ephemeris.states:
+        signature = (
+            target_ephemeris.metadata.start_time,
+            target_ephemeris.metadata.stop_time,
+            len(target_ephemeris.states),
+            1 if settings.spice_enabled else 0,
+        )
+        if _lunar_flyby_window_cache_signature == signature and _lunar_flyby_window_cache is not None:
+            return _lunar_flyby_window_cache
+
+        window = _derive_lunar_flyby_window(target_ephemeris)
+        _lunar_flyby_window_cache_signature = signature
+        _lunar_flyby_window_cache = window
+        return window
+
+    fallback_signature = (
+        MISSION_LAUNCH_TIMESTAMP,
+        DEFAULT_SPLASHDOWN_TIMESTAMP,
+        0,
+        1 if settings.spice_enabled else 0,
+    )
+    if _lunar_flyby_window_cache_signature == fallback_signature and _lunar_flyby_window_cache is not None:
+        return _lunar_flyby_window_cache
+
+    window = _fallback_lunar_flyby_window(DEFAULT_LUNAR_FLYBY_TIMESTAMP)
+    _lunar_flyby_window_cache_signature = fallback_signature
+    _lunar_flyby_window_cache = window
+    return window
 
 
 def _build_mission_events() -> list[MissionEvent]:
@@ -209,7 +281,8 @@ def _build_mission_events() -> list[MissionEvent]:
 
         launch_dt = _parse_split_timestamp(MISSION_LAUNCH_TIMESTAMP)
         tli_dt = _parse_split_timestamp(MISSION_TLI_TIMESTAMP)
-        flyby_dt = _parse_split_timestamp(_derive_lunar_flyby_timestamp(ephemeris))
+        _flyby_start_ts, flyby_center_ts, _flyby_end_ts = _get_lunar_flyby_window(ephemeris)
+        flyby_dt = _parse_split_timestamp(flyby_center_ts)
         splashdown_dt = _parse_split_timestamp(ephemeris.metadata.stop_time)
     else:
         signature = (
@@ -281,19 +354,13 @@ def _build_mission_events() -> list[MissionEvent]:
 
 def _derive_current_phase(reference_dt: datetime, events: list[MissionEvent]) -> MissionPhase:
     event_times = {event.id: _parse_split_timestamp(event.timestamp) for event in events}
+    flyby_start_ts, _flyby_center_ts, flyby_end_ts = _get_lunar_flyby_window()
     launch_dt = event_times["launch"]
     tli_dt = event_times["tli"]
-    flyby_dt = event_times["lunar-flyby"]
     reentry_dt = event_times["reentry"]
     splashdown_dt = event_times["splashdown"]
-    flyby_window_start = datetime.fromtimestamp(
-        flyby_dt.timestamp() - LUNAR_FLYBY_WINDOW_HOURS * 3600,
-        tz=timezone.utc,
-    )
-    flyby_window_end = datetime.fromtimestamp(
-        flyby_dt.timestamp() + LUNAR_FLYBY_WINDOW_HOURS * 3600,
-        tz=timezone.utc,
-    )
+    flyby_window_start = _parse_split_timestamp(flyby_start_ts)
+    flyby_window_end = _parse_split_timestamp(flyby_end_ts)
 
     if reference_dt < launch_dt:
         return MissionPhase.LAUNCH
@@ -764,6 +831,7 @@ def get_mission_trajectory(at: str | None = None) -> MissionTrajectoryResponse:
     planned_points = []
 
     ephemeris = mission_oem_service.get_ephemeris()
+    events = _build_mission_events()
     if ephemeris and ephemeris.states:
         split_dt = _parse_split_timestamp(at)
         states = mission_oem_service.get_states_between(
@@ -778,11 +846,7 @@ def get_mission_trajectory(at: str | None = None) -> MissionTrajectoryResponse:
                 if state.dt <= split_dt
                 else MissionTrajectorySegment.PLANNED
             )
-            phase = (
-                MissionPhase.TRANSLUNAR_COAST
-                if state.dt <= split_dt
-                else MissionPhase.LUNAR_FLYBY
-            )
+            phase = _derive_current_phase(state.dt, events)
             point = _build_trajectory_point_from_state(
                 state.timestamp if state.timestamp.endswith("Z") else f"{state.timestamp}Z",
                 state.position,
@@ -803,7 +867,7 @@ def get_mission_trajectory(at: str | None = None) -> MissionTrajectoryResponse:
                     first.position,
                     first.velocity,
                     MissionTrajectorySegment.PAST,
-                    MissionPhase.TRANSLUNAR_COAST,
+                    _derive_current_phase(first.dt, events),
                 )
             )
 
@@ -815,7 +879,7 @@ def get_mission_trajectory(at: str | None = None) -> MissionTrajectoryResponse:
                     last.position,
                     last.velocity,
                     MissionTrajectorySegment.PLANNED,
-                    MissionPhase.LUNAR_FLYBY,
+                    _derive_current_phase(last.dt, events),
                 )
             )
     else:

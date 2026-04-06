@@ -1,7 +1,9 @@
 import numpy as np
+from app.models.mission_schemas import MissionPhase
 from app.models.mission_schemas import MissionPosition, MissionVelocity
 from app.services.mission_data_service import _build_earth_relative_predicted_position
 from app.services.mission_geometry_service import (
+    compute_mission_attitude,
     transform_to_eclipj2000,
     calculate_mission_local_frame,
     enrich_mission_geometry,
@@ -177,3 +179,24 @@ def test_predicted_fallback_position_aligns_with_earth_moon_direction(monkeypatc
     # The predicted fallback should sit on the Earth->Moon transfer axis,
     # not on an arbitrary vector disconnected from the Moon's current geometry.
     assert np.allclose(orion_unit, moon_unit, atol=1e-6)
+
+
+def test_compute_mission_attitude_preserves_ck_priority(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.mission_geometry_service._try_ck_body_to_inertial",
+        lambda _et: np.identity(3),
+    )
+
+    attitude = compute_mission_attitude(
+        orion_pos=MissionPosition(x=1000.0, y=0.0, z=0.0),
+        orion_vel=MissionVelocity(x=0.0, y=1.0, z=0.0),
+        phase=MissionPhase.LUNAR_FLYBY,
+        input_frame="ECLIPJ2000",
+        input_origin="EARTH",
+        et=0.0,
+        earth_pos_eclip=np.array([0.0, 0.0, 0.0], dtype=float),
+        moon_pos_eclip=np.array([400000.0, 0.0, 0.0], dtype=float),
+    )
+
+    assert attitude["attitude_source"].value == "CK_SPICE"
+    assert attitude["attitude_confidence"] == 0.98

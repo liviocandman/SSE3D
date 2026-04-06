@@ -45,7 +45,9 @@ def _roll_about_x(angle_rad: float) -> np.ndarray:
 def resolve_attitude_mode(phase: MissionPhase) -> MissionAttitudeMode:
     if phase in (MissionPhase.TRANSLUNAR_COAST, MissionPhase.RETURN_COAST):
         return MissionAttitudeMode.TAIL_TO_SUN
-    if phase in (MissionPhase.EARTH_DEPARTURE, MissionPhase.LUNAR_FLYBY, MissionPhase.REENTRY):
+    if phase == MissionPhase.LUNAR_FLYBY:
+        return MissionAttitudeMode.NOSE_TO_MOON
+    if phase in (MissionPhase.EARTH_DEPARTURE, MissionPhase.REENTRY):
         return MissionAttitudeMode.BURN_ALIGN
     return MissionAttitudeMode.HOLD
 
@@ -75,6 +77,20 @@ def compute_policy_attitude_rotation(
             roll = _roll_about_x(et * spin_rate)
             return base_rot @ roll, mode, 0.60
         return base_rot, mode, 0.58
+
+    if mode == MissionAttitudeMode.NOSE_TO_MOON:
+        x_axis = _normalize(
+            moon_nadir_vec if moon_nadir_vec is not None else velocity_vec,
+            np.array([1.0, 0.0, 0.0], dtype=float),
+        )
+        up_hint = velocity_vec
+        if float(np.linalg.norm(up_hint)) <= 1e-9:
+            up_hint = earth_nadir_vec
+        if float(np.linalg.norm(up_hint)) <= 1e-9:
+            up_hint = np.array([0.0, 0.0, 1.0], dtype=float)
+        rot = _rotation_from_x_and_hint(x_axis, up_hint)
+        confidence = 0.74 if moon_nadir_vec is not None else 0.64
+        return rot, mode, confidence
 
     if mode == MissionAttitudeMode.BURN_ALIGN:
         x_axis = _normalize(velocity_vec, np.array([1.0, 0.0, 0.0], dtype=float))

@@ -234,4 +234,16 @@ describe('MissionInfo', () => {
     fireEvent.click(toggle!);
     expect(missionStoreState.setEstimatedAttitudeEnabled).toHaveBeenCalledWith(false);
   });
+
+  it('renders the NOSE TO MOON attitude label from backend metadata', () => {
+    render(
+      <MissionInfo
+        missionState={{ ...mockMissionState, attitudeMode: 'NOSE_TO_MOON' as const }}
+        missionHealth={mockMissionHealth}
+        missionEvents={mockMissionEvents}
+      />
+    );
+
+    expect(screen.getByText(/GEOMETRIC FALLBACK \| NOSE TO MOON \| ECLIPJ2000 \| 65%/)).toBeInTheDocument();
+  });
 });

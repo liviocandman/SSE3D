@@ -59,6 +59,10 @@ function formatAttitudeConfidence(confidence?: number): string {
   return `${pct}%`;
 }
 
+function formatAttitudeLabel(value?: string): string {
+  return (value ?? 'n/a').replaceAll('_', ' ');
+}
+
 // --- Component ---
 
 export function MissionInfo({ missionState, missionHealth, missionEvents, isMobile = false }: MissionInfoProps) {
@@ -238,7 +242,7 @@ export function MissionInfo({ missionState, missionHealth, missionEvents, isMobi
               <div className="flex justify-between items-center">
                 <span className="text-[10px] text-white/40 uppercase tracking-wider">Attitude</span>
                 <span className="text-[10px] text-white/70 tabular-nums text-right max-w-[170px] truncate">
-                  {(missionState.attitudeSource ?? 'n/a').replace('_', ' ')} | {(missionState.attitudeMode ?? 'n/a').replace('_', ' ')} | {missionState.referenceFrame ?? 'n/a'} | {formatAttitudeConfidence(missionState.attitudeConfidence)}
+                  {formatAttitudeLabel(missionState.attitudeSource)} | {formatAttitudeLabel(missionState.attitudeMode)} | {missionState.referenceFrame ?? 'n/a'} | {formatAttitudeConfidence(missionState.attitudeConfidence)}
                 </span>
               </div>
             )}
@@ -447,7 +451,7 @@ export function MissionInfo({ missionState, missionHealth, missionEvents, isMobi
           <div className="flex justify-between items-center">
             <span className="text-[10px] text-white/50 uppercase tracking-wider">Attitude</span>
             <span className="text-[10px] text-white/70 tabular-nums text-right max-w-[190px] truncate">
-              {(missionState.attitudeSource ?? 'n/a').replace('_', ' ')} | {(missionState.attitudeMode ?? 'n/a').replace('_', ' ')} | {missionState.referenceFrame ?? 'n/a'} | {formatAttitudeConfidence(missionState.attitudeConfidence)}
+              {formatAttitudeLabel(missionState.attitudeSource)} | {formatAttitudeLabel(missionState.attitudeMode)} | {missionState.referenceFrame ?? 'n/a'} | {formatAttitudeConfidence(missionState.attitudeConfidence)}
             </span>
           </div>
         )}
