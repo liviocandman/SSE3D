@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { API_BASE_URL } from '@/lib/api';
+import { fetchUpstreamWithWakeRetry } from '@/lib/upstreamFetch';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest) {
   const apiUrl = `${pythonUrl}/api/ephemeris?date=${date}${idsQuery}${centerQuery}${forceQuery}${spanQuery}${fullOrbitQuery}`;
 
   try {
-    const response = await fetch(apiUrl, { next: { revalidate: 0 } });
+    const response = await fetchUpstreamWithWakeRetry(apiUrl, { next: { revalidate: 0 } });
     if (!response.ok) {
       return NextResponse.json(
         { error: 'UPSTREAM_ERROR' },

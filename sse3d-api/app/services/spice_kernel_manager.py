@@ -14,6 +14,8 @@ from app.services.body_catalog import ALL_BODY_IDS, MOON_PARENTS
 class SpiceRuntimeStatus:
     enabled: bool = False
     ready: bool = False
+    kernels_present: bool = False
+    coverage_validated: bool = False
     loaded_files: list[str] = field(default_factory=list)
     covered_body_ids: list[str] = field(default_factory=list)
     missing_required_ids: list[str] = field(default_factory=list)
@@ -33,6 +35,10 @@ def _resolve_kernel_paths() -> list[Path]:
     return [(root / rel_path).resolve() for rel_path in configured]
 
 
+def get_missing_kernel_files() -> list[str]:
+    return [str(path) for path in _resolve_kernel_paths() if not path.exists()]
+
+
 def _check_body_coverage(body_id: str) -> bool:
     if body_id == "10":
         return True
@@ -45,7 +51,7 @@ def _check_body_coverage(body_id: str) -> bool:
         return False
 
 
-def initialize_spice_kernels() -> SpiceRuntimeStatus:
+def initialize_spice_kernels(*, validate_coverage: bool = True) -> SpiceRuntimeStatus:
     global _status
 
     _status = SpiceRuntimeStatus(enabled=settings.spice_enabled)
@@ -54,7 +60,8 @@ def initialize_spice_kernels() -> SpiceRuntimeStatus:
         return _status
 
     kernel_paths = _resolve_kernel_paths()
-    missing_files = [str(path) for path in kernel_paths if not path.exists()]
+    missing_files = get_missing_kernel_files()
+    _status.kernels_present = len(missing_files) == 0
     if missing_files:
         _status.errors.append(
             "Missing kernel files: " + ", ".join(missing_files)
@@ -78,25 +85,36 @@ def initialize_spice_kernels() -> SpiceRuntimeStatus:
             raise RuntimeError(_status.errors[-1]) from exc
         return _status
 
-    covered = [body_id for body_id in ALL_BODY_IDS if _check_body_coverage(body_id)]
-    missing = [body_id for body_id in ALL_BODY_IDS if body_id not in covered]
-    _status.covered_body_ids = covered
-    _status.missing_required_ids = missing
+    if validate_coverage:
+        covered = [body_id for body_id in ALL_BODY_IDS if _check_body_coverage(body_id)]
+        missing = [body_id for body_id in ALL_BODY_IDS if body_id not in covered]
+        _status.covered_body_ids = covered
+        _status.missing_required_ids = missing
+        _status.coverage_validated = True
 
-    if missing:
-        msg = (
-            "[SPICE] Missing body coverage for IDs: " + ", ".join(missing)
-        )
-        _status.errors.append(msg)
-        if settings.spice_strict_kernels:
-            raise RuntimeError(msg)
+        if missing:
+            msg = (
+                "[SPICE] Missing body coverage for IDs: " + ", ".join(missing)
+            )
+            _status.errors.append(msg)
+            if settings.spice_strict_kernels:
+                raise RuntimeError(msg)
+    else:
+        _status.covered_body_ids = []
+        _status.missing_required_ids = []
+        _status.coverage_validated = False
 
-    _status.ready = len(_status.errors) == 0 and len(_status.missing_required_ids) == 0
+    _status.ready = len(_status.errors) == 0 and len(_status.loaded_files) > 0
 
-    if _status.ready:
+    if _status.ready and _status.coverage_validated:
         logger.info(
             "[SPICE] Kernels loaded and coverage validated for {} bodies.",
             len(_status.covered_body_ids),
+        )
+    elif _status.ready:
+        logger.info(
+            "[SPICE] Kernels loaded with fast-path startup validation. coverage_validated={}",
+            _status.coverage_validated,
         )
     else:
         logger.warning(

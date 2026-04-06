@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { API_BASE_URL } from '@/lib/api';
+import { fetchUpstreamWithWakeRetry } from '@/lib/upstreamFetch';
 
 export const revalidate = 0;
 
@@ -8,7 +9,7 @@ export async function GET() {
   const url = `${pythonUrl}/api/missions/artemis2/health`;
 
   try {
-    const res = await fetch(url, { cache: 'no-store' });
+    const res = await fetchUpstreamWithWakeRetry(url, { cache: 'no-store' });
 
     if (!res.ok) {
       return NextResponse.json(
