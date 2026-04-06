@@ -17,7 +17,7 @@ export const MissionMilestoneMarker: React.FC<MissionMilestoneMarkerProps> = ({
   opacity: initialOpacity = 1,
 }) => {
   const groupRef = useRef<THREE.Group>(null);
-  const lineRef = useRef<{ material?: { opacity: number } } | null>(null);
+  const lineRef = useRef<(THREE.Object3D & { material?: { opacity: number } }) | null>(null);
   const textRef = useRef<{ fillOpacity: number } | null>(null);
   const diamondRef = useRef<THREE.Mesh>(null);
   const worldPositionRef = useRef(new THREE.Vector3());
@@ -66,7 +66,9 @@ export const MissionMilestoneMarker: React.FC<MissionMilestoneMarkerProps> = ({
     <group ref={groupRef} position={position} visible={false}>
       {/* Vertical pointer line */}
       <Line
-        ref={lineRef}
+        ref={(value) => {
+          lineRef.current = value as (THREE.Object3D & { material?: { opacity: number } }) | null;
+        }}
         points={[[0, 0, 0], [0, 0.05, 0]]}
         color="#00ffff"
         lineWidth={1}

@@ -48,6 +48,29 @@ type SolarStoreMockState = {
   advanceTime: ReturnType<typeof vi.fn>;
 };
 
+function applySolarStoreMock(state: SolarStoreMockState) {
+  vi.mocked(useSolarStore).mockImplementation(
+    ((selector: Parameters<typeof useSolarStore>[0]) => selector(state as never)) as typeof useSolarStore,
+  );
+}
+
+function applyMissionStoreMock(state: MissionStoreMockState) {
+  vi.mocked(useMissionStore).mockImplementation(
+    ((selector: Parameters<typeof useMissionStore>[0]) => selector(state as never)) as typeof useMissionStore,
+  );
+}
+
+function createEarthEphemeris(): EphemerisData[] {
+  return [{
+    bodyId: '399',
+    name: 'Earth',
+    timestamp: '2026-04-01T12:00:00Z',
+    position: { x: 0, y: 0, z: 0 },
+    velocity: { x: 0, y: 0, z: 0 },
+    trajectory: [],
+  }];
+}
+
 // Mock store
 vi.mock('@/store/missionStore', () => ({
   useMissionStore: vi.fn(),
@@ -133,8 +156,7 @@ describe('SceneManager / SceneContent', () => {
     );
 
     // Basic mock of solarStore
-    vi.mocked(useSolarStore).mockImplementation((selector?: MockSelector<SolarStoreMockState>) => 
-      selector({
+    applySolarStoreMock({
         currentTime: new Date('2026-04-01T12:00:00Z'),
         selectedPlanet: {
           bodyId: '399',
@@ -158,13 +180,11 @@ describe('SceneManager / SceneContent', () => {
         fullOrbits: {},
         appendFullOrbits: vi.fn(),
         advanceTime: vi.fn(),
-      } as SolarStoreMockState)
-    );
+      });
   });
 
   it('renders spacecraft when missionState has sceneCoordinates', () => {
-    vi.mocked(useMissionStore).mockImplementation((selector?: MockSelector<MissionStoreMockState>) => 
-      selector({
+    applyMissionStoreMock({
         missionState: {
           vehicleId: 'orion',
           sceneCoordinates: { x: 1000, y: 0, z: 0 },
@@ -173,23 +193,16 @@ describe('SceneManager / SceneContent', () => {
         setSelectedMissionTargetId,
         autoFocusEvents: false,
         estimatedAttitudeEnabled: true,
-      } as MissionStoreMockState)
-    );
+      });
 
-    const mockEarthEphemeris: EphemerisData[] = [{
-      bodyId: '399',
-      position: { x: 0, y: 0, z: 0 },
-      velocity: { x: 0, y: 0, z: 0 },
-      trajectory: [],
-    }];
+    const mockEarthEphemeris = createEarthEphemeris();
 
     const { getByTestId } = render(<SceneContent ephemerisData={mockEarthEphemeris} />);
     expect(getByTestId('spacecraft')).toBeInTheDocument();
   });
 
   it('does not render spacecraft when Earth is not the active parent context', () => {
-    vi.mocked(useMissionStore).mockImplementation((selector?: MockSelector<MissionStoreMockState>) =>
-      selector({
+    applyMissionStoreMock({
         missionState: {
           vehicleId: 'orion',
           sceneCoordinates: { x: 1000, y: 0, z: 0 },
@@ -198,11 +211,9 @@ describe('SceneManager / SceneContent', () => {
         setSelectedMissionTargetId,
         autoFocusEvents: false,
         estimatedAttitudeEnabled: true,
-      } as MissionStoreMockState)
-    );
+      });
 
-    vi.mocked(useSolarStore).mockImplementation((selector?: MockSelector<SolarStoreMockState>) =>
-      selector({
+    applySolarStoreMock({
         currentTime: new Date('2026-04-01T12:00:00Z'),
         selectedPlanet: null,
         setSelectedPlanet,
@@ -217,23 +228,16 @@ describe('SceneManager / SceneContent', () => {
         fullOrbits: {},
         appendFullOrbits: vi.fn(),
         advanceTime: vi.fn(),
-      } as SolarStoreMockState)
-    );
+      });
 
-    const mockEarthEphemeris: EphemerisData[] = [{
-      bodyId: '399',
-      position: { x: 0, y: 0, z: 0 },
-      velocity: { x: 0, y: 0, z: 0 },
-      trajectory: [],
-    }];
+    const mockEarthEphemeris = createEarthEphemeris();
 
     const { queryByTestId } = render(<SceneContent ephemerisData={mockEarthEphemeris} />);
     expect(queryByTestId('spacecraft')).not.toBeInTheDocument();
   });
 
   it('uses dedicated close-up radius when spacecraft is double-clicked', () => {
-    vi.mocked(useMissionStore).mockImplementation((selector?: MockSelector<MissionStoreMockState>) =>
-      selector({
+    applyMissionStoreMock({
         missionState: {
           vehicleId: 'orion',
           sceneCoordinates: { x: 1000, y: 0, z: 0 },
@@ -242,15 +246,9 @@ describe('SceneManager / SceneContent', () => {
         setSelectedMissionTargetId,
         autoFocusEvents: false,
         estimatedAttitudeEnabled: true,
-      } as MissionStoreMockState)
-    );
+      });
 
-    const mockEarthEphemeris: EphemerisData[] = [{
-      bodyId: '399',
-      position: { x: 0, y: 0, z: 0 },
-      velocity: { x: 0, y: 0, z: 0 },
-      trajectory: [],
-    }];
+    const mockEarthEphemeris = createEarthEphemeris();
 
     const { getByTestId } = render(<SceneContent ephemerisData={mockEarthEphemeris} />);
     fireEvent.doubleClick(getByTestId('spacecraft'));
@@ -263,8 +261,7 @@ describe('SceneManager / SceneContent', () => {
   });
 
   it('triggers non-intrusive auto-focus on major mission events', async () => {
-    vi.mocked(useMissionStore).mockImplementation((selector?: MockSelector<MissionStoreMockState>) => 
-      selector({
+    applyMissionStoreMock({
         missionState: {
           vehicleId: 'orion',
           sceneCoordinates: { x: 1000, y: 0, z: 0 },
@@ -280,15 +277,9 @@ describe('SceneManager / SceneContent', () => {
         setSelectedMissionTargetId,
         autoFocusEvents: true,
         estimatedAttitudeEnabled: true,
-      } as MissionStoreMockState)
-    );
+      });
 
-    const mockEarthEphemeris: EphemerisData[] = [{
-      bodyId: '399',
-      position: { x: 0, y: 0, z: 0 },
-      velocity: { x: 0, y: 0, z: 0 },
-      trajectory: [],
-    }];
+    const mockEarthEphemeris = createEarthEphemeris();
 
     render(<SceneContent ephemerisData={mockEarthEphemeris} />);
 
@@ -304,8 +295,7 @@ describe('SceneManager / SceneContent', () => {
   });
 
   it('re-arms auto-focus after leaving and re-entering an event window', () => {
-    const missionSelectorImpl = () => (selector?: MockSelector<MissionStoreMockState>) =>
-      selector({
+    const missionSelectorState: MissionStoreMockState = {
         missionState: {
           vehicleId: 'orion',
           sceneCoordinates: { x: 1000, y: 0, z: 0 },
@@ -326,10 +316,9 @@ describe('SceneManager / SceneContent', () => {
         setSelectedMissionTargetId,
         autoFocusEvents: true,
         estimatedAttitudeEnabled: true,
-      } as MissionStoreMockState);
+      };
 
-    const solarSelectorImpl = (currentTime: string) => (selector?: MockSelector<SolarStoreMockState>) =>
-      selector({
+    const solarSelectorState = (currentTime: string): SolarStoreMockState => ({
         currentTime: new Date(currentTime),
         selectedPlanet: {
           bodyId: '399',
@@ -353,28 +342,23 @@ describe('SceneManager / SceneContent', () => {
         fullOrbits: {},
         appendFullOrbits: vi.fn(),
         advanceTime: vi.fn(),
-      } as SolarStoreMockState);
+      });
 
-    vi.mocked(useMissionStore).mockImplementation(missionSelectorImpl());
-    vi.mocked(useSolarStore).mockImplementation(solarSelectorImpl('2026-04-01T12:00:00Z'));
+    applyMissionStoreMock(missionSelectorState);
+    applySolarStoreMock(solarSelectorState('2026-04-01T12:00:00Z'));
 
-    const mockEarthEphemeris: EphemerisData[] = [{
-      bodyId: '399',
-      position: { x: 0, y: 0, z: 0 },
-      velocity: { x: 0, y: 0, z: 0 },
-      trajectory: [],
-    }];
+    const mockEarthEphemeris = createEarthEphemeris();
 
     const { rerender } = render(<SceneContent ephemerisData={mockEarthEphemeris} />);
     expect(setTravelTarget).toHaveBeenCalledTimes(1);
 
-    vi.mocked(useMissionStore).mockImplementation(missionSelectorImpl());
-    vi.mocked(useSolarStore).mockImplementation(solarSelectorImpl('2026-04-01T12:03:00Z'));
+    applyMissionStoreMock(missionSelectorState);
+    applySolarStoreMock(solarSelectorState('2026-04-01T12:03:00Z'));
     rerender(<SceneContent ephemerisData={mockEarthEphemeris} />);
     expect(setTravelTarget).toHaveBeenCalledTimes(1);
 
-    vi.mocked(useMissionStore).mockImplementation(missionSelectorImpl());
-    vi.mocked(useSolarStore).mockImplementation(solarSelectorImpl('2026-04-01T12:00:20Z'));
+    applyMissionStoreMock(missionSelectorState);
+    applySolarStoreMock(solarSelectorState('2026-04-01T12:00:20Z'));
     rerender(<SceneContent ephemerisData={mockEarthEphemeris} />);
     expect(setTravelTarget).toHaveBeenCalledTimes(2);
     expect(setSelectedMissionTargetId).not.toHaveBeenCalled();
@@ -382,8 +366,7 @@ describe('SceneManager / SceneContent', () => {
   });
 
   it('renders milestones when missionEvents has major phases', () => {
-    vi.mocked(useMissionStore).mockImplementation((selector?: MockSelector<MissionStoreMockState>) => 
-      selector({
+    applyMissionStoreMock({
         missionState: { vehicleId: 'orion', sceneCoordinates: { x: 0, y: 0, z: 0 } },
         missionTrajectory: { 
           past: [
@@ -405,15 +388,9 @@ describe('SceneManager / SceneContent', () => {
         setSelectedMissionTargetId,
         autoFocusEvents: false,
         estimatedAttitudeEnabled: true,
-      } as MissionStoreMockState)
-    );
+      });
 
-    const mockEarthEphemeris: EphemerisData[] = [{
-      bodyId: '399',
-      position: { x: 0, y: 0, z: 0 },
-      velocity: { x: 0, y: 0, z: 0 },
-      trajectory: [],
-    }];
+    const mockEarthEphemeris = createEarthEphemeris();
 
     const { getByTestId } = render(<SceneContent ephemerisData={mockEarthEphemeris} />);
     expect(getByTestId('milestone-marker')).toBeInTheDocument();
