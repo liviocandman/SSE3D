@@ -3,11 +3,36 @@ import { type ThreeElements, useThree } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { getSharedKTX2Loader } from '@/lib/SingletonKTX2Loader';
+import { useQualityTier, type QualityTier } from '@/contexts/QualityTierContext';
 
 type OrionDetailedModelProps = ThreeElements['group'] & {
   targetHeight?: number;
   onReady?: () => void;
 };
+
+type OrionDetailedAssetPaths = {
+  low: string;
+  mid: string;
+  high: string;
+};
+
+const MODEL_BASE = (
+  process.env.NEXT_PUBLIC_MODEL_CDN_URL ?? '/models/orion'
+).replace(/\/$/, '');
+
+function getOrionDetailedAssetPaths(name: string): OrionDetailedAssetPaths {
+  return {
+    low: `${MODEL_BASE}/${name}_low.glb`,
+    mid: `${MODEL_BASE}/${name}_medium.glb`,
+    high: `${MODEL_BASE}/${name}_high.glb`,
+  };
+}
+
+const ORION_DETAILED_ASSET_PATHS = getOrionDetailedAssetPaths('artemis_ii');
+
+export function getOrionDetailedAssetPath(tier: QualityTier) {
+  return ORION_DETAILED_ASSET_PATHS[tier];
+}
 
 function sanitizeMaterial(material: THREE.Material) {
   if (!(material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshPhysicalMaterial)) {
@@ -40,8 +65,10 @@ export function OrionDetailedModel({
   ...props
 }: OrionDetailedModelProps) {
   const gl = useThree((state) => state.gl);
+  const { tier } = useQualityTier();
+  const assetPath = getOrionDetailedAssetPath(tier);
   const { scene } = useGLTF(
-    '/models/orion/orion-detailed.glb',
+    assetPath,
     true,
     undefined,
     (loader) => {

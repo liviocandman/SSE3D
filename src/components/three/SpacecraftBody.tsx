@@ -24,9 +24,9 @@ export const SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS = 0.0015;
 const SPACECRAFT_PROXY_DISTANCE_EXIT_UNITS = 0.02;
 const SPACECRAFT_INSPECTION_DISTANCE_ENTER_UNITS = 0.002;
 const SPACECRAFT_INSPECTION_DISTANCE_EXIT_UNITS = 0.0028;
-const MARKER_MIN_SCALE_UNITS = 0.0015;
-const MARKER_MAX_SCALE_UNITS = 1;
-const MARKER_DISTANCE_SCALE_FACTOR = 0.0005;
+const MARKER_MIN_SCALE_UNITS = 0.002;
+const MARKER_MAX_SCALE_UNITS = 0.2;
+const MARKER_DISTANCE_SCALE_FACTOR = 0.02;
 const PROXY_TARGET_HEIGHT_UNITS = 0.0001;
 const DETAILED_TARGET_HEIGHT_UNITS = 0.00012;
 
@@ -47,9 +47,7 @@ function createCircleTexture(color: string) {
   if (context) {
     context.beginPath();
     context.arc(32, 32, 30, 0, 2 * Math.PI, false);
-    context.fillStyle = color;
-    context.fill();
-    context.lineWidth = 4;
+    context.lineWidth = 2;
     context.strokeStyle = color;
     context.stroke();
   }
@@ -102,7 +100,7 @@ export function SpacecraftBody({
     []
   );
 
-  const markerTexture = useMemo(() => createCircleTexture('#00aaff'), []);
+  const markerTexture = useMemo(() => createCircleTexture('#d0dadfff'), []);
   const handleDetailedReady = useCallback(() => {
     setIsDetailedReady(true);
   }, []);
