@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "setup": "node scripts/setup-assets-tiered.js",
     "setup:force": "node -e \"require('fs').rmSync('public/textures', { recursive: true, force: true })\" && node scripts/setup-assets-tiered.js",
-    "upload:textures": "node --env-file=.env.local scripts/upload-textures-s3.mjs"
+    "upload:textures": "node --env-file=.env.local scripts/upload-textures-s3.mjs",
+    "upload:models": "node --env-file=.env.local scripts/upload-models-s3.mjs"
   },
   "dependencies": {
     "@aws-sdk/lib-storage": "^3.1022.0",

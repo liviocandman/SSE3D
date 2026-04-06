@@ -25,6 +25,7 @@
 - [Overview](#-overview)
 - [Key Features](#-key-features)
 - [Architecture](#-architecture)
+- [Artemis II](#-artemis-ii)
 - [Tech Stack](#-tech-stack)
 - [Getting Started](#-getting-started)
 - [Product Walkthrough](#-product-walkthrough--usability-guide)
@@ -131,6 +132,28 @@ The application features a **heliocentric coordinate system** based on real ephe
 2. **AI questions**: User sends question → Next.js BFF → FastAPI (rate limit check) → Google Gemini API → response with sentence completion post-processing
 3. **Authentication**: NextAuth (Google/GitHub) → JWT session → BFF signs server-to-server JWT → FastAPI validates and performs identity linking
 4. **Textures**: Client loads WebP textures from **AWS CloudFront CDN** (cached at edge) with fallback to local public directory.
+
+---
+
+## 🚀 Artemis II
+
+Artemis II is implemented as a dedicated mission domain layered on top of the existing solar system domain. It does not reuse planetary contracts as a shortcut: mission state, trajectory, HUD, observability, Orion 3D rendering, and attitude all live in mission-specific code paths.
+
+Current production-oriented highlights:
+- dedicated FastAPI mission router plus Next.js BFF routes
+- OEM-first trajectory geometry with live AROW freshness and fallback semantics
+- Orion marker / proxy / detailed LOD rendering
+- guided mission HUD and live/replay modes
+- SPICE-backed geometry plus policy-estimated attitude pipeline
+- tiered Orion detailed models loaded from the same CDN base as textures under `models/orion`
+
+Current canonical documentation:
+- [Current State](docs/artemis2/CURRENT_STATE.md)
+- [Deployment](docs/artemis2/DEPLOYMENT.md)
+- [Environment](docs/artemis2/ENVIRONMENT.md)
+- [Merge Checklist](docs/artemis2/MERGE_CHECKLIST.md)
+
+Historical epic-by-epic plans remain under `docs/artemis2/*`, but the files above should be treated as the current operational truth for this branch.
 
 ---
 
@@ -561,6 +584,10 @@ Required environment variables on Vercel:
 - `BFF_JWT_SECRET`
 - `NEXT_PUBLIC_TEXTURE_CDN_URL`
 
+Artemis II notes:
+- Orion detailed models are resolved from the same CDN base as textures, but under `models/orion`
+- see [docs/artemis2/DEPLOYMENT.md](docs/artemis2/DEPLOYMENT.md) for the exact model upload and mission runtime checklist
+
 ### Backend (Fly.io)
 The FastAPI backend is containerized with Docker and deployed to **Fly.io** in the `gru` (São Paulo) region.
 
@@ -576,6 +603,10 @@ fly logs
 Required secrets on Fly.io:
 - `GEMINI_API_KEY`, `DATABASE_URL` (postgresql+asyncpg), `UPSTASH_REDIS_REST_URL`
 - `UPSTASH_REDIS_REST_TOKEN`, `ALLOWED_ORIGINS`, `BFF_JWT_SECRET`, `NEXTAUTH_SECRET`
+
+Artemis II backend adds SPICE kernel bootstrap and OEM mission runtime requirements. See:
+- [docs/artemis2/ENVIRONMENT.md](docs/artemis2/ENVIRONMENT.md)
+- [docs/artemis2/DEPLOYMENT.md](docs/artemis2/DEPLOYMENT.md)
 
 ---
 

@@ -50,7 +50,7 @@ describe('OrionDetailedModel', () => {
     expect(onReady).toHaveBeenCalledTimes(1);
     expect(mockSetKTX2Loader).toHaveBeenCalledTimes(1);
     expect(mockUseGLTF).toHaveBeenCalledWith(
-      '/models/orion/artemis_ii-medium.glb',
+      '/models/orion/artemis_ii_medium.glb',
       true,
       undefined,
       expect.any(Function)
@@ -58,9 +58,9 @@ describe('OrionDetailedModel', () => {
   });
 
   it('resolves the correct asset path for each quality tier', () => {
-    expect(getOrionDetailedAssetPath('high')).toBe('/models/orion/artemis_ii-high.glb');
-    expect(getOrionDetailedAssetPath('mid')).toBe('/models/orion/artemis_ii-medium.glb');
-    expect(getOrionDetailedAssetPath('low')).toBe('/models/orion/artemis_ii-low.glb');
+    expect(getOrionDetailedAssetPath('high')).toBe('/models/orion/artemis_ii_high.glb');
+    expect(getOrionDetailedAssetPath('mid')).toBe('/models/orion/artemis_ii_medium.glb');
+    expect(getOrionDetailedAssetPath('low')).toBe('/models/orion/artemis_ii_medium.glb');
   });
 
   it('loads the low tier asset when quality tier is low', () => {
@@ -69,7 +69,7 @@ describe('OrionDetailedModel', () => {
     render(<OrionDetailedModel />);
 
     expect(mockUseGLTF).toHaveBeenCalledWith(
-      '/models/orion/artemis_ii-low.glb',
+      '/models/orion/artemis_ii_medium.glb',
       true,
       undefined,
       expect.any(Function)
@@ -82,7 +82,7 @@ describe('OrionDetailedModel', () => {
     render(<OrionDetailedModel />);
 
     expect(mockUseGLTF).toHaveBeenCalledWith(
-      '/models/orion/artemis_ii-high.glb',
+      '/models/orion/artemis_ii_high.glb',
       true,
       undefined,
       expect.any(Function)

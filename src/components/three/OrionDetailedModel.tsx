@@ -16,13 +16,15 @@ type OrionDetailedAssetPaths = {
   high: string;
 };
 
-const MODEL_BASE = (
-  process.env.NEXT_PUBLIC_MODEL_CDN_URL ?? '/models/orion'
-).replace(/\/$/, '');
+const TEXTURE_CDN_BASE = process.env.NEXT_PUBLIC_TEXTURE_CDN_URL?.replace(/\/$/, '');
+const MODEL_BASE = TEXTURE_CDN_BASE
+  ? `${TEXTURE_CDN_BASE.replace(/\/textures$/i, '')}/models/orion`
+  : '/models/orion';
 
 function getOrionDetailedAssetPaths(name: string): OrionDetailedAssetPaths {
   return {
-    low: `${MODEL_BASE}/${name}_low.glb`,
+    // Temporary product decision: low tier reuses medium until the low asset is visually stable.
+    low: `${MODEL_BASE}/${name}_medium.glb`,
     mid: `${MODEL_BASE}/${name}_medium.glb`,
     high: `${MODEL_BASE}/${name}_high.glb`,
   };

@@ -59,12 +59,12 @@ export interface EphemerisResponse {
 }
 
 export const MISSION_CONFIG = {
-  // Story 8.3: Feature flag for spacecraft attitude support.
-  // Enabled by default for Artemis II validation. Can be disabled via env.
-  ENABLE_ATTITUDE: (process.env.NEXT_PUBLIC_MISSION_ENABLE_ATTITUDE ?? 'true').toLowerCase() === 'true',
-  ENABLE_POLICY_ATTITUDE: (process.env.NEXT_PUBLIC_MISSION_ENABLE_POLICY_ATTITUDE ?? 'true').toLowerCase() === 'true',
-  ENABLE_SPIN_MODE: (process.env.NEXT_PUBLIC_MISSION_ENABLE_SPIN_MODE ?? 'true').toLowerCase() === 'true',
-};
+  // Mission attitude flags are product decisions, not environment secrets.
+  // Keep them as booleans here so the frontend does not depend on deploy-time env parsing.
+  ENABLE_ATTITUDE: true,
+  ENABLE_POLICY_ATTITUDE: true,
+  ENABLE_SPIN_MODE: true,
+} as const;
 
 // Body ID constants - same as nasaClient
 export const BODY_IDS = {

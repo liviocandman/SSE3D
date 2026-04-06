@@ -308,11 +308,26 @@ class MissionOEMService:
                 if not names:
                     raise ValueError("OEM zip payload is empty")
 
+                def _score_candidate(name: str) -> tuple[int, int, str]:
+                    path = Path(name)
+                    suffix = path.suffix.lower()
+                    stem = path.stem.lower()
+                    filename = path.name.lower()
+
+                    ext_rank = {
+                        ".oem": 0,
+                        ".asc": 1,
+                        ".txt": 2,
+                    }.get(suffix, 3)
+                    oem_hint_rank = 0 if ("oem" in stem or "ephemeris" in filename) else 1
+
+                    return (ext_rank, oem_hint_rank, filename)
+
                 preferred = [
                     name for name in names
                     if Path(name).suffix.lower() in {".asc", ".oem", ".txt"}
                 ]
-                selected_name = preferred[0] if preferred else names[0]
+                selected_name = min(preferred, key=_score_candidate) if preferred else names[0]
                 extracted_payload = zf.read(selected_name)
                 return self._write_atomic(extracted_payload, Path(selected_name).suffix.lower() or ".oem")
 

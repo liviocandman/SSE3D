@@ -185,6 +185,29 @@ def test_remote_zip_oem_payload_is_cached_and_loaded(tmp_path):
     assert service._cached_download_file.exists()  # type: ignore[attr-defined]
 
 
+def test_remote_zip_prefers_oem_payload_over_other_files(tmp_path):
+    service = MissionOEMService(
+        source_url="https://example.com/artemis2-bundle.zip",
+        cache_dir=str(tmp_path / "oem-cache"),
+    )
+
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("README.txt", "bundle metadata")
+        zf.writestr("nested/Artemis_II_OEM_2026.asc", OEM_SAMPLE_TEXT)
+
+    service._download_source_payload = lambda _url: (zip_buffer.getvalue(), "artemis2-bundle.zip")  # type: ignore[method-assign]
+
+    ephemeris = service.get_ephemeris()
+
+    assert ephemeris is not None
+    assert len(ephemeris.states) == 2
+    assert ephemeris.states[0].position.x == 100000.0
+    assert service._cached_download_file is not None  # type: ignore[attr-defined]
+    assert service._cached_download_file.name == "artemis2_latest.oem"  # type: ignore[attr-defined]
+    assert service._cached_download_file.read_text(encoding="utf-8").startswith("CCSDS_OEM_VERS")  # type: ignore[attr-defined]
+
+
 def test_download_failure_falls_back_to_last_cached_oem(tmp_path):
     service = MissionOEMService(
         source_url="https://example.com/artemis2.oem",
