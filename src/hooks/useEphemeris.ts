@@ -8,7 +8,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { EphemerisData, EphemerisResponse, DataSource } from "@/lib/types";
-import { API_BASE_URL } from "@/lib/api";
 import { toast } from "sonner";
 
 // --- Types ---
@@ -149,8 +148,8 @@ async function fetchEphemeris({
 
   try {
     const url = force
-      ? `${API_BASE_URL}/api/ephemeris?date=${date}&spanDays=${spanDays}&force=true`
-      : `${API_BASE_URL}/api/ephemeris?date=${date}&spanDays=${spanDays}`;
+      ? `/api/ephemeris?date=${date}&spanDays=${spanDays}&force=true`
+      : `/api/ephemeris?date=${date}&spanDays=${spanDays}`;
 
     const response = await fetch(url, {
       signal: abortController.signal,

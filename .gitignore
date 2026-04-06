@@ -43,8 +43,8 @@ next-env.d.ts
 # docs
 /docs
 
-# textures
-public/textures/
+# assets
+public/
 
 # python
 venv/

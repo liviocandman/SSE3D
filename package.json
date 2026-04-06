@@ -5,8 +5,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:lan": "node scripts/dev-lan.mjs",
     "build": "next build",
     "start": "next start",
+    "start:lan": "next start --hostname 0.0.0.0 --port 3000",
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
