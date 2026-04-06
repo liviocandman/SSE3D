@@ -7,7 +7,6 @@ import { MissionPhase } from '@/lib/missionTypes';
 import { SPACECRAFT_CLOSEUP_RADIUS_UNITS, SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS } from './SpacecraftBody';
 import type { EphemerisData } from '@/lib/types';
 
-type MockSelector<TState, TResult = unknown> = (state: TState) => TResult;
 type QualityTierState = { tier: 'high' | 'mid' | 'low'; settings: { devicePixelRatio: number; antialias: boolean } };
 type MockComponentProps = { children?: React.ReactNode };
 type MockBillboardProps = { children?: React.ReactNode };
