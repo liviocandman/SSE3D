@@ -1,6 +1,6 @@
 /**
  * useCameraAnimation Hook
- * Provides smooth camera animation to focus on celestial bodies
+ * Provides smooth, stable camera animation with kinematic constraints and origin smoothing.
  */
 
 "use client";
@@ -10,7 +10,7 @@ import { useThree, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { useSolarStore } from "@/store/solarStore";
 import { KM_TO_UNIT } from "@/lib/scales";
-import { isRenderOriginNearTarget } from "@/lib/renderFrame";
+import { CAMERA_CONFIG } from "@/lib/cameraConfig";
 
 // --- Types ---
 
@@ -20,36 +20,29 @@ interface CameraTarget {
 }
 
 interface UseCameraAnimationOptions {
-  /** Animation duration in seconds */
-  duration?: number;
-  /** Easing function */
-  easing?: (t: number) => number;
   /** Offset distance from target */
   offsetDistance?: number;
 }
 
 interface UseCameraAnimationReturn {
-  /** Animate camera to look at a position */
+  /** Animate camera to look at a position (Absolute KM) */
   focusOn: (
     targetPosition: { x: number; y: number; z: number },
     radius?: number,
     targetName?: string,
   ) => void;
-  /** Stop tracking/animation without snapping back to the default camera */
+  /** Stop tracking/animation */
   stopTracking: () => void;
   /** Reset camera to default position */
   resetCamera: () => void;
 }
 
-// --- Constants ---
-
-const DEFAULT_DURATION = 1.5; // seconds
-const DEFAULT_OFFSET_DISTANCE = 80; // units from target
-const DEFAULT_CAMERA_POSITION = new THREE.Vector3(0, 50, 150);
-const MIN_FOCUS_OFFSET = 0.00005;
-
-// Smooth easing function (ease-out cubic)
-const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
+interface CameraControlsLike {
+  target: THREE.Vector3;
+  update: () => void;
+  addEventListener: (type: "start" | "end", listener: () => void) => void;
+  removeEventListener: (type: "start" | "end", listener: () => void) => void;
+}
 
 // --- Hook ---
 
@@ -57,86 +50,288 @@ export function useCameraAnimation(
   options: UseCameraAnimationOptions = {},
 ): UseCameraAnimationReturn {
   const {
-    duration = DEFAULT_DURATION,
-    easing = easeOutCubic,
-    offsetDistance = DEFAULT_OFFSET_DISTANCE,
+    offsetDistance = CAMERA_CONFIG.DEFAULT_OFFSET[2],
   } = options;
 
   const { camera, controls, scene } = useThree();
 
+  // 1. Unified state for damped control
   const isAnimatingRef = useRef(false);
-  const animationProgressRef = useRef(0);
-  const startPositionRef = useRef(new THREE.Vector3());
-  const startLookAtRef = useRef(new THREE.Vector3(0, 0, 0)); // Track starting lookAt
+  const targetObjectNameRef = useRef<string | null>(null);
   const targetRef = useRef<CameraTarget | null>(null);
 
-  const worldPositionRef = useRef(new THREE.Vector3());
-  const targetObjectNameRef = useRef<string | null>(null);
+  // 2. Damping states (relative units)
+  const currentPivotUnits = useRef(new THREE.Vector3(0, 0, 0));
+  const currentOffsetUnits = useRef(new THREE.Vector3().set(...CAMERA_CONFIG.DEFAULT_OFFSET));
+
+  // 3. Smooth Origin (Phase 2)
+  const targetOriginKm = useRef(new THREE.Vector3(0, 0, 0));
+  const displayOriginKm = useRef(new THREE.Vector3(0, 0, 0));
+  const originInitializedRef = useRef(false);
+  const currentLinearVelocityUnits = useRef(new THREE.Vector3());
+  const currentLookDirectionRef = useRef(new THREE.Vector3(0, 0, -1));
+  const activeTravelMaxSpeedRef = useRef(CAMERA_CONFIG.MAX_LINEAR_SPEED);
+  const activeTravelMaxAccelRef = useRef(CAMERA_CONFIG.MAX_LINEAR_ACCEL);
+  const lastOriginApplyTimeRef = useRef(0);
+
+  // 4. Zero-GC Vector Pool
+  const pool = useRef({
+    v1: new THREE.Vector3(),
+    v2: new THREE.Vector3(),
+    v3: new THREE.Vector3(),
+    v4: new THREE.Vector3(),
+    v5: new THREE.Vector3(),
+    v6: new THREE.Vector3(),
+    worldPos: new THREE.Vector3(),
+    prevPos: new THREE.Vector3(),
+  });
+
+  // 5. Manual Interaction State
+  const isUserDraggingRef = useRef(false);
+
+  useEffect(() => {
+    if (!controls) return;
+    const ctrl = controls as unknown as CameraControlsLike;
+    
+    const onStart = () => {
+      isUserDraggingRef.current = true;
+      // User intent wins: cancel auto-travel/lock immediately.
+      isAnimatingRef.current = false;
+      targetRef.current = null;
+      currentLinearVelocityUnits.current.set(0, 0, 0);
+    };
+    const onEnd = () => { isUserDraggingRef.current = false; };
+
+    ctrl.addEventListener('start', onStart);
+    ctrl.addEventListener('end', onEnd);
+    return () => {
+      ctrl.removeEventListener('start', onStart);
+      ctrl.removeEventListener('end', onEnd);
+    };
+  }, [controls]);
 
   const setRenderOrigin = useSolarStore(state => state.setRenderOrigin);
 
   // Animation frame loop
-  useFrame((_, delta) => {
-    const solarState = useSolarStore.getState();
-    const renderOrigin = new THREE.Vector3(
-      solarState.renderOrigin.x,
-      solarState.renderOrigin.y,
-      solarState.renderOrigin.z
-    );
+  useFrame((state, delta) => {
+    if (delta <= 0) return;
+    const dt = Math.min(delta, 0.05);
 
-    // 1. Handle Tracking / Origin Updates
+    const solarState = useSolarStore.getState();
+    const { v1, v2, v3, v4, v5, v6, worldPos, prevPos } = pool.current;
+
+    if (!originInitializedRef.current) {
+      targetOriginKm.current.set(solarState.renderOrigin.x, solarState.renderOrigin.y, solarState.renderOrigin.z);
+      displayOriginKm.current.copy(targetOriginKm.current);
+      originInitializedRef.current = true;
+    }
+
+    // A. Resolve Target Truth (Absolute KM)
+    let hasTarget = false;
+    v1.set(solarState.renderOrigin.x, solarState.renderOrigin.y, solarState.renderOrigin.z);
+
     if (targetObjectNameRef.current) {
       const obj = scene.getObjectByName(targetObjectNameRef.current);
       if (obj) {
-        const worldPos = obj.getWorldPosition(worldPositionRef.current);
-        const absolutePosKm = new THREE.Vector3(
-          renderOrigin.x + worldPos.x / KM_TO_UNIT,
-          renderOrigin.y + worldPos.y / KM_TO_UNIT,
-          renderOrigin.z + worldPos.z / KM_TO_UNIT
+        obj.getWorldPosition(worldPos);
+        v2.set(
+          v1.x + worldPos.x / KM_TO_UNIT,
+          v1.y + worldPos.y / KM_TO_UNIT,
+          v1.z + worldPos.z / KM_TO_UNIT
         );
-
-        if (!isRenderOriginNearTarget(solarState.renderOrigin, absolutePosKm, 0.001)) {
-          setRenderOrigin(absolutePosKm, 'custom');
-        }
-
-        if (!isAnimatingRef.current) {
-          if (controls && "target" in controls) {
-            (controls.target as THREE.Vector3).set(0, 0, 0);
-            (controls as unknown as { update: () => void }).update();
-          }
-        }
+        hasTarget = true;
       }
     }
 
-    // 2. Handle Active Animation
-    if (isAnimatingRef.current && targetRef.current) {
-      animationProgressRef.current += delta / duration;
+    const hasAutoIntent = hasTarget || isAnimatingRef.current || targetRef.current !== null;
 
-      if (animationProgressRef.current >= 1) {
-        animationProgressRef.current = 1;
-        isAnimatingRef.current = false;
+    // If camera is not being auto-driven, keep internal state synced with user-driven controls
+    // and avoid overriding OrbitControls behavior.
+    if (!hasAutoIntent) {
+      if (controls && "target" in controls) {
+        currentPivotUnits.current.copy((controls.target as THREE.Vector3));
+      }
+      v3.subVectors(camera.position, currentPivotUnits.current);
+      currentOffsetUnits.current.copy(v3);
+      currentLinearVelocityUnits.current.set(0, 0, 0);
+
+      // Keep origin trackers coherent so next autofocus doesn't "kick"
+      targetOriginKm.current.copy(v1);
+      displayOriginKm.current.copy(v1);
+      return;
+    }
+
+    // B. Handle Origin Hysteresis & Smooth Rebase (Phase 2)
+    let didShiftOrigin = false;
+    if (hasTarget) {
+      const distToTargetOriginKm = v2.distanceTo(targetOriginKm.current);
+      
+      // Update target origin if target moves beyond hysteresis
+      // (Removed isAnimatingRef.current bypass to maintain stability even during travel)
+      if (distToTargetOriginKm > CAMERA_CONFIG.ORIGIN_HYSTERESIS_KM) {
+        targetOriginKm.current.copy(v2);
       }
 
-      const t = easing(animationProgressRef.current);
+      // Smoothly converge display origin to target origin (Zero "kick" visual)
+      // derive damping from ms config: damping = 1 / (ms / 1000) => 1 / 0.3 = 3.33
+      const originDamp = 1000 / CAMERA_CONFIG.ORIGIN_SMOOTHING_MS; 
+      
+      displayOriginKm.current.x = THREE.MathUtils.damp(displayOriginKm.current.x, targetOriginKm.current.x, originDamp, dt);
+      displayOriginKm.current.y = THREE.MathUtils.damp(displayOriginKm.current.y, targetOriginKm.current.y, originDamp, dt);
+      displayOriginKm.current.z = THREE.MathUtils.damp(displayOriginKm.current.z, targetOriginKm.current.z, originDamp, dt);
 
-      camera.position.lerpVectors(
-        startPositionRef.current,
-        targetRef.current.localOffsetUnits,
-        t
-      );
+      const displayToTargetKm = displayOriginKm.current.distanceTo(targetOriginKm.current);
+      if (displayToTargetKm > CAMERA_CONFIG.ORIGIN_HARD_SNAP_KM) {
+        displayOriginKm.current.copy(targetOriginKm.current);
+      }
 
-      const currentLocalLookAt = new THREE.Vector3().lerpVectors(
-        startLookAtRef.current,
-        new THREE.Vector3(0, 0, 0),
-        t
-      );
+      // Apply smoothed origin to store
+      const originDriftKm = v1.distanceTo(displayOriginKm.current);
+      const now = state.clock.elapsedTime;
+      const minOriginApplyInterval = 1 / CAMERA_CONFIG.ORIGIN_MAX_UPDATE_HZ;
+      const shouldApplyOrigin =
+        originDriftKm >= CAMERA_CONFIG.ORIGIN_APPLY_TOLERANCE_KM &&
+        (
+          (now - lastOriginApplyTimeRef.current) >= minOriginApplyInterval ||
+          originDriftKm >= CAMERA_CONFIG.ORIGIN_HARD_SNAP_KM
+        );
+
+      if (shouldApplyOrigin) {
+        setRenderOrigin(
+          {
+            x: displayOriginKm.current.x,
+            y: displayOriginKm.current.y,
+            z: displayOriginKm.current.z,
+          },
+          'custom'
+        );
+        lastOriginApplyTimeRef.current = now;
+        
+        // COMPENSATE: visual state shift
+        v3.set(v1.x - displayOriginKm.current.x, v1.y - displayOriginKm.current.y, v1.z - displayOriginKm.current.z)
+          .multiplyScalar(KM_TO_UNIT);
+        
+        currentPivotUnits.current.add(v3);
+        didShiftOrigin = true;
+      }
+    }
+
+    const isFollowMode = hasTarget && !isAnimatingRef.current && targetRef.current === null;
+    if (isFollowMode) {
+      if (didShiftOrigin) {
+        camera.position.add(v3);
+        if (controls && "target" in controls) {
+          (controls.target as THREE.Vector3).add(v3);
+          (controls as unknown as { update: () => void }).update();
+        }
+      }
 
       if (controls && "target" in controls) {
-        (controls.target as THREE.Vector3).copy(currentLocalLookAt);
-        (controls as unknown as { update: () => void }).update();
+        currentPivotUnits.current.copy((controls.target as THREE.Vector3));
       }
+      v5.subVectors(camera.position, currentPivotUnits.current);
+      currentOffsetUnits.current.copy(v5);
+      currentLinearVelocityUnits.current.set(0, 0, 0);
+      return;
+    }
 
-      camera.lookAt(currentLocalLookAt);
+    // C. Damped Spring Simulation & Kinematics (Phase 2)
+    const idealPivot = v4.set(0, 0, 0);
+    const idealOffset = targetRef.current?.localOffsetUnits || currentOffsetUnits.current;
+
+    const pDamp = isUserDraggingRef.current ? CAMERA_CONFIG.DAMPING_INTERACTION : CAMERA_CONFIG.DAMPING_PIVOT;
+    const oDampFactor = isAnimatingRef.current ? 4 : CAMERA_CONFIG.DAMPING_OFFSET;
+    const maxLinearSpeed = isAnimatingRef.current ? activeTravelMaxSpeedRef.current : CAMERA_CONFIG.MAX_LINEAR_SPEED;
+    const maxLinearAccel = isAnimatingRef.current ? activeTravelMaxAccelRef.current : CAMERA_CONFIG.MAX_LINEAR_ACCEL;
+
+    // Capture previous local position for kinematics
+    prevPos.copy(camera.position);
+
+    // 1. Pivot Update (with Dead-zone)
+    const pivotErrorSq = currentPivotUnits.current.distanceToSquared(idealPivot);
+    if (pivotErrorSq > CAMERA_CONFIG.DEAD_ZONE_UNITS * CAMERA_CONFIG.DEAD_ZONE_UNITS || isAnimatingRef.current) {
+      currentPivotUnits.current.x = THREE.MathUtils.damp(currentPivotUnits.current.x, idealPivot.x, pDamp, dt);
+      currentPivotUnits.current.y = THREE.MathUtils.damp(currentPivotUnits.current.y, idealPivot.y, pDamp, dt);
+      currentPivotUnits.current.z = THREE.MathUtils.damp(currentPivotUnits.current.z, idealPivot.z, pDamp, dt);
+    }
+
+    // 2. Offset Update
+    currentOffsetUnits.current.x = THREE.MathUtils.damp(currentOffsetUnits.current.x, idealOffset.x, oDampFactor, dt);
+    currentOffsetUnits.current.y = THREE.MathUtils.damp(currentOffsetUnits.current.y, idealOffset.y, oDampFactor, dt);
+    currentOffsetUnits.current.z = THREE.MathUtils.damp(currentOffsetUnits.current.z, idealOffset.z, oDampFactor, dt);
+
+    // If user is actively dragging, don't fight OrbitControls.
+    if (isUserDraggingRef.current && !isAnimatingRef.current) {
+      if (controls && "target" in controls) {
+        currentPivotUnits.current.copy((controls.target as THREE.Vector3));
+      }
+      v3.subVectors(camera.position, currentPivotUnits.current);
+      currentOffsetUnits.current.copy(v3);
+      currentLinearVelocityUnits.current.set(0, 0, 0);
+      return;
+    }
+
+    // 3. Final Position & Kinematic Clamping (Phase 2)
+    v1.addVectors(currentPivotUnits.current, currentOffsetUnits.current);
+
+    // Linear velocity + acceleration clamp
+    const desiredVelocity = v5.subVectors(v1, prevPos).multiplyScalar(1 / dt);
+    const velocityDelta = v6.subVectors(desiredVelocity, currentLinearVelocityUnits.current);
+    const maxVelocityDelta = maxLinearAccel * dt;
+    if (velocityDelta.lengthSq() > maxVelocityDelta * maxVelocityDelta && maxVelocityDelta > 0) {
+      velocityDelta.setLength(maxVelocityDelta);
+      desiredVelocity.copy(currentLinearVelocityUnits.current).add(velocityDelta);
+    }
+
+    if (desiredVelocity.lengthSq() > maxLinearSpeed * maxLinearSpeed) {
+      desiredVelocity.setLength(maxLinearSpeed);
+    }
+
+    v1.copy(prevPos).addScaledVector(desiredVelocity, dt);
+    currentLinearVelocityUnits.current.copy(desiredVelocity);
+
+    // Reconcile internal state after kinematic clamp to avoid elastic artifacts
+    v3.subVectors(v1, currentPivotUnits.current);
+    currentOffsetUnits.current.copy(v3);
+
+    camera.position.copy(v1);
+
+    // E. Apply to Controls
+    if (controls && "target" in controls) {
+      (controls.target as THREE.Vector3).copy(currentPivotUnits.current);
+      (controls as unknown as { update: () => void }).update();
+    }
+
+    // Angular speed clamp
+    const desiredLookDirection = v2.subVectors(currentPivotUnits.current, camera.position);
+    if (desiredLookDirection.lengthSq() > 1e-16) {
+      desiredLookDirection.normalize();
+      const maxAngle = CAMERA_CONFIG.MAX_ANGULAR_SPEED * dt;
+      const currentLookDirection = currentLookDirectionRef.current;
+      const angle = currentLookDirection.angleTo(desiredLookDirection);
+      if (angle > 1e-6) {
+        const t = Math.min(1, maxAngle / angle);
+        currentLookDirection.lerp(desiredLookDirection, t).normalize();
+      } else {
+        currentLookDirection.copy(desiredLookDirection);
+      }
+      camera.lookAt(v6.copy(camera.position).add(currentLookDirectionRef.current));
+    } else {
+      camera.lookAt(currentPivotUnits.current);
+    }
+
+    // Check convergence
+    if (isAnimatingRef.current) {
+      const offsetDistSq = currentOffsetUnits.current.distanceToSquared(idealOffset);
+      if (pivotErrorSq < 1e-10 && offsetDistSq < 1e-10) {
+        isAnimatingRef.current = false;
+        currentLinearVelocityUnits.current.set(0, 0, 0);
+        activeTravelMaxSpeedRef.current = CAMERA_CONFIG.MAX_LINEAR_SPEED;
+        activeTravelMaxAccelRef.current = CAMERA_CONFIG.MAX_LINEAR_ACCEL;
+        // Release framing lock after travel so OrbitControls can freely zoom/rotate.
+        // Keep target-name tracking so follow mode remains active during time travel.
+        targetRef.current = null;
+      }
     }
   });
 
@@ -146,96 +341,73 @@ export function useCameraAnimation(
     targetName?: string,
   ) => {
     const solarState = useSolarStore.getState();
-    const currentOrigin = new THREE.Vector3(
-      solarState.renderOrigin.x,
-      solarState.renderOrigin.y,
-      solarState.renderOrigin.z
-    );
+    const { v1, v2, v3, v4, worldPos } = pool.current;
 
-    const targetAbsoluteKm = new THREE.Vector3(
-      targetPosition.x,
-      targetPosition.y,
-      targetPosition.z
-    );
+    v1.set(solarState.renderOrigin.x, solarState.renderOrigin.y, solarState.renderOrigin.z);
 
+    // 1. Resolve Target Absolute Km
+    v2.set(targetPosition.x, targetPosition.y, targetPosition.z);
     if (targetName) {
       const obj = scene.getObjectByName(targetName);
       if (obj) {
-        const worldPos = obj.getWorldPosition(worldPositionRef.current);
-        targetAbsoluteKm.set(
-          worldPos.x / KM_TO_UNIT + currentOrigin.x,
-          worldPos.y / KM_TO_UNIT + currentOrigin.y,
-          worldPos.z / KM_TO_UNIT + currentOrigin.z
+        obj.getWorldPosition(worldPos);
+        v2.set(
+          worldPos.x / KM_TO_UNIT + v1.x,
+          worldPos.y / KM_TO_UNIT + v1.y,
+          worldPos.z / KM_TO_UNIT + v1.z
         );
       }
     }
 
-    setRenderOrigin(targetAbsoluteKm, 'selected_body');
+    // 2. Set new target origin (Wait for smoothing to catch up)
+    targetOriginKm.current.copy(v2);
 
-    const dynamicOffset = radius ? Math.max(MIN_FOCUS_OFFSET, radius * 3) : offsetDistance;
-    const localOffsetUnits = new THREE.Vector3(0, dynamicOffset * 0.3, dynamicOffset);
+    // 3. Setup relative targets
+    const dynamicOffset = radius ? Math.max(CAMERA_CONFIG.MIN_FOCUS_OFFSET, radius * CAMERA_CONFIG.FOCUS_RADIUS_MULTIPLIER) : offsetDistance;
+    v3.set(0, dynamicOffset * 0.3, dynamicOffset);
 
-    const originShiftUnits = new THREE.Vector3()
-      .subVectors(currentOrigin, targetAbsoluteKm)
-      .multiplyScalar(KM_TO_UNIT);
-    
-    camera.position.add(originShiftUnits);
-    startPositionRef.current.copy(camera.position);
-
-    if (controls && "target" in controls) {
-      const oldLocalTarget = (controls.target as THREE.Vector3).clone();
-      startLookAtRef.current.copy(oldLocalTarget.add(originShiftUnits));
-    } else {
-      startLookAtRef.current.copy(originShiftUnits);
-    }
+    // Adaptive travel profile: keeps perceived duration more constant across short/long jumps.
+    const currentLocalPos = camera.position;
+    const targetLocalPos = v4.copy(v3); // target pivot is always (0,0,0) in local frame
+    const travelDistance = currentLocalPos.distanceTo(targetLocalPos);
+    const targetDuration = Math.max(0.1, CAMERA_CONFIG.TRAVEL_TARGET_DURATION_S);
+    const adaptiveSpeed = THREE.MathUtils.clamp(
+      travelDistance / targetDuration,
+      CAMERA_CONFIG.TRAVEL_MIN_SPEED,
+      CAMERA_CONFIG.TRAVEL_MAX_SPEED
+    );
+    activeTravelMaxSpeedRef.current = adaptiveSpeed;
+    activeTravelMaxAccelRef.current = Math.max(CAMERA_CONFIG.MAX_LINEAR_ACCEL, adaptiveSpeed * 2.5);
 
     targetRef.current = {
-      localOffsetUnits: localOffsetUnits,
+      localOffsetUnits: v3.clone(),
     };
 
     targetObjectNameRef.current = targetName || null;
-    animationProgressRef.current = 0;
     isAnimatingRef.current = true;
   };
 
   const resetCamera = () => {
-    const solarState = useSolarStore.getState();
-    const currentOrigin = new THREE.Vector3(
-      solarState.renderOrigin.x,
-      solarState.renderOrigin.y,
-      solarState.renderOrigin.z
-    );
-    const globalOrigin = new THREE.Vector3(0, 0, 0);
-
-    setRenderOrigin(globalOrigin, 'global');
-
-    const originShiftUnits = new THREE.Vector3()
-      .subVectors(currentOrigin, globalOrigin)
-      .multiplyScalar(KM_TO_UNIT);
-
-    camera.position.add(originShiftUnits);
-    startPositionRef.current.copy(camera.position);
-
-    if (controls && "target" in controls) {
-       const oldLocalTarget = (controls.target as THREE.Vector3).clone();
-       startLookAtRef.current.copy(oldLocalTarget.add(originShiftUnits));
-    } else {
-       startLookAtRef.current.copy(originShiftUnits);
-    }
-
+    targetOriginKm.current.set(0, 0, 0);
+    displayOriginKm.current.set(0, 0, 0);
+    
     targetRef.current = {
-      localOffsetUnits: DEFAULT_CAMERA_POSITION.clone(),
+      localOffsetUnits: new THREE.Vector3().set(...CAMERA_CONFIG.DEFAULT_OFFSET),
     };
     targetObjectNameRef.current = null;
-    animationProgressRef.current = 0;
     isAnimatingRef.current = true;
+    currentLinearVelocityUnits.current.set(0, 0, 0);
+    activeTravelMaxSpeedRef.current = CAMERA_CONFIG.MAX_LINEAR_SPEED;
+    activeTravelMaxAccelRef.current = CAMERA_CONFIG.MAX_LINEAR_ACCEL;
   };
 
   const stopTracking = () => {
     targetRef.current = null;
     targetObjectNameRef.current = null;
-    animationProgressRef.current = 0;
     isAnimatingRef.current = false;
+    currentLinearVelocityUnits.current.set(0, 0, 0);
+    activeTravelMaxSpeedRef.current = CAMERA_CONFIG.MAX_LINEAR_SPEED;
+    activeTravelMaxAccelRef.current = CAMERA_CONFIG.MAX_LINEAR_ACCEL;
   };
 
   return {

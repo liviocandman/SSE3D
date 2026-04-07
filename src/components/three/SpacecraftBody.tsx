@@ -33,6 +33,8 @@ const MARKER_MAX_SCALE_UNITS = 0.2;
 const MARKER_DISTANCE_SCALE_FACTOR = 0.02;
 const PROXY_TARGET_HEIGHT_UNITS = 0.0001;
 const DETAILED_TARGET_HEIGHT_UNITS = 0.00012;
+const SPACECRAFT_POSITION_DAMPING = 16;
+const SPACECRAFT_ATTITUDE_DAMPING = 12;
 
 const LazyOrionDetailedModel = lazy(async () => {
   const orionDetailedModule = await import('./OrionDetailedModel');
@@ -95,6 +97,9 @@ export function SpacecraftBody({
   const progradeQuaternionRef = useRef(new THREE.Quaternion());
   const progradeDirectionRef = useRef(new THREE.Vector3(1, 0, 0));
   const localPositionRef = useRef(new THREE.Vector3());
+  const targetLocalPositionRef = useRef(new THREE.Vector3(position[0], position[1], position[2]));
+  const positionInitializedRef = useRef(false);
+  const targetAttitudeQuaternionRef = useRef(new THREE.Quaternion());
   const lodModeRef = useRef<SpacecraftLodMode>('marker');
   const detailedLoadRequestedRef = useRef(false);
   const detailedUnlockedRef = useRef(false);
@@ -117,10 +122,22 @@ export function SpacecraftBody({
     }
   }, [isSelected]);
 
-  useFrame((state) => {
+  useEffect(() => {
+    targetLocalPositionRef.current.set(position[0], position[1], position[2]);
+    const group = groupRef.current as (THREE.Group & { position?: THREE.Vector3 }) | null;
+    if (group && group.position?.copy && !positionInitializedRef.current) {
+      group.position.copy(targetLocalPositionRef.current);
+      positionInitializedRef.current = true;
+    }
+  }, [position]);
+
+  useFrame((state, delta) => {
     if (!groupRef.current || !markerRef.current || !visualRootRef.current || !proxyRef.current || !detailedRef.current) {
       return;
     }
+
+    const positionLerpFactor = 1 - Math.exp(-SPACECRAFT_POSITION_DAMPING * delta);
+    groupRef.current.position.lerp(targetLocalPositionRef.current, positionLerpFactor);
 
     const worldPosition = groupRef.current.getWorldPosition(worldPositionRef.current);
     const dist = state.camera.position.distanceTo(worldPosition);
@@ -180,7 +197,7 @@ export function SpacecraftBody({
 
     if (visualRootRef.current) {
       if (useAttitude && attitudeQuaternion) {
-        visualRootRef.current.quaternion
+        targetAttitudeQuaternionRef.current
           .set(
             attitudeQuaternion.x,
             attitudeQuaternion.y,
@@ -206,7 +223,7 @@ export function SpacecraftBody({
         }
 
         if (!headingResolved) {
-          const currentLocalPosition = localPositionRef.current.set(position[0], position[1], position[2]);
+          const currentLocalPosition = localPositionRef.current.copy(groupRef.current.position);
           const previousLocalPosition = previousLocalPositionRef.current;
 
           if (previousLocalPosition) {
@@ -218,21 +235,23 @@ export function SpacecraftBody({
           }
         }
 
-        visualRootRef.current.quaternion.copy(progradeQuaternionRef.current).multiply(meshToBodyAlignmentQuat);
+        targetAttitudeQuaternionRef.current.copy(progradeQuaternionRef.current).multiply(meshToBodyAlignmentQuat);
       }
+
+      const attitudeLerpFactor = 1 - Math.exp(-SPACECRAFT_ATTITUDE_DAMPING * delta);
+      visualRootRef.current.quaternion.slerp(targetAttitudeQuaternionRef.current, attitudeLerpFactor);
     }
 
     if (previousLocalPositionRef.current) {
-      previousLocalPositionRef.current.set(position[0], position[1], position[2]);
+      previousLocalPositionRef.current.copy(groupRef.current.position);
     } else {
-      previousLocalPositionRef.current = new THREE.Vector3(position[0], position[1], position[2]);
+      previousLocalPositionRef.current = groupRef.current.position.clone();
     }
   });
 
   return (
     <group
       ref={groupRef}
-      position={position}
       name={label}
       onClick={(e) => {
         e.stopPropagation();

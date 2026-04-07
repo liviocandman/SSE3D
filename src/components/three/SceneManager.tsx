@@ -12,6 +12,8 @@ import { MoonSystem } from './MoonSystem';
 import {
   type TrajectorySegment,
   flattenTrajectorySegments,
+  buildTrajectorySegment,
+  sampleTrajectoryAtTime,
 } from '@/lib/trajectoryEngine';
 import type { EphemerisData, SelectedPlanet, EphemerisTrajectory } from '@/lib/types';
 import {
@@ -122,6 +124,10 @@ const TRAIL_GRACE_MS = 12 * 60 * 60 * 1000;
 function parseTimestampMs(timestamp: string): number {
   const utcString = timestamp.includes('Z') ? timestamp : `${timestamp}Z`;
   return new Date(utcString).getTime();
+}
+
+function normalizeKm(value: number): number {
+  return Math.round(value * 1e9) / 1e9;
 }
 
 interface PlanetTrajectoryGroupProps {
@@ -402,23 +408,61 @@ export function SceneContent({
     };
   }, [earthEphemeris, earthPlanet]);
 
+  const missionTrajectorySegment = useMemo<TrajectorySegment | null>(() => {
+    if (!missionTrajectory) return null;
+    const combinedPoints = [...missionTrajectory.past, ...missionTrajectory.planned];
+    if (combinedPoints.length < 2) return null;
+
+    return buildTrajectorySegment(
+      combinedPoints.map((point) => ({
+        timestamp: point.timestamp,
+        position: {
+          x: point.position.x,
+          y: point.position.y,
+          z: point.position.z,
+        },
+        velocity: point.velocity
+          ? {
+              x: point.velocity.x,
+              y: point.velocity.y,
+              z: point.velocity.z,
+            }
+          : undefined,
+      }))
+    );
+  }, [missionTrajectory]);
+
   const spacecraftLocalPosition = useMemo<[number, number, number] | null>(() => {
-    if (!missionState?.sceneCoordinates) return null;
+    if (!missionState?.sceneCoordinates && !missionTrajectorySegment) return null;
+
+    const sampledSceneCoordinates = (() => {
+      if (!missionTrajectorySegment) return missionState?.sceneCoordinates ?? null;
+      const sampled = sampleTrajectoryAtTime([missionTrajectorySegment], currentTime.getTime());
+      if (!sampled) return missionState?.sceneCoordinates ?? null;
+
+      return {
+        x: normalizeKm(sampled.position.x),
+        y: normalizeKm(sampled.position.y),
+        z: normalizeKm(sampled.position.z),
+      };
+    })();
+
+    if (!sampledSceneCoordinates) return null;
 
     return scalePositionFromKm(
-      missionState.sceneCoordinates.x,
-      missionState.sceneCoordinates.y,
-      missionState.sceneCoordinates.z
+      sampledSceneCoordinates.x,
+      sampledSceneCoordinates.y,
+      sampledSceneCoordinates.z
     );
-  }, [missionState?.sceneCoordinates]);
+  }, [missionState?.sceneCoordinates, missionTrajectorySegment, currentTime]);
 
   const spacecraftFallbackHeading = useMemo<[number, number, number] | null>(() => {
-    if (!missionState?.sceneCoordinates) return null;
+    if (!spacecraftLocalPosition) return null;
 
     const current = new THREE.Vector3(
-      missionState.sceneCoordinates.x,
-      missionState.sceneCoordinates.y,
-      missionState.sceneCoordinates.z
+      spacecraftLocalPosition[0] / KM_TO_UNIT,
+      spacecraftLocalPosition[1] / KM_TO_UNIT,
+      spacecraftLocalPosition[2] / KM_TO_UNIT
     );
     const EPS = 1e-12;
 
@@ -450,7 +494,7 @@ export function SceneContent({
       }
     }
 
-    if (missionState.velocity) {
+    if (missionState?.velocity) {
       const sceneVelocityHeading = new THREE.Vector3(
         missionState.velocity.x,
         missionState.velocity.z,
@@ -463,17 +507,48 @@ export function SceneContent({
     }
 
     return null;
-  }, [missionState?.sceneCoordinates, missionState?.velocity, missionTrajectory]);
+  }, [spacecraftLocalPosition, missionState?.velocity, missionTrajectory]);
 
   const spacecraftWorldPosition = useMemo(() => {
-    if (!earthEphemeris || !missionState?.sceneCoordinates) return null;
+    if (!earthEphemeris || !spacecraftLocalPosition) return null;
 
     return {
-      x: earthEphemeris.position.x + missionState.sceneCoordinates.x,
-      y: earthEphemeris.position.y + missionState.sceneCoordinates.y,
-      z: earthEphemeris.position.z + missionState.sceneCoordinates.z,
+      x: normalizeKm(earthEphemeris.position.x + (spacecraftLocalPosition[0] / KM_TO_UNIT)),
+      y: normalizeKm(earthEphemeris.position.y + (spacecraftLocalPosition[1] / KM_TO_UNIT)),
+      z: normalizeKm(earthEphemeris.position.z + (spacecraftLocalPosition[2] / KM_TO_UNIT)),
     };
-  }, [earthEphemeris, missionState?.sceneCoordinates]);
+  }, [earthEphemeris, spacecraftLocalPosition]);
+
+  const cameraTargetName = useMemo(() => {
+    if (selectedMissionTargetId) {
+      return selectedMissionTargetId === 'orion'
+        ? 'Orion'
+        : selectedMissionTargetId.toUpperCase();
+    }
+
+    if (
+      isEarthMissionContextActive &&
+      missionState?.vehicleId === 'orion' &&
+      travelTarget &&
+      spacecraftWorldPosition
+    ) {
+      const dx = travelTarget.x - spacecraftWorldPosition.x;
+      const dy = travelTarget.y - spacecraftWorldPosition.y;
+      const dz = travelTarget.z - spacecraftWorldPosition.z;
+      const distSqKm = dx * dx + dy * dy + dz * dz;
+      // If camera target is effectively the spacecraft, track Orion object directly.
+      if (distSqKm < 1e-6) return 'Orion';
+    }
+
+    return selectedPlanet?.englishName;
+  }, [
+    selectedMissionTargetId,
+    isEarthMissionContextActive,
+    missionState?.vehicleId,
+    travelTarget,
+    spacecraftWorldPosition,
+    selectedPlanet?.englishName,
+  ]);
 
   // --- Guided Event Camera ---
   const armedAutoFocusEventsRef = useRef<Set<string>>(new Set());
@@ -714,9 +789,9 @@ export function SceneContent({
                     <MissionTrajectoryLine
                       past={missionTrajectory.past}
                       current={[
-                        missionState.sceneCoordinates!.x,
-                        missionState.sceneCoordinates!.y,
-                        missionState.sceneCoordinates!.z
+                        spacecraftLocalPosition[0] / KM_TO_UNIT,
+                        spacecraftLocalPosition[1] / KM_TO_UNIT,
+                        spacecraftLocalPosition[2] / KM_TO_UNIT
                       ]}
                       planned={missionTrajectory.planned}
                       smoothing={false}
@@ -740,7 +815,7 @@ export function SceneContent({
       <CameraController
         targetPosition={travelTarget}
         targetRadius={travelTargetRadius}
-        targetName={selectedMissionTargetId ? (selectedMissionTargetId === 'orion' ? 'Orion' : selectedMissionTargetId.toUpperCase()) : selectedPlanet?.englishName}
+        targetName={cameraTargetName}
       />
 
       {children}
