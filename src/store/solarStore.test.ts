@@ -33,14 +33,17 @@ describe('useSolarStore', () => {
       currentDate: '2026-03-26',
       trajectoryBaseDate: '2026-03-26',
       currentTime: new Date(2026, 2, 26),
+      timeAuthority: 'user',
       timeMultiplier: 1,
       isPlaying: false,
       selectedPlanet: null,
+      hoveredPlanetId: null,
       viewMode: 'didactic',
       travelTarget: null,
       travelTargetRadius: undefined,
       masterTrajectory: {},
       masterTrajectorySegments: {},
+      fullOrbits: {},
     });
   });
 
@@ -102,6 +105,46 @@ describe('useSolarStore', () => {
     expect(state.currentTime.getUTCHours()).toBe(0);
   });
 
+  it('should rebase trajectoryBaseDate when setCurrentTime moves beyond the forward window', () => {
+    useSolarStore.getState().setCurrentTime(new Date('2026-05-01T12:00:00.000Z'));
+
+    const state = useSolarStore.getState();
+    expect(state.currentDate).toBe('2026-05-01');
+    expect(state.trajectoryBaseDate).toBe('2026-05-01');
+  });
+
+  it('should not advance time while mission live authority is active', () => {
+    useSolarStore.setState({
+      currentTime: new Date('2026-03-26T00:00:00.000Z'),
+      currentDate: '2026-03-26',
+      isPlaying: true,
+      timeAuthority: 'mission_live',
+      timeMultiplier: 60,
+    });
+
+    useSolarStore.getState().advanceTime(1);
+
+    const state = useSolarStore.getState();
+    expect(state.currentTime.toISOString()).toBe('2026-03-26T00:00:00.000Z');
+    expect(state.currentDate).toBe('2026-03-26');
+  });
+
+  it('should advance time using seconds simulated per real second', () => {
+    useSolarStore.setState({
+      currentTime: new Date('2026-03-26T00:00:00.000Z'),
+      currentDate: '2026-03-26',
+      isPlaying: true,
+      timeAuthority: 'user',
+      timeMultiplier: 60,
+    });
+
+    useSolarStore.getState().advanceTime(2);
+
+    const state = useSolarStore.getState();
+    expect(state.currentTime.toISOString()).toBe('2026-03-26T00:02:00.000Z');
+    expect(state.currentDate).toBe('2026-03-26');
+  });
+
   it('should keep at most 3 trajectory segments per body', () => {
     const { appendTrajectoryData } = useSolarStore.getState();
 
@@ -135,5 +178,118 @@ describe('useSolarStore', () => {
     const state = useSolarStore.getState();
     expect(state.masterTrajectory['399']).toBeUndefined();
     expect(state.masterTrajectorySegments['399']).toBeUndefined();
+  });
+
+  // --- Phase 6: Temporal model correctness ---
+
+  it('advanceTime does nothing when isPlaying is false', () => {
+    useSolarStore.setState({
+      currentTime: new Date('2026-03-26T00:00:00.000Z'),
+      currentDate: '2026-03-26',
+      isPlaying: false,
+      timeAuthority: 'user',
+      timeMultiplier: 60,
+    });
+
+    useSolarStore.getState().advanceTime(10);
+
+    const state = useSolarStore.getState();
+    expect(state.currentTime.toISOString()).toBe('2026-03-26T00:00:00.000Z');
+  });
+
+  it('advanceTime uses millisecond arithmetic: deltaSeconds * timeMultiplier * 1000', () => {
+    useSolarStore.setState({
+      currentTime: new Date('2026-03-26T00:00:00.000Z'),
+      currentDate: '2026-03-26',
+      isPlaying: true,
+      timeAuthority: 'user',
+      timeMultiplier: 3600, // 1 h/s
+    });
+
+    useSolarStore.getState().advanceTime(0.5); // 0.5 real seconds = 30 min simulated
+
+    const state = useSolarStore.getState();
+    // 0.5 * 3600 * 1000 = 1_800_000 ms = 30 min
+    expect(state.currentTime.toISOString()).toBe('2026-03-26T00:30:00.000Z');
+  });
+
+  it('stepCurrentTimeByMs uses millisecond arithmetic', () => {
+    useSolarStore.setState({
+      currentTime: new Date('2026-03-26T12:00:00.000Z'),
+      currentDate: '2026-03-26',
+      trajectoryBaseDate: '2026-03-26',
+    });
+
+    useSolarStore.getState().stepCurrentTimeByMs(-900_000); // -15 min
+
+    const state = useSolarStore.getState();
+    expect(state.currentTime.toISOString()).toBe('2026-03-26T11:45:00.000Z');
+    expect(state.currentDate).toBe('2026-03-26');
+  });
+
+  it('setCurrentTime triggers rebase when jumping forward more than 25 days', () => {
+    useSolarStore.setState({
+      currentTime: new Date('2026-03-26T00:00:00.000Z'),
+      currentDate: '2026-03-26',
+      trajectoryBaseDate: '2026-03-26',
+    });
+
+    useSolarStore.getState().setCurrentTime(new Date('2026-05-15T00:00:00.000Z'));
+
+    const state = useSolarStore.getState();
+    expect(state.trajectoryBaseDate).toBe('2026-05-15');
+  });
+
+  it('stepCurrentTimeByMs triggers rebase consistently with setCurrentTime', () => {
+    useSolarStore.setState({
+      currentTime: new Date('2026-03-26T00:00:00.000Z'),
+      currentDate: '2026-03-26',
+      trajectoryBaseDate: '2026-03-26',
+    });
+
+    // Step forward 30 days in one big jump
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    useSolarStore.getState().stepCurrentTimeByMs(thirtyDaysMs);
+
+    const state = useSolarStore.getState();
+    // Should have rebased because 30d > FORWARD_REBASE_DAYS (25)
+    expect(state.trajectoryBaseDate).toBe('2026-04-25');
+  });
+
+  it('currentDate is always derived from currentTime (UTC)', () => {
+    useSolarStore.setState({
+      currentTime: new Date('2026-03-26T23:59:59.000Z'),
+      currentDate: '2026-03-26',
+      trajectoryBaseDate: '2026-03-26',
+    });
+
+    // Step forward 2 seconds — crosses midnight UTC
+    useSolarStore.getState().stepCurrentTimeByMs(2000);
+
+    const state = useSolarStore.getState();
+    expect(state.currentTime.toISOString()).toBe('2026-03-27T00:00:01.000Z');
+    expect(state.currentDate).toBe('2026-03-27');
+  });
+
+  it('timeAuthority transition to user allows playback', () => {
+    useSolarStore.setState({
+      currentTime: new Date('2026-03-26T00:00:00.000Z'),
+      currentDate: '2026-03-26',
+      isPlaying: true,
+      timeAuthority: 'mission_live',
+      timeMultiplier: 60,
+    });
+
+    useSolarStore.getState().advanceTime(1);
+    let state = useSolarStore.getState();
+    // Still blocked by mission_live
+    expect(state.currentTime.toISOString()).toBe('2026-03-26T00:00:00.000Z');
+
+    // Transition to user authority
+    useSolarStore.getState().setTimeAuthority('user');
+    useSolarStore.getState().advanceTime(1);
+    state = useSolarStore.getState();
+    // Now advances by 1 * 60 * 1000 ms = 1 min
+    expect(state.currentTime.toISOString()).toBe('2026-03-26T00:01:00.000Z');
   });
 });

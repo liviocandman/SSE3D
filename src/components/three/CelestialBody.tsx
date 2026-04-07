@@ -11,6 +11,7 @@ import { useSolarStore } from "@/store/solarStore";
 import { useShallow } from "zustand/react/shallow";
 import type { EphemerisTrajectory } from "@/lib/types";
 import { buildTrajectorySegment, sampleTrajectoryAtTime } from "@/lib/trajectoryEngine";
+import { createTemporalLookupCache } from "@/lib/temporalLookup";
 import { calculateAbsoluteRotation } from "@/lib/rotationUtils";
 
 // --- Types ---
@@ -79,6 +80,7 @@ export function CelestialBody({
   const { camera } = useThree();
 
   const tempVec = useRef(new THREE.Vector3());
+  const lookupCacheRef = useRef(createTemporalLookupCache());
   const isInitializedRef = useRef(false);
   const frameCountRef = useRef(0);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -126,7 +128,7 @@ export function CelestialBody({
     // 1. Interpolate position from trajectory if available
     if (currentSegments.length > 0 && groupRef.current) {
       const SCALE = 1 / 1_000_000;
-      const sampled = sampleTrajectoryAtTime(currentSegments, simTime);
+      const sampled = sampleTrajectoryAtTime(currentSegments, simTime, lookupCacheRef.current);
       if (sampled) {
         const { x, y, z } = sampled.position;
         const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);

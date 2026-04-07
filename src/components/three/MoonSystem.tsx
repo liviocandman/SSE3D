@@ -23,6 +23,7 @@ import {
 import { useSolarStore } from '@/store/solarStore';
 import { useShallow } from 'zustand/react/shallow';
 import { sampleTrajectoryAtTime } from '@/lib/trajectoryEngine';
+import { createTemporalLookupCache } from '@/lib/temporalLookup';
 import { SPHERE_MID, HITBOX_SPHERE } from '@/lib/geometryPool';
 
 // ---------------------------------------------------------------------------
@@ -122,6 +123,7 @@ function MoonMesh({
   const groupRef = useRef<THREE.Group>(null);
   const gl = useThree((state) => state.gl);
   const isInitializedRef = useRef(false);
+  const lookupCacheRef = useRef(createTemporalLookupCache());
   const [isHovered, setIsHovered] = useState(false);
   const tempVec = useRef(new THREE.Vector3());
 
@@ -188,7 +190,7 @@ function MoonMesh({
 
     if (groupRef.current && masterSegments.length > 0) {
       const SCALE = (1 / 1_000_000) * orbitScale;
-      const sampled = sampleTrajectoryAtTime(masterSegments, simTime);
+      const sampled = sampleTrajectoryAtTime(masterSegments, simTime, lookupCacheRef.current);
 
       if (sampled) {
         const { x, y, z } = sampled.position;

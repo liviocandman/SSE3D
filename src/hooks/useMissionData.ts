@@ -19,6 +19,10 @@ export function useMissionData() {
 
   const isLive = missionMode === MissionMode.LIVE;
   const controllersRef = useRef<Set<AbortController>>(new Set());
+  const stateRequestIdRef = useRef(0);
+  const trajectoryRequestIdRef = useRef(0);
+  const eventsRequestIdRef = useRef(0);
+  const healthRequestIdRef = useRef(0);
 
   const getReplayTimestampParam = useCallback((): string | undefined => {
     if (isLive) {
@@ -29,6 +33,31 @@ export function useMissionData() {
     const date = new Date(currentTime);
     return date.toISOString().split('.')[0] + 'Z';
   }, [isLive]);
+
+  const shouldApplyReplayResponse = useCallback(
+    (requestMode: MissionMode, requestAt: string | undefined, requestId: number, latestRequestId: number) => {
+      if (requestId !== latestRequestId) {
+        return false;
+      }
+
+      const missionStore = useMissionStore.getState();
+      if (missionStore.missionMode !== requestMode) {
+        return false;
+      }
+
+      if (requestMode !== MissionMode.REPLAY) {
+        return true;
+      }
+
+      const solarStore = useSolarStore.getState();
+      if (solarStore.isPlaying) {
+        return true;
+      }
+
+      return requestAt === getReplayTimestampParam();
+    },
+    [getReplayTimestampParam]
+  );
 
   useEffect(() => {
     let stateTimeout: NodeJS.Timeout;
@@ -53,12 +82,19 @@ export function useMissionData() {
 
     const fetchState = async () => {
       if (!isMounted) return;
+      
+      const currentMode = useMissionStore.getState().missionMode;
+      const requestId = ++stateRequestIdRef.current;
+      const atParam = getReplayTimestampParam();
+      
       try {
-        const atParam = getReplayTimestampParam();
-        
         const data = await withAbortController((options) => fetchMissionState(atParam, options));
         
         if (isMounted) {
+          if (!shouldApplyReplayResponse(currentMode, atParam, requestId, stateRequestIdRef.current)) {
+            return;
+          }
+          
           setMissionState(data);
           if (isLive && data.sourceTimestamp) {
             setLiveTimestamp(data.sourceTimestamp);
@@ -66,6 +102,8 @@ export function useMissionData() {
             // Temporal bridge: Sync Solar system time to the live mission time
             const timestampDate = new Date(data.sourceTimestamp);
             if (!Number.isNaN(timestampDate.getTime())) {
+              useSolarStore.getState().setIsPlaying(false);
+              useSolarStore.getState().setTimeAuthority('mission_live');
               useSolarStore.getState().setCurrentTime(timestampDate);
             }
           }
@@ -85,10 +123,12 @@ export function useMissionData() {
 
     const fetchTrajectory = async () => {
       if (!isMounted) return;
+      const currentMode = useMissionStore.getState().missionMode;
+      const requestId = ++trajectoryRequestIdRef.current;
+      const atParam = getReplayTimestampParam();
       try {
-        const atParam = getReplayTimestampParam();
         const data = await withAbortController((options) => fetchMissionTrajectory(atParam, options));
-        if (isMounted) {
+        if (isMounted && shouldApplyReplayResponse(currentMode, atParam, requestId, trajectoryRequestIdRef.current)) {
           setMissionTrajectory(data);
         }
       } catch (err: unknown) {
@@ -105,10 +145,12 @@ export function useMissionData() {
 
     const fetchEvents = async () => {
       if (!isMounted) return;
+      const currentMode = useMissionStore.getState().missionMode;
+      const requestId = ++eventsRequestIdRef.current;
+      const atParam = getReplayTimestampParam();
       try {
-        const atParam = getReplayTimestampParam();
         const data = await withAbortController((options) => fetchMissionEvents(atParam, options));
-        if (isMounted) {
+        if (isMounted && shouldApplyReplayResponse(currentMode, atParam, requestId, eventsRequestIdRef.current)) {
           setMissionEvents(data);
         }
       } catch (err: unknown) {
@@ -125,9 +167,11 @@ export function useMissionData() {
 
     const fetchHealth = async () => {
       if (!isMounted) return;
+      const currentMode = useMissionStore.getState().missionMode;
+      const requestId = ++healthRequestIdRef.current;
       try {
         const data = await withAbortController((options) => fetchMissionHealth(options));
-        if (isMounted) {
+        if (isMounted && shouldApplyReplayResponse(currentMode, undefined, requestId, healthRequestIdRef.current)) {
           setMissionHealth(data);
         }
       } catch (err: unknown) {
@@ -158,5 +202,5 @@ export function useMissionData() {
       clearTimeout(eventsTimeout);
       clearTimeout(healthTimeout);
     };
-  }, [getReplayTimestampParam, isLive, setLiveTimestamp, setMissionEvents, setMissionHealth, setMissionState, setMissionTrajectory]);
+  }, [getReplayTimestampParam, isLive, setLiveTimestamp, setMissionEvents, setMissionHealth, setMissionState, setMissionTrajectory, shouldApplyReplayResponse]);
 }

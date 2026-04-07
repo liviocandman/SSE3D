@@ -41,6 +41,8 @@ describe('useMissionData hook', () => {
 
   it('should fetch live data correctly on mount', async () => {
     useMissionStore.getState().setMissionMode(MissionMode.LIVE);
+    useSolarStore.getState().setIsPlaying(true);
+    useSolarStore.getState().setTimeAuthority('user');
 
     const mockState = {
       missionId: 'artemis-2',
@@ -59,6 +61,8 @@ describe('useMissionData hook', () => {
       expect(useMissionStore.getState().missionState).toEqual(mockState);
       expect(useMissionStore.getState().liveTimestamp).toEqual('2026-04-03T12:00:00Z');
       expect(useSolarStore.getState().currentTime.toISOString()).toEqual('2026-04-03T12:00:00.000Z');
+      expect(useSolarStore.getState().isPlaying).toBe(false);
+      expect(useSolarStore.getState().timeAuthority).toBe('mission_live');
     });
     
     unmount();
@@ -100,5 +104,41 @@ describe('useMissionData hook', () => {
     // Re-verify no new calls are made. In fake timers we'd advance time,
     // but here we just check that clearAllMocks left it clean.
     expect(missionClient.fetchMissionState).not.toHaveBeenCalled();
+  });
+
+  it('should ignore stale replay state responses after the replay timestamp changes', async () => {
+    useMissionStore.getState().setMissionMode(MissionMode.REPLAY);
+    useSolarStore.getState().setIsPlaying(false);
+    useSolarStore.getState().setCurrentTime(new Date('2026-04-05T12:00:00.000Z'));
+
+    let resolveState: ((value: MissionState) => void) | undefined;
+    vi.mocked(missionClient.fetchMissionState).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveState = resolve as (value: MissionState) => void;
+        })
+    );
+
+    const { unmount } = renderHook(() => useMissionData());
+
+    await waitFor(() => {
+      expect(missionClient.fetchMissionState).toHaveBeenCalledWith(
+        '2026-04-05T12:00:00Z',
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
+      );
+    });
+
+    useSolarStore.getState().setCurrentTime(new Date('2026-04-05T13:00:00.000Z'));
+
+    resolveState?.({
+      missionId: 'artemis-2',
+      vehicleId: 'orion',
+      mode: MissionMode.REPLAY,
+    } as MissionState);
+
+    await Promise.resolve();
+
+    expect(useMissionStore.getState().missionState).toBeNull();
+    unmount();
   });
 });

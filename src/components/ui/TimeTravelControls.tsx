@@ -5,50 +5,64 @@ import {
   Play, 
   Pause, 
   Calendar,
-  RotateCcw
+  RotateCcw,
+  Rewind,
+  FastForward
 } from 'lucide-react';
 import { useSolarStore } from '@/store/solarStore';
 import { useMissionStore } from '@/store/missionStore';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { useDisplayTime } from '@/hooks/useDisplayTime';
 
+const PLAYBACK_SPEED_OPTIONS = [
+  { label: '1x', value: 60, description: '1 min/s' },
+  { label: '10x', value: 600, description: '10 min/s' },
+  { label: '60x', value: 3600, description: '1 h/s' },
+  { label: '360x', value: 21600, description: '6 h/s' },
+  { label: '1440x', value: 86400, description: '1 day/s' },
+] as const;
+
+/**
+ * ClockDisplay - Phase 2 compliant.
+ *
+ * Reads the throttled display-time snapshot (500ms cadence) via useDisplayTime()
+ * instead of subscribing directly to the high-frequency currentTime store field.
+ * This prevents the parent React subtree from re-rendering at 60 FPS during
+ * active playback.
+ */
 function ClockDisplay() {
-  const [timeStr, setTimeStr] = useState('');
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    const updateTime = () => {
-      setTimeStr(format(useSolarStore.getState().currentTime, 'yyyy-MM-dd HH:mm'));
-    };
-    updateTime(); // Initial update
-    const interval = setInterval(updateTime, 500);
-    return () => clearInterval(interval);
-  }, []);
-
-  if (!mounted) return <span className="font-mono text-sm tracking-wider">Loading...</span>;
+  const displayTime = useDisplayTime(500);
 
   return (
     <span className="font-mono text-sm tracking-wider">
-      {timeStr}
+      {format(displayTime, 'yyyy-MM-dd HH:mm')}
     </span>
   );
 }
 
 export function TimeTravelControls() {
   const { 
-    currentDate, 
+    currentDate,
     isPlaying, 
+    timeMultiplier,
     setIsPlaying, 
     setCurrentDate,
-    setCurrentTime
+    setCurrentTime,
+    stepCurrentTimeByMs,
+    setTimeAuthority,
+    setTimeMultiplier,
   } = useSolarStore(useShallow(s => ({
     currentDate: s.currentDate,
     isPlaying: s.isPlaying,
+    timeMultiplier: s.timeMultiplier,
     setIsPlaying: s.setIsPlaying,
     setCurrentDate: s.setCurrentDate,
     setCurrentTime: s.setCurrentTime,
+    stepCurrentTimeByMs: s.stepCurrentTimeByMs,
+    setTimeAuthority: s.setTimeAuthority,
+    setTimeMultiplier: s.setTimeMultiplier,
   })));
 
   const { isLive, setIsLive, liveTimestamp } = useMissionStore(useShallow(s => ({
@@ -64,6 +78,7 @@ export function TimeTravelControls() {
   }, [currentDate]);
 
   const exitLive = () => {
+    setTimeAuthority('user');
     if (isLive) {
       setIsLive(false);
     }
@@ -74,6 +89,23 @@ export function TimeTravelControls() {
     setIsPlaying(!isPlaying);
   };
 
+  const stepTime = (minutes: number) => {
+    exitLive();
+    setIsPlaying(false);
+    stepCurrentTimeByMs(minutes * 60000);
+  };
+
+  const resolveResetTime = () => {
+    if (liveTimestamp) {
+      return new Date(liveTimestamp);
+    }
+
+    // Browser time is used only as a last-resort UX fallback when no
+    // backend-provided live timestamp is currently available.
+    // This exception is intentional and documented in the time-travel plan.
+    return new Date();
+  };
+
   const handleDateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     exitLive();
@@ -82,13 +114,14 @@ export function TimeTravelControls() {
 
   const resetTime = () => {
     exitLive();
-    const today = new Date().toISOString().split('T')[0];
-    setCurrentDate(today);
     setIsPlaying(false);
+    setCurrentTime(resolveResetTime());
   };
 
   const handleGoLive = () => {
     if (liveTimestamp) {
+      setIsPlaying(false);
+      setTimeAuthority('mission_live');
       setIsLive(true);
       setCurrentTime(new Date(liveTimestamp));
     }
@@ -133,6 +166,14 @@ export function TimeTravelControls() {
       {/* Main Controls Panel */}
       <div className="glass-panel p-2 flex items-center justify-between w-full shadow-2xl border-white/20 gap-2">
         <button
+          onClick={() => stepTime(-15)}
+          className="p-3 hover:bg-white/10 rounded-lg transition-colors text-white/40 hover:text-white/80 shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center"
+          title="Back 15m"
+        >
+          <Rewind className="w-5 h-5 fill-current" />
+        </button>
+
+        <button
           onClick={togglePlay}
           className={cn(
             "p-3 rounded-full transition-all group active:scale-95 shrink-0 min-w-[48px] min-h-[48px] flex items-center justify-center",
@@ -146,14 +187,39 @@ export function TimeTravelControls() {
           )}
         </button>
 
+        <button
+          onClick={() => stepTime(15)}
+          className="p-3 hover:bg-white/10 rounded-lg transition-colors text-white/40 hover:text-white/80 shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center"
+          title="Forward 15m"
+        >
+          <FastForward className="w-5 h-5 fill-current" />
+        </button>
+
         <div className="h-8 w-[1px] bg-white/10 shrink-0" />
+
+        <label className="sr-only" htmlFor="time-multiplier-select">
+          Playback speed
+        </label>
+        <select
+          id="time-multiplier-select"
+          value={timeMultiplier}
+          onChange={(e) => setTimeMultiplier(Number(e.target.value))}
+          className="bg-black/40 border border-white/10 rounded px-2 py-2 text-xs font-mono outline-none focus:border-blue-500/50 transition-colors text-white min-w-[84px] shrink-0"
+          title="Playback speed"
+        >
+          {PLAYBACK_SPEED_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label} - {option.description}
+            </option>
+          ))}
+        </select>
 
         <form onSubmit={handleDateSubmit} className="flex flex-1 items-center justify-between gap-2 overflow-hidden">
           <input
             type="date"
             value={localDate}
             onChange={(e) => setLocalDate(e.target.value)}
-            // text-base (16px) é OBRIGATÓRIO no mobile para evitar zoom no iOS. Em MD pode voltar a text-sm.
+            // text-base (16px) is required on mobile to avoid zoom on iOS.
             className="bg-black/40 border border-white/10 rounded px-2 py-2 text-base md:text-sm font-mono outline-none focus:border-blue-500/50 transition-colors w-full min-w-[120px]"
           />
           <button 

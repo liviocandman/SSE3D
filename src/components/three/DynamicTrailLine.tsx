@@ -4,6 +4,7 @@ import { useFrame } from '@react-three/fiber';
 import { Line } from '@react-three/drei';
 import { calculateTrailAlpha } from '@/lib/trailUtils';
 import { useSolarStore } from '@/store/solarStore';
+import { findTemporalInterval, createTemporalLookupCache, resetCacheIfDataChanged } from '@/lib/temporalLookup';
 
 interface DynamicTrailLineProps {
   samples: { timestampMs: number; point: THREE.Vector3 }[];
@@ -61,6 +62,16 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
     }
   }, [maxTrailPoints]);
 
+  // --- Phase 3: Monotonic Temporal Lookup Cache ---
+  const lookupCache = useRef(createTemporalLookupCache());
+  
+  // Extract pointTimesMs for the temporal lookup (Array of numbers is required for cache)
+  const pointTimesMs = useMemo(() => samples.map(s => s.timestampMs), [samples]);
+
+  useEffect(() => {
+    resetCacheIfDataChanged(lookupCache.current, pointTimesMs);
+  }, [pointTimesMs]);
+
   // Minimal initial points to satisfy Line's constructor without creating memory pressure
   const initialPoints = useMemo(() => [[0, 0, 0], [0, 0, 0]] as [number, number, number][], []);
 
@@ -71,18 +82,20 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
     const simTimeMs = currentTime.getTime();
     const cutoffMs = simTimeMs + graceMs;
 
-    let left = 0;
-    let right = samples.length - 1;
     let lastVisibleIndex = -1;
-
-    // Binary search for the cutoff
-    while (left <= right) {
-      const mid = Math.floor((left + right) / 2);
-      if (samples[mid].timestampMs <= cutoffMs) {
-        lastVisibleIndex = mid;
-        left = mid + 1;
+    const len = pointTimesMs.length;
+    
+    if (len > 0) {
+      if (cutoffMs >= pointTimesMs[len - 1]) {
+        lastVisibleIndex = len - 1;
       } else {
-        right = mid - 1;
+        const interval = findTemporalInterval(pointTimesMs, cutoffMs, lookupCache.current);
+        if (interval) {
+          lastVisibleIndex = interval.leftIndex;
+        } else {
+          // If cutoff is exactly at the first point or just weirdly behaving:
+          lastVisibleIndex = cutoffMs >= pointTimesMs[0] ? 0 : -1;
+        }
       }
     }
 

@@ -13,11 +13,14 @@ interface TravelTarget {
   z: number;
 }
 
+export type TimeAuthority = 'user' | 'mission_live';
+
 interface SolarState {
   currentDate: string; // YYYY-MM-DD
   trajectoryBaseDate: string; // Date used by initial ephemeris query window
   currentTime: Date;
-  timeMultiplier: number; // 1 = 1 day per real-world second (standard)
+  timeAuthority: TimeAuthority;
+  timeMultiplier: number; // Seconds simulated per real second (e.g. 60 = 1 min/s)
   isPlaying: boolean;
   selectedPlanet: SelectedPlanet | null;
   hoveredPlanetId: string | null;
@@ -35,8 +38,10 @@ interface SolarState {
   fullOrbits: Record<string, EphemerisTrajectory[]>;
   
   // Actions
+  setTimeAuthority: (auth: TimeAuthority) => void;
   setCurrentDate: (date: string) => void;
   setCurrentTime: (time: Date) => void;
+  stepCurrentTimeByMs: (deltaMs: number) => void;
   setTimeMultiplier: (multiplier: number) => void;
   setIsPlaying: (playing: boolean) => void;
   advanceTime: (deltaSeconds: number) => void;
@@ -69,11 +74,29 @@ const FORWARD_REBASE_DAYS = 25;
 const BACKWARD_REBASE_DAYS = 5;
 const MAX_SEGMENTS_PER_BODY = 3;
 
+function computeTemporalStateUpdate(
+  state: Pick<SolarState, 'trajectoryBaseDate'>,
+  nextTime: Date
+) {
+  const nextDate = toUTCDateString(nextTime);
+  const currentBaseTime = parseUTCDate(state.trajectoryBaseDate).getTime();
+  const diffDays = (nextTime.getTime() - currentBaseTime) / DAY_MS;
+  const shouldRebase =
+    diffDays < -BACKWARD_REBASE_DAYS || diffDays > FORWARD_REBASE_DAYS;
+
+  return {
+    currentTime: nextTime,
+    currentDate: nextDate,
+    trajectoryBaseDate: shouldRebase ? nextDate : state.trajectoryBaseDate,
+  };
+}
+
 export const useSolarStore = create<SolarState>((set) => ({
   currentDate: getTodayString(),
   trajectoryBaseDate: getTodayString(),
   currentTime: new Date(),
-  timeMultiplier: 1.0,
+  timeAuthority: 'user',
+  timeMultiplier: 60,
   isPlaying: false,
   selectedPlanet: null,
   hoveredPlanetId: null,
@@ -84,31 +107,25 @@ export const useSolarStore = create<SolarState>((set) => ({
   masterTrajectorySegments: {},
   fullOrbits: {},
 
+  setTimeAuthority: (auth) => set({ timeAuthority: auth }),
+
   setCurrentDate: (date) =>
     set((state) => {
       const newTime = parseUTCDate(date);
-      
-      const currentBaseTime = parseUTCDate(state.trajectoryBaseDate).getTime();
-      const targetTime = newTime.getTime();
-      const diffDays = (targetTime - currentBaseTime) / DAY_MS;
-
-      // Rebase only if we move far forward OR even slightly backward past a grace period.
-      // This prevents hammering the API when scrubbing small amounts.
-      const shouldRebase =
-        diffDays < -BACKWARD_REBASE_DAYS || diffDays > FORWARD_REBASE_DAYS;
-
       return {
-        currentDate: date, 
-        currentTime: newTime,
-        trajectoryBaseDate: shouldRebase ? date : state.trajectoryBaseDate,
+        ...computeTemporalStateUpdate(state, newTime),
+        currentDate: date,
       };
     }),
 
   setCurrentTime: (time) => 
-    set(() => ({ 
-      currentTime: time,
-      currentDate: toUTCDateString(time),
-    })),
+    set((state) => computeTemporalStateUpdate(state, time)),
+
+  stepCurrentTimeByMs: (deltaMs) =>
+    set((state) => {
+      const nextTime = new Date(state.currentTime.getTime() + deltaMs);
+      return computeTemporalStateUpdate(state, nextTime);
+    }),
 
   setTimeMultiplier: (multiplier) => set({ timeMultiplier: multiplier }),
   
@@ -116,16 +133,11 @@ export const useSolarStore = create<SolarState>((set) => ({
 
   advanceTime: (deltaSeconds) =>
     set((state) => {
-      if (!state.isPlaying) return state;
+      if (!state.isPlaying || state.timeAuthority === 'mission_live') return state;
       
-      const simDeltaMs = deltaSeconds * state.timeMultiplier * 24 * 60 * 60 * 1000;
+      const simDeltaMs = deltaSeconds * state.timeMultiplier * 1000;
       const newTime = new Date(state.currentTime.getTime() + simDeltaMs);
-      const newDateStr = toUTCDateString(newTime);
-      
-      return {
-        currentTime: newTime,
-        currentDate: newDateStr !== state.currentDate ? newDateStr : state.currentDate
-      };
+      return computeTemporalStateUpdate(state, newTime);
     }),
 
   appendTrajectoryData: (data) =>
