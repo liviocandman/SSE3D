@@ -55,6 +55,8 @@ MISSION_TLI_TIMESTAMP = "2026-04-01T16:30:00Z"
 DEFAULT_LUNAR_FLYBY_TIMESTAMP = "2026-04-05T08:00:00Z"
 DEFAULT_SPLASHDOWN_TIMESTAMP = "2026-04-11T18:00:00Z"
 LUNAR_FLYBY_WINDOW_HOURS = 6
+LUNAR_RETURN_COAST_START_HOUR = 20
+LUNAR_RETURN_COAST_START_MINUTE = 30
 REENTRY_LEAD_HOURS = 2
 
 
@@ -164,15 +166,24 @@ def _fallback_lunar_flyby_window(center_timestamp: str) -> tuple[str, str, str]:
         center_dt.timestamp() - LUNAR_FLYBY_WINDOW_HOURS * 3600,
         tz=timezone.utc,
     )
-    end_dt = datetime.fromtimestamp(
-        center_dt.timestamp() + LUNAR_FLYBY_WINDOW_HOURS * 3600,
-        tz=timezone.utc,
-    )
+    end_dt = _resolve_lunar_return_coast_start(center_dt)
     return (
         _format_iso_z(start_dt),
         _format_iso_z(center_dt),
         _format_iso_z(end_dt),
     )
+
+
+def _resolve_lunar_return_coast_start(reference_dt: datetime) -> datetime:
+    transition_dt = reference_dt.astimezone(timezone.utc).replace(
+        hour=LUNAR_RETURN_COAST_START_HOUR,
+        minute=LUNAR_RETURN_COAST_START_MINUTE,
+        second=0,
+        microsecond=0,
+    )
+    if transition_dt <= reference_dt:
+        return reference_dt
+    return transition_dt
 
 
 def _derive_lunar_flyby_window(ephemeris) -> tuple[str, str, str]:
@@ -223,6 +234,18 @@ def _derive_lunar_flyby_window(ephemeris) -> tuple[str, str, str]:
 
     if start_idx == end_idx:
         return _fallback_lunar_flyby_window(valid_samples[closest_idx][0])
+
+    closest_dt = valid_samples[closest_idx][1]
+    derived_end_dt = valid_samples[end_idx][1]
+    capped_end_dt = min(derived_end_dt, _resolve_lunar_return_coast_start(closest_dt))
+    end_idx = next(
+        (
+            index
+            for index in range(closest_idx, len(valid_samples))
+            if valid_samples[index][1] >= capped_end_dt
+        ),
+        end_idx,
+    )
 
     return (
         valid_samples[start_idx][0],

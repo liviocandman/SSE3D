@@ -228,3 +228,76 @@ def test_replay_uses_nose_to_moon_during_lunar_flyby_window(monkeypatch):
     assert state.phase.value == "lunar_flyby"
     assert state.attitude_source.value == "POLICY_ESTIMATED"
     assert state.attitude_mode.value == "NOSE_TO_MOON"
+
+
+def test_derive_lunar_flyby_window_caps_return_transition_at_2030z(monkeypatch):
+    timestamps = [
+        "2026-04-05T18:00:00Z",
+        "2026-04-05T19:00:00Z",
+        "2026-04-05T20:00:00Z",
+        "2026-04-05T20:30:00Z",
+        "2026-04-05T21:00:00Z",
+        "2026-04-05T22:00:00Z",
+    ]
+
+    states = tuple(
+        OEMStateVector(
+            timestamp=timestamp,
+            dt=datetime.fromisoformat(timestamp.replace("Z", "+00:00")).astimezone(timezone.utc),
+            position=MissionPosition(x=300_000.0, y=0.0, z=0.0),
+            velocity=MissionVelocity(x=0.0, y=1.0, z=0.0),
+        )
+        for timestamp in timestamps
+    )
+    ephemeris = SimpleNamespace(
+        metadata=SimpleNamespace(
+            start_time=timestamps[0],
+            stop_time=timestamps[-1],
+            ref_frame="EME2000",
+        ),
+        states=states,
+    )
+    moon_positions = {
+        timestamps[0]: np.array([520_000.0, 0.0, 0.0], dtype=float),
+        timestamps[1]: np.array([450_000.0, 0.0, 0.0], dtype=float),
+        timestamps[2]: np.array([350_000.0, 0.0, 0.0], dtype=float),
+        timestamps[3]: np.array([360_000.0, 0.0, 0.0], dtype=float),
+        timestamps[4]: np.array([380_000.0, 0.0, 0.0], dtype=float),
+        timestamps[5]: np.array([410_000.0, 0.0, 0.0], dtype=float),
+    }
+
+    monkeypatch.setattr(
+        mission_data_service.mission_oem_service,
+        "get_states_between",
+        lambda *_args, **_kwargs: list(states),
+    )
+    monkeypatch.setattr(
+        mission_data_service,
+        "compute_mission_relative_geometry",
+        lambda timestamp: {
+            "et": 0.0,
+            "earth_pos": np.array([0.0, 0.0, 0.0], dtype=float),
+            "moon_pos": moon_positions[timestamp],
+        },
+    )
+
+    start_ts, center_ts, end_ts = mission_data_service._derive_lunar_flyby_window(ephemeris)
+
+    assert start_ts == timestamps[0]
+    assert center_ts == timestamps[2]
+    assert end_ts == "2026-04-05T20:30:00Z"
+
+
+def test_lunar_return_transition_is_timezone_safe():
+    reference_dt = mission_data_service._parse_split_timestamp("2026-04-05T17:00:00-03:00")
+    transition_dt = mission_data_service._resolve_lunar_return_coast_start(reference_dt)
+
+    assert mission_data_service._format_iso_z(transition_dt) == "2026-04-05T20:30:00Z"
+
+
+def test_fallback_lunar_window_normalizes_offset_timestamp_to_utc():
+    start_ts, center_ts, end_ts = mission_data_service._fallback_lunar_flyby_window("2026-04-05T05:00:00-03:00")
+
+    assert start_ts == "2026-04-05T02:00:00Z"
+    assert center_ts == "2026-04-05T08:00:00Z"
+    assert end_ts == "2026-04-05T20:30:00Z"
