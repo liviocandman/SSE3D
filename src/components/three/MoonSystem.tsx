@@ -63,6 +63,7 @@ const MIN_FAST_MOON_ORBIT_POINTS = 8;
 const MIN_SMOOTHING_POINTS = 6;
 const MIN_CURVE_SAMPLES = 128;
 const MAX_CURVE_SAMPLES = 256;
+const MOON_CLOSEUP_TRAVEL_RADIUS_MULTIPLIER = 2;
 
 // Global singleton to prevent recreating workers and to avoid React Suspense
 // (Removed local globalKtx2Loader and getKtx2Loader, now using getSharedKTX2Loader)
@@ -126,6 +127,7 @@ function MoonMesh({
   const gl = useThree((state) => state.gl);
   const isInitializedRef = useRef(false);
   const lookupCacheRef = useRef(createTemporalLookupCache());
+  const parentLookupCacheRef = useRef(createTemporalLookupCache());
   const [isHovered, setIsHovered] = useState(false);
   const tempVec = useRef(new THREE.Vector3());
 
@@ -138,7 +140,7 @@ function MoonMesh({
   );
 
   const config = useMemo(() => getPlanetConfig(bodyId), [bodyId]);
-  
+
   // Reactive subscription: This component only re-renders if this specific moon's data changes.
   const moonTrajectory = useSolarStore(
     useShallow((s) => s.masterTrajectory[bodyId] || [])
@@ -151,14 +153,14 @@ function MoonMesh({
   const radius = getRadius(bodyId, 'MOON', viewMode);
   const textureTier = resolveTextureTier(tier);
   const textureUrl = config ? getTexturePath(bodyId, textureTier) : '';
-  
+
   const orbitScale = config
     ? getMoonOrbitScale(
-        parentId,
-        parentClass,
-        config.meanDistanceAU * AU_TO_KM,
-        viewMode
-      )
+      parentId,
+      parentClass,
+      config.meanDistanceAU * AU_TO_KM,
+      viewMode
+    )
     : 1;
 
   const texture = useLoader(SingletonKTX2Loader as unknown as typeof THREE.Loader, textureUrl || '/textures/generic_moon_mid.ktx2', () => {
@@ -229,15 +231,43 @@ function MoonMesh({
     return sampled?.position ?? moonTrajectory[0]?.position ?? { x: 0, y: 0, z: 0 };
   };
 
+  const resolveParentAbsolutePositionKm = () => {
+    const parentFromProps = worldParentPositionKm;
+    const parentMagnitudeKm = Math.sqrt(
+      parentFromProps.x ** 2 +
+      parentFromProps.y ** 2 +
+      parentFromProps.z ** 2
+    );
+
+    // Defensive fallback: if parent absolute position is unresolved, sample it from master trajectory.
+    if (parentId !== '10' && parentMagnitudeKm < 1000) {
+      const state = useSolarStore.getState();
+      const parentSegments = state.masterTrajectorySegments[parentId] ?? [];
+      if (parentSegments.length > 0) {
+        const sampledParent = sampleTrajectoryAtTime(
+          parentSegments,
+          state.currentTime.getTime(),
+          parentLookupCacheRef.current
+        );
+        if (sampledParent?.position) {
+          return sampledParent.position;
+        }
+      }
+    }
+
+    return parentFromProps;
+  };
+
   const handleClick = () => {
     const currentPos = resolveCurrentMoonPosition();
+    const parentAbsolutePos = resolveParentAbsolutePositionKm();
     const absolutePos = {
-      x: worldParentPositionKm.x + currentPos.x,
-      y: worldParentPositionKm.y + currentPos.y,
-      z: worldParentPositionKm.z + currentPos.z,
+      x: parentAbsolutePos.x + currentPos.x,
+      y: parentAbsolutePos.y + currentPos.y,
+      z: parentAbsolutePos.z + currentPos.z,
     };
     const distanceToParentKm = Math.sqrt(currentPos.x ** 2 + currentPos.y ** 2 + currentPos.z ** 2);
-    
+
     setSelectedPlanet({
       bodyId,
       name: config.name,
@@ -255,16 +285,17 @@ function MoonMesh({
 
   const handleDoubleClick = () => {
     const currentPos = resolveCurrentMoonPosition();
+    const parentAbsolutePos = resolveParentAbsolutePositionKm();
     const absolutePos = {
-      x: worldParentPositionKm.x + currentPos.x,
-      y: worldParentPositionKm.y + currentPos.y,
-      z: worldParentPositionKm.z + currentPos.z,
+      x: parentAbsolutePos.x + currentPos.x,
+      y: parentAbsolutePos.y + currentPos.y,
+      z: parentAbsolutePos.z + currentPos.z,
     };
 
     handleClick(); // Set selected state
     setViewMode('realistic');
     const realisticRadius = getRadius(bodyId, 'MOON', 'realistic');
-    setTravelTarget(absolutePos, realisticRadius * 8);
+    setTravelTarget(absolutePos, realisticRadius * MOON_CLOSEUP_TRAVEL_RADIUS_MULTIPLIER);
   };
 
   const events = {
@@ -290,7 +321,7 @@ function MoonMesh({
   const labelAnchorY = isHovered ? 'bottom' : 'top';
 
   return (
-    <group name={name} ref={groupRef}>
+    <group name={bodyId} ref={groupRef}>
       <mesh {...events} geometry={HITBOX_SPHERE} scale={isDataLoading ? 0 : hitboxRadius} renderOrder={-1} dispose={null}>
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>

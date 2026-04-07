@@ -9,7 +9,7 @@ import { getTexturePath, TextureTier } from '@/lib/textureConfig';
 import { useQualityTier } from '@/contexts/QualityTierContext';
 import { SPHERE_HIGH } from '@/lib/geometryPool';
 import { useSolarStore } from '@/store/solarStore';
-import { toRelativeRenderUnits } from '@/lib/renderFrame';
+import { toRelativeRenderUnitsInto } from '@/lib/renderFrame';
 
 interface SunProps {
   lightIntensity?: number;
@@ -46,8 +46,7 @@ export function Sun({
   useFrame((_, delta) => {
     if (!meshRef.current || !groupRef.current) return;
 
-    const relativePosition = toRelativeRenderUnits(absolutePositionKm, renderOrigin, KM_TO_UNIT);
-    groupRef.current.position.set(relativePosition.x, relativePosition.y, relativePosition.z);
+    toRelativeRenderUnitsInto(groupRef.current.position, absolutePositionKm, renderOrigin, KM_TO_UNIT);
 
     let targetScale;
 

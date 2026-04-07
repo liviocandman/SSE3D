@@ -29,6 +29,10 @@ export const MissionMilestoneMarker: React.FC<MissionMilestoneMarkerProps> = ({
   useFrame((state) => {
     if (!groupRef.current) return;
 
+    // Position is Earth-relative KM from SceneManager
+    // Since this component is a child of CelestialBody (Earth), 
+    // it is already in the relative frame. 
+    // We only need to scale KM to render units.
     const relX = position[0] * KM_TO_UNIT;
     const relY = position[1] * KM_TO_UNIT;
     const relZ = position[2] * KM_TO_UNIT;

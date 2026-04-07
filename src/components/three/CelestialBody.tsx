@@ -9,6 +9,7 @@ import "../../app/globals.css";
 import { type ViewMode, KM_TO_UNIT } from "@/lib/scales";
 import { useSolarStore } from "@/store/solarStore";
 import { useShallow } from "zustand/react/shallow";
+import { toRelativeRenderUnitsInto } from "@/lib/renderFrame";
 import type { EphemerisTrajectory } from "@/lib/types";
 import { buildTrajectorySegment, sampleTrajectoryAtTime } from "@/lib/trajectoryEngine";
 import { createTemporalLookupCache } from "@/lib/temporalLookup";
@@ -127,18 +128,17 @@ export function CelestialBody({
 
     // 1. Interpolate position from trajectory if available
     if (currentSegments.length > 0 && groupRef.current) {
-      const SCALE = KM_TO_UNIT;
       const sampled = sampleTrajectoryAtTime(currentSegments, simTime, lookupCacheRef.current);
       if (sampled) {
-        const { x, y, z } = sampled.position;
         const renderOrigin = solarState.renderOrigin;
         
-        // Convert absolute KM to relative KM, then to render units
-        const relativeX = (x - renderOrigin.x) * SCALE;
-        const relativeY = (y - renderOrigin.y) * SCALE;
-        const relativeZ = (z - renderOrigin.z) * SCALE;
-        
-        const targetPos = tempVec.current.set(relativeX, relativeY, relativeZ);
+        // Convert absolute KM to relative render units (Zero allocation)
+        const targetPos = toRelativeRenderUnitsInto(
+          tempVec.current,
+          sampled.position,
+          renderOrigin,
+          KM_TO_UNIT
+        );
 
         if (!isInitializedRef.current) {
           // Snap to first valid position to avoid flying from origin
@@ -154,10 +154,21 @@ export function CelestialBody({
       const renderOrigin = solarState.renderOrigin;
 
       // Keep fallback bodies coherent with camera-relative origin changes.
-      groupRef.current.position.set(
-        initialPosition[0] - (renderOrigin.x * KM_TO_UNIT),
-        initialPosition[1] - (renderOrigin.y * KM_TO_UNIT),
-        initialPosition[2] - (renderOrigin.z * KM_TO_UNIT)
+      // initialPosition is in render units [x, y, z] from store or props
+      // We convert it back to absolute KM, then to relative units.
+      // Assumption: initialPosition was computed as absoluteKm * KM_TO_UNIT.
+      const invScale = 1 / KM_TO_UNIT;
+      const absKm = {
+        x: initialPosition[0] * invScale,
+        y: initialPosition[1] * invScale,
+        z: initialPosition[2] * invScale
+      };
+
+      toRelativeRenderUnitsInto(
+        groupRef.current.position,
+        absKm,
+        renderOrigin,
+        KM_TO_UNIT
       );
 
       if (!isInitializedRef.current) {
@@ -259,7 +270,7 @@ export function CelestialBody({
   const labelAnchorY = isHovered ? "bottom" : "top";
 
   return (
-    <group name={englishName} ref={groupRef}>
+    <group name={bodyId} ref={groupRef}>
       {/* Invisible hitbox for interaction - always large enough to click */}
       <mesh
         onClick={handleClick}

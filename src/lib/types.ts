@@ -1,3 +1,5 @@
+export const CAMERA_MODEL_V2_ORIGIN_ONLY = true;
+
 /**
  * Ephemeris Types
  * Shared type definitions for ephemeris data

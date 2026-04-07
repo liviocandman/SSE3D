@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Line } from '@react-three/drei';
 import { calculateTrailAlpha } from '@/lib/trailUtils';
+import { toRelativeRenderUnitsInto } from '@/lib/renderFrame';
 import { KM_TO_UNIT } from '@/lib/scales';
 import { useSolarStore } from '@/store/solarStore';
 import { findTemporalInterval, createTemporalLookupCache, resetCacheIfDataChanged } from '@/lib/temporalLookup';
@@ -77,6 +78,8 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
   // Minimal initial points to satisfy Line's constructor without creating memory pressure
   const initialPoints = useMemo(() => [[0, 0, 0], [0, 0, 0]] as [number, number, number][], []);
 
+  const scratchVec = useRef(new THREE.Vector3());
+
   useFrame(() => {
     if (!lineRef.current) return;
 
@@ -129,10 +132,11 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
       const p = samples[lastVisibleIndex - i].point;
       const idx = i * 3;
 
-      // Convert absolute KM to relative render units
-      pos[idx] = (p.x - renderOrigin.x) * KM_TO_UNIT;
-      pos[idx + 1] = (p.y - renderOrigin.y) * KM_TO_UNIT;
-      pos[idx + 2] = (p.z - renderOrigin.z) * KM_TO_UNIT;
+      // Convert absolute KM to relative render units (Zero allocation)
+      toRelativeRenderUnitsInto(scratchVec.current, p, renderOrigin, KM_TO_UNIT);
+      pos[idx] = scratchVec.current.x;
+      pos[idx + 1] = scratchVec.current.y;
+      pos[idx + 2] = scratchVec.current.z;
 
       const alpha = calculateTrailAlpha(i, count, 'tail');
       sc.copy(bc).lerp(fc, 1 - alpha);

@@ -17,6 +17,8 @@ export type TimeAuthority = 'user' | 'mission_live';
 
 export type RenderOriginMode = 'global' | 'selected_body' | 'mission_vehicle' | 'custom';
 
+export type CameraNavMode = 'idle' | 'travel' | 'follow';
+
 interface SolarState {
   currentDate: string; // YYYY-MM-DD
   trajectoryBaseDate: string; // Date used by initial ephemeris query window
@@ -30,9 +32,18 @@ interface SolarState {
   travelTarget: TravelTarget | null;
   travelTargetRadius?: number;
 
-  // Camera-relative rendering
+  // Camera-relative rendering (V1 & V2 Core)
   renderOrigin: { x: number; y: number; z: number };
   renderOriginMode: RenderOriginMode;
+
+  // Navigation V2 (Origin-Only Model)
+  cameraNavMode: CameraNavMode;
+  originStartKm: { x: number; y: number; z: number };
+  originTargetKm: { x: number; y: number; z: number };
+  travelStartMs: number;
+  travelDurationMs: number;
+  followTargetId: string | null;
+  followLeadTimeMs: number;
 
   // Master Buffer: Maps bodyId -> Sliding window of high-precision NASA vectors
   // Ensures memory stays constant (max 90 days of data from 3x30d blocks)
@@ -63,6 +74,17 @@ interface SolarState {
 
   setRenderOrigin: (origin: { x: number; y: number; z: number }, mode?: RenderOriginMode) => void;
   resetRenderOrigin: () => void;
+
+  // Navigation V2 Actions
+  startOriginTravel: (
+    targetKm: { x: number; y: number; z: number },
+    durationMs: number,
+    nowMs: number,
+    followTargetId?: string | null
+  ) => void;
+  setFollowTarget: (targetId: string | null, leadTimeMs?: number) => void;
+  setOriginTarget: (targetKm: { x: number; y: number; z: number }) => void;
+  stopOriginNavigation: () => void;
 }
 
 function getTodayString(): string {
@@ -114,6 +136,15 @@ export const useSolarStore = create<SolarState>((set) => ({
   travelTargetRadius: undefined,
   renderOrigin: { x: 0, y: 0, z: 0 },
   renderOriginMode: 'global',
+
+  cameraNavMode: 'idle',
+  originStartKm: { x: 0, y: 0, z: 0 },
+  originTargetKm: { x: 0, y: 0, z: 0 },
+  travelStartMs: 0,
+  travelDurationMs: 0,
+  followTargetId: null,
+  followLeadTimeMs: 0,
+
   masterTrajectory: {},
   masterTrajectorySegments: {},
   fullOrbits: {},
@@ -202,4 +233,25 @@ export const useSolarStore = create<SolarState>((set) => ({
     set(() => ({ renderOrigin: origin, renderOriginMode: mode })),
   resetRenderOrigin: () =>
     set(() => ({ renderOrigin: { x: 0, y: 0, z: 0 }, renderOriginMode: 'global' })),
+
+  startOriginTravel: (targetKm, durationMs, nowMs, followTargetId = null) => set((state) => ({
+    cameraNavMode: 'travel',
+    originStartKm: { ...state.renderOrigin },
+    originTargetKm: targetKm,
+    travelStartMs: nowMs,
+    travelDurationMs: durationMs,
+    followTargetId
+  })),
+  setFollowTarget: (targetId, leadTimeMs = 0) => set({
+    cameraNavMode: 'follow',
+    followTargetId: targetId,
+    followLeadTimeMs: leadTimeMs
+  }),
+  setOriginTarget: (targetKm) => set({
+    originTargetKm: targetKm
+  }),
+  stopOriginNavigation: () => set({
+    cameraNavMode: 'idle',
+    followTargetId: null
+  }),
 }));

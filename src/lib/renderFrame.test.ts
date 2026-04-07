@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import * as THREE from 'three';
 import {
   toRelativePosition,
   isRenderOriginNearTarget,
-  toRelativeRenderUnits,
+  toRelativeRenderUnitsInto,
 } from './renderFrame';
 
 describe('renderFrame utilities', () => {
@@ -21,16 +22,17 @@ describe('renderFrame utilities', () => {
     expect(toRelativePosition(absolute, zeroOrigin)).toEqual(absolute);
   });
 
-  it('converts absolute KM to relative render units', () => {
+  it('converts absolute KM to relative render units into vector', () => {
     const absoluteKm = { x: 1_500_000, y: -500_000, z: 250_000 };
     const originKm = { x: 1_000_000, y: -1_000_000, z: 0 };
     const kmToUnit = 1 / 1_000_000;
+    const out = new THREE.Vector3();
 
-    expect(toRelativeRenderUnits(absoluteKm, originKm, kmToUnit)).toEqual({
-      x: 0.5,
-      y: 0.5,
-      z: 0.25,
-    });
+    toRelativeRenderUnitsInto(out, absoluteKm, originKm, kmToUnit);
+
+    expect(out.x).toBeCloseTo(0.5);
+    expect(out.y).toBeCloseTo(0.5);
+    expect(out.z).toBeCloseTo(0.25);
   });
 
   it('detects origin near target', () => {

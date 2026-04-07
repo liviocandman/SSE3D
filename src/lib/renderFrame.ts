@@ -1,14 +1,15 @@
 /**
- * Utilities for camera-relative rendering.
+ * Canonical utilities for camera-relative rendering.
  * 
  * Absolute positions are in KM (astronomical truth).
  * Render positions are in KM relative to a chosen Render Origin.
  * 
- * Three.js uses Float32 for rendering. At lunar distances (~384,000 km),
- * precision is roughly 0.05 km (50 meters). Camera-relative rendering
+ * Three.js uses Float32 for rendering. Camera-relative rendering
  * keeps the camera and local focus target near (0,0,0) in render-space,
  * restoring sub-meter precision for detailed models.
  */
+
+import * as THREE from 'three';
 
 export interface Vector3Like {
   x: number;
@@ -18,15 +19,49 @@ export interface Vector3Like {
 
 /**
  * Computes a render-relative position from an absolute position and an origin.
+ * Returns units in KM.
  */
 export function toRelativePosition(
-  absolute: Vector3Like,
-  origin: Vector3Like
+  absoluteKm: Vector3Like,
+  originKm: Vector3Like
 ): Vector3Like {
   return {
-    x: absolute.x - origin.x,
-    y: absolute.y - origin.y,
-    z: absolute.z - origin.z,
+    x: absoluteKm.x - originKm.x,
+    y: absoluteKm.y - originKm.y,
+    z: absoluteKm.z - originKm.z,
+  };
+}
+
+/**
+ * Performant relative unit conversion into an existing Vector3.
+ * Avoids allocation in frame loops.
+ */
+export function toRelativeRenderUnitsInto(
+  out: THREE.Vector3,
+  absoluteKm: Vector3Like,
+  originKm: Vector3Like,
+  kmToUnit: number
+): THREE.Vector3 {
+  return out.set(
+    (absoluteKm.x - originKm.x) * kmToUnit,
+    (absoluteKm.y - originKm.y) * kmToUnit,
+    (absoluteKm.z - originKm.z) * kmToUnit
+  );
+}
+
+/**
+ * Reconstructs absolute KM from relative render units.
+ */
+export function worldCameraKm(
+  cameraPosUnits: THREE.Vector3,
+  originKm: Vector3Like,
+  kmToUnit: number
+): Vector3Like {
+  const invScale = 1 / kmToUnit;
+  return {
+    x: originKm.x + cameraPosUnits.x * invScale,
+    y: originKm.y + cameraPosUnits.y * invScale,
+    z: originKm.z + cameraPosUnits.z * invScale,
   };
 }
 
@@ -38,22 +73,6 @@ export function subtractRenderOrigin(
   origin: Vector3Like
 ): Vector3Like {
   return toRelativePosition(absolute, origin);
-}
-
-/**
- * Converts an absolute KM position into render units in the current relative frame.
- */
-export function toRelativeRenderUnits(
-  absoluteKm: Vector3Like,
-  originKm: Vector3Like,
-  kmToUnit: number
-): Vector3Like {
-  const relativeKm = toRelativePosition(absoluteKm, originKm);
-  return {
-    x: relativeKm.x * kmToUnit,
-    y: relativeKm.y * kmToUnit,
-    z: relativeKm.z * kmToUnit,
-  };
 }
 
 /**

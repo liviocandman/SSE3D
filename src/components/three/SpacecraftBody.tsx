@@ -2,6 +2,8 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
+import { toRelativeRenderUnitsInto } from '@/lib/renderFrame';
+import { KM_TO_UNIT } from '@/lib/scales';
 import { OrionProxyModel } from './OrionProxyModel';
 import type { MissionQuaternion } from '@/lib/missionTypes';
 import { ORION_MESH_TO_BODY_QUATERNION } from '@/lib/missionAttitudeCalibration';

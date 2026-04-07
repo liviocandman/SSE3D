@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Line } from '@react-three/drei';
 import * as THREE from 'three';
+import { toRelativeRenderUnitsInto } from '@/lib/renderFrame';
 import { KM_TO_UNIT } from '@/lib/scales';
 import type { EphemerisTrajectory } from '@/lib/types';
 
@@ -43,10 +44,15 @@ const StaticOrbitLine: React.FC<StaticOrbitLineProps> = ({
   useFrame(() => {
     if (!groupRef.current) return;
     const renderOrigin = useSolarStore.getState().renderOrigin;
-    groupRef.current.position.set(
-      -renderOrigin.x * KM_TO_UNIT,
-      -renderOrigin.y * KM_TO_UNIT,
-      -renderOrigin.z * KM_TO_UNIT
+    
+    // Position the whole group relative to the origin.
+    // Since points are already in absolute render units (scaled KM),
+    // we just need to shift the group by -renderOrigin in render units.
+    toRelativeRenderUnitsInto(
+      groupRef.current.position,
+      { x: 0, y: 0, z: 0 },
+      renderOrigin,
+      KM_TO_UNIT
     );
   });
 

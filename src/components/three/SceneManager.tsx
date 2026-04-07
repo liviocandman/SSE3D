@@ -40,7 +40,7 @@ import {
 import { MissionTrajectoryLine } from './MissionTrajectoryLine';
 import { MissionMilestoneMarker } from './MissionMilestoneMarker';
 import { MissionPhase } from '@/lib/missionTypes';
-import { BODY_IDS, MISSION_CONFIG } from '@/lib/types';
+import { BODY_IDS, MISSION_CONFIG, CAMERA_MODEL_V2_ORIGIN_ONLY } from '@/lib/types';
 
 // --- Types ---
 
@@ -378,10 +378,10 @@ export function SceneContent({
   const sunEphemeris = ephemerisById[SUN_BODY_ID] ?? null;
   const sunAbsolutePositionKm = sunEphemeris
     ? {
-        x: sunEphemeris.position.x,
-        y: sunEphemeris.position.y,
-        z: sunEphemeris.position.z,
-      }
+      x: sunEphemeris.position.x,
+      y: sunEphemeris.position.y,
+      z: sunEphemeris.position.z,
+    }
     : { x: 0, y: 0, z: 0 };
   const isEarthMissionContextActive = selectedPlanet?.bodyId === BODY_IDS.EARTH;
 
@@ -423,10 +423,10 @@ export function SceneContent({
         },
         velocity: point.velocity
           ? {
-              x: point.velocity.x,
-              y: point.velocity.y,
-              z: point.velocity.z,
-            }
+            x: point.velocity.x,
+            y: point.velocity.y,
+            z: point.velocity.z,
+          }
           : undefined,
       }))
     );
@@ -519,36 +519,7 @@ export function SceneContent({
     };
   }, [earthEphemeris, spacecraftLocalPosition]);
 
-  const cameraTargetName = useMemo(() => {
-    if (selectedMissionTargetId) {
-      return selectedMissionTargetId === 'orion'
-        ? 'Orion'
-        : selectedMissionTargetId.toUpperCase();
-    }
-
-    if (
-      isEarthMissionContextActive &&
-      missionState?.vehicleId === 'orion' &&
-      travelTarget &&
-      spacecraftWorldPosition
-    ) {
-      const dx = travelTarget.x - spacecraftWorldPosition.x;
-      const dy = travelTarget.y - spacecraftWorldPosition.y;
-      const dz = travelTarget.z - spacecraftWorldPosition.z;
-      const distSqKm = dx * dx + dy * dy + dz * dz;
-      // If camera target is effectively the spacecraft, track Orion object directly.
-      if (distSqKm < 1e-6) return 'Orion';
-    }
-
-    return selectedPlanet?.englishName;
-  }, [
-    selectedMissionTargetId,
-    isEarthMissionContextActive,
-    missionState?.vehicleId,
-    travelTarget,
-    spacecraftWorldPosition,
-    selectedPlanet?.englishName,
-  ]);
+  const cameraTargetId = selectedPlanet?.bodyId || (isEarthMissionContextActive ? 'Orion' : undefined);
 
   // --- Guided Event Camera ---
   const armedAutoFocusEventsRef = useRef<Set<string>>(new Set());
@@ -672,7 +643,7 @@ export function SceneContent({
       )}
 
       <Stars
-        radius={4000}
+        radius={50000}
         depth={300}
         count={tier === 'low' ? 2000 : 5000}
         factor={10}
@@ -685,11 +656,11 @@ export function SceneContent({
         enableDamping
         dampingFactor={0.05}
         minDistance={0.00001}
-        maxDistance={12000}
-        enablePan
+        maxDistance={50000}
+        enablePan={!CAMERA_MODEL_V2_ORIGIN_ONLY}
         panSpeed={1}
         rotateSpeed={1}
-        zoomSpeed={5}
+        zoomSpeed={3}
       />
 
       <Sun viewMode={viewMode} absolutePositionKm={sunAbsolutePositionKm} />
@@ -813,9 +784,9 @@ export function SceneContent({
       })}
 
       <CameraController
-        targetPosition={travelTarget}
-        targetRadius={travelTargetRadius}
-        targetName={cameraTargetName}
+        targetPositionKm={travelTarget}
+        targetRadiusKm={travelTargetRadius ? travelTargetRadius / KM_TO_UNIT : undefined}
+        targetId={cameraTargetId}
       />
 
       {children}
