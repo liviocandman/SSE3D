@@ -369,6 +369,14 @@ export function SceneContent({
 
   const earthPlanet = planetsToRender.find((planet) => planet?.bodyId === BODY_IDS.EARTH) ?? null;
   const earthEphemeris = ephemerisById[BODY_IDS.EARTH] ?? null;
+  const sunEphemeris = ephemerisById[SUN_BODY_ID] ?? null;
+  const sunAbsolutePositionKm = sunEphemeris
+    ? {
+        x: sunEphemeris.position.x,
+        y: sunEphemeris.position.y,
+        z: sunEphemeris.position.z,
+      }
+    : { x: 0, y: 0, z: 0 };
   const isEarthMissionContextActive = selectedPlanet?.bodyId === BODY_IDS.EARTH;
 
   const earthSelectionContext = useMemo<SelectedPlanet | null>(() => {
@@ -609,7 +617,7 @@ export function SceneContent({
         zoomSpeed={5}
       />
 
-      <Sun viewMode={viewMode} />
+      <Sun viewMode={viewMode} absolutePositionKm={sunAbsolutePositionKm} />
 
       {planetsToRender.map((planet) => {
         if (!planet) return null;

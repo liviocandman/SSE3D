@@ -4,14 +4,17 @@ import { useRef } from 'react';
 import { useFrame, useThree, useLoader } from '@react-three/fiber';
 import * as THREE from 'three';
 import { SingletonKTX2Loader, getSharedKTX2Loader } from '@/lib/SingletonKTX2Loader';
-import { getRadius, ViewMode } from '@/lib/scales';
+import { getRadius, KM_TO_UNIT, ViewMode } from '@/lib/scales';
 import { getTexturePath, TextureTier } from '@/lib/textureConfig';
 import { useQualityTier } from '@/contexts/QualityTierContext';
 import { SPHERE_HIGH } from '@/lib/geometryPool';
+import { useSolarStore } from '@/store/solarStore';
+import { toRelativeRenderUnits } from '@/lib/renderFrame';
 
 interface SunProps {
   lightIntensity?: number;
   viewMode?: ViewMode;
+  absolutePositionKm?: { x: number; y: number; z: number };
 }
 
 const SUN_BODY_ID = '10';
@@ -20,11 +23,15 @@ const DEFAULT_LIGHT_INTENSITY = 2.5;
 export function Sun({
   lightIntensity = DEFAULT_LIGHT_INTENSITY,
   viewMode = 'didactic',
+  absolutePositionKm = { x: 0, y: 0, z: 0 },
 }: SunProps) {
   const meshRef = useRef<THREE.Mesh>(null);
+  const groupRef = useRef<THREE.Group>(null);
+  const sunWorldPositionRef = useRef(new THREE.Vector3());
   const { tier } = useQualityTier();
   const camera = useThree((state) => state.camera);
   const gl = useThree((state) => state.gl);
+  const renderOrigin = useSolarStore((state) => state.renderOrigin);
 
   // Carregar Textura do Sol (KTX2 Optimized)
   const texturePath = getTexturePath(SUN_BODY_ID, tier as TextureTier);
@@ -36,8 +43,11 @@ export function Sun({
   const didacticRadius = getRadius(SUN_BODY_ID, 'STAR', 'didactic'); // ~35u
   const realisticRadius = getRadius(SUN_BODY_ID, 'STAR', 'realistic'); // ~0.7u
 
-  useFrame((state, delta) => {
-    if (!meshRef.current) return;
+  useFrame((_, delta) => {
+    if (!meshRef.current || !groupRef.current) return;
+
+    const relativePosition = toRelativeRenderUnits(absolutePositionKm, renderOrigin, KM_TO_UNIT);
+    groupRef.current.position.set(relativePosition.x, relativePosition.y, relativePosition.z);
 
     let targetScale;
 
@@ -47,8 +57,8 @@ export function Sun({
     } else {
       // MODO REALISTA (O Truque da Escala Dinâmica)
 
-      // 1. Calcular distância da câmera ao Sol (0,0,0)
-      const distance = camera.position.length();
+      const sunWorldPosition = groupRef.current.getWorldPosition(sunWorldPositionRef.current);
+      const distance = camera.position.distanceTo(sunWorldPosition);
 
       // 2. Definir um fator de escala visual
       // "distance / 500" significa: a cada 500 unidades de distância, o sol ganha 1 unidade de tamanho visual.
@@ -72,7 +82,7 @@ export function Sun({
   });
 
   return (
-    <group>
+    <group ref={groupRef}>
       {/* SOL VISUAL (A esfera brilhante) 
          Usamos meshBasicMaterial com cor > 1.0 para forçar o Bloom (Brilho Neon)
          sem depender de luzes externas.

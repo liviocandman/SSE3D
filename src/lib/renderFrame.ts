@@ -41,6 +41,22 @@ export function subtractRenderOrigin(
 }
 
 /**
+ * Converts an absolute KM position into render units in the current relative frame.
+ */
+export function toRelativeRenderUnits(
+  absoluteKm: Vector3Like,
+  originKm: Vector3Like,
+  kmToUnit: number
+): Vector3Like {
+  const relativeKm = toRelativePosition(absoluteKm, originKm);
+  return {
+    x: relativeKm.x * kmToUnit,
+    y: relativeKm.y * kmToUnit,
+    z: relativeKm.z * kmToUnit,
+  };
+}
+
+/**
  * Checks if a render origin is already near a target within a tolerance (in KM).
  * Useful to avoid micro-updates to the render origin.
  */
