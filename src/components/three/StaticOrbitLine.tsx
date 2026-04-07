@@ -1,8 +1,11 @@
 import React, { useMemo } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { Line } from '@react-three/drei';
 import * as THREE from 'three';
 import { KM_TO_UNIT } from '@/lib/scales';
 import type { EphemerisTrajectory } from '@/lib/types';
+
+import { useSolarStore } from '@/store/solarStore';
 
 interface StaticOrbitLineProps {
   trajectory: EphemerisTrajectory[];
@@ -20,6 +23,8 @@ const StaticOrbitLine: React.FC<StaticOrbitLineProps> = ({
   opacity = 0.05,
   lineWidth = 0.5,
 }) => {
+  const groupRef = React.useRef<THREE.Group>(null);
+
   const points = useMemo(() => {
     const converted = trajectory.map((p) => new THREE.Vector3(
       p.position.x * KM_TO_UNIT,
@@ -35,17 +40,29 @@ const StaticOrbitLine: React.FC<StaticOrbitLineProps> = ({
     return converted;
   }, [trajectory]);
 
+  useFrame(() => {
+    if (!groupRef.current) return;
+    const renderOrigin = useSolarStore.getState().renderOrigin;
+    groupRef.current.position.set(
+      -renderOrigin.x * KM_TO_UNIT,
+      -renderOrigin.y * KM_TO_UNIT,
+      -renderOrigin.z * KM_TO_UNIT
+    );
+  });
+
   if (points.length < 2) return null;
 
   return (
-    <Line
-      points={points}
-      color={color}
-      lineWidth={lineWidth}
-      transparent
-      opacity={opacity}
-      depthWrite={false}
-    />
+    <group ref={groupRef}>
+      <Line
+        points={points}
+        color={color}
+        lineWidth={lineWidth}
+        transparent
+        opacity={opacity}
+        depthWrite={false}
+      />
+    </group>
   );
 };
 

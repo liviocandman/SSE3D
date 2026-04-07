@@ -15,6 +15,8 @@ interface TravelTarget {
 
 export type TimeAuthority = 'user' | 'mission_live';
 
+export type RenderOriginMode = 'global' | 'selected_body' | 'mission_vehicle' | 'custom';
+
 interface SolarState {
   currentDate: string; // YYYY-MM-DD
   trajectoryBaseDate: string; // Date used by initial ephemeris query window
@@ -27,6 +29,10 @@ interface SolarState {
   viewMode: ViewMode;
   travelTarget: TravelTarget | null;
   travelTargetRadius?: number;
+
+  // Camera-relative rendering
+  renderOrigin: { x: number; y: number; z: number };
+  renderOriginMode: RenderOriginMode;
 
   // Master Buffer: Maps bodyId -> Sliding window of high-precision NASA vectors
   // Ensures memory stays constant (max 90 days of data from 3x30d blocks)
@@ -54,6 +60,9 @@ interface SolarState {
   setTravelTarget: (target: TravelTarget | null, radius?: number) => void;
   resetTravel: () => void;
   clearTrajectoryBuffer: () => void;
+
+  setRenderOrigin: (origin: { x: number; y: number; z: number }, mode?: RenderOriginMode) => void;
+  resetRenderOrigin: () => void;
 }
 
 function getTodayString(): string {
@@ -103,6 +112,8 @@ export const useSolarStore = create<SolarState>((set) => ({
   viewMode: 'didactic',
   travelTarget: null,
   travelTargetRadius: undefined,
+  renderOrigin: { x: 0, y: 0, z: 0 },
+  renderOriginMode: 'global',
   masterTrajectory: {},
   masterTrajectorySegments: {},
   fullOrbits: {},
@@ -187,4 +198,8 @@ export const useSolarStore = create<SolarState>((set) => ({
   resetTravel: () => set(() => ({ travelTarget: null, travelTargetRadius: undefined })),
   clearTrajectoryBuffer: () =>
     set(() => ({ masterTrajectory: {}, masterTrajectorySegments: {} })),
+  setRenderOrigin: (origin, mode = 'custom') =>
+    set(() => ({ renderOrigin: origin, renderOriginMode: mode })),
+  resetRenderOrigin: () =>
+    set(() => ({ renderOrigin: { x: 0, y: 0, z: 0 }, renderOriginMode: 'global' })),
 }));

@@ -37,6 +37,8 @@ function scaleMissionPoint(point: MissionTrajectoryPoint): [number, number, numb
 /**
  * Renders the dedicated mission trajectory for Orion.
  * This component is Earth-relative and should be rendered inside Earth's transform group.
+ * Because it's a child of CelestialBody (Earth), it automatically benefits from
+ * camera-relative rendering applied to the parent.
  */
 export const MissionTrajectoryLine: React.FC<MissionTrajectoryLineProps> = ({
   past,

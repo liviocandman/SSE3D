@@ -6,7 +6,7 @@ import { Text, Billboard } from "@react-three/drei";
 import type { Mesh } from "three";
 import * as THREE from "three";
 import "../../app/globals.css";
-import type { ViewMode } from "@/lib/scales";
+import { type ViewMode, KM_TO_UNIT } from "@/lib/scales";
 import { useSolarStore } from "@/store/solarStore";
 import { useShallow } from "zustand/react/shallow";
 import type { EphemerisTrajectory } from "@/lib/types";
@@ -127,11 +127,18 @@ export function CelestialBody({
 
     // 1. Interpolate position from trajectory if available
     if (currentSegments.length > 0 && groupRef.current) {
-      const SCALE = 1 / 1_000_000;
+      const SCALE = KM_TO_UNIT;
       const sampled = sampleTrajectoryAtTime(currentSegments, simTime, lookupCacheRef.current);
       if (sampled) {
         const { x, y, z } = sampled.position;
-        const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);
+        const renderOrigin = solarState.renderOrigin;
+        
+        // Convert absolute KM to relative KM, then to render units
+        const relativeX = (x - renderOrigin.x) * SCALE;
+        const relativeY = (y - renderOrigin.y) * SCALE;
+        const relativeZ = (z - renderOrigin.z) * SCALE;
+        
+        const targetPos = tempVec.current.set(relativeX, relativeY, relativeZ);
 
         if (!isInitializedRef.current) {
           // Snap to first valid position to avoid flying from origin
@@ -143,10 +150,19 @@ export function CelestialBody({
           groupRef.current.position.lerp(targetPos, lerpFactor);
         }
       }
-    } else if (groupRef.current && !isInitializedRef.current) {
-      // Fallback: use static prop position once if no trajectory is ready
-      groupRef.current.position.set(...initialPosition);
-      isInitializedRef.current = true;
+    } else if (groupRef.current) {
+      const renderOrigin = solarState.renderOrigin;
+
+      // Keep fallback bodies coherent with camera-relative origin changes.
+      groupRef.current.position.set(
+        initialPosition[0] - (renderOrigin.x * KM_TO_UNIT),
+        initialPosition[1] - (renderOrigin.y * KM_TO_UNIT),
+        initialPosition[2] - (renderOrigin.z * KM_TO_UNIT)
+      );
+
+      if (!isInitializedRef.current) {
+        isInitializedRef.current = true;
+      }
     }
 
     // 2. Planet rotation (Absolute orientation + Optional didactic spin)

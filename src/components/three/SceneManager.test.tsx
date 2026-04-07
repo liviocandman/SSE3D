@@ -254,7 +254,7 @@ describe('SceneManager / SceneContent', () => {
 
     expect(setSelectedPlanet).toHaveBeenCalled();
     expect(setTravelTarget).toHaveBeenCalledWith(
-      { x: 0.001, y: 0, z: 0 },
+      { x: 1000, y: 0, z: 0 },
       SPACECRAFT_CLOSEUP_RADIUS_UNITS
     );
   });
@@ -284,7 +284,7 @@ describe('SceneManager / SceneContent', () => {
 
     // Camera should move with mission-centric framing
     expect(setTravelTarget).toHaveBeenCalledWith(
-      { x: 0.001, y: 0, z: 0 },
+      { x: 1000, y: 0, z: 0 },
       SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS
     );
     

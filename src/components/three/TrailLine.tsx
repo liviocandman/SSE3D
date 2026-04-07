@@ -1,14 +1,18 @@
 import React, { useMemo } from 'react';
 import * as THREE from 'three';
 import { Line } from '@react-three/drei';
+import { KM_TO_UNIT } from '@/lib/scales';
 import { calculateTrailAlpha } from '@/lib/trailUtils';
 
 interface TrailLineProps {
+  /** Points to render. If renderOrigin is provided, these should be absolute KM. Otherwise, they are assumed to be in local render units. */
   points: THREE.Vector3[];
   color: string | THREE.Color;
   fadeMode: 'tail' | 'ring';
   opacity?: number;
   lineWidth?: number;
+  /** Optional absolute origin to subtract from points (KM). If provided, points MUST be absolute KM. */
+  renderOrigin?: { x: number; y: number; z: number };
 }
 
 export const TrailLine: React.FC<TrailLineProps> = ({
@@ -17,10 +21,18 @@ export const TrailLine: React.FC<TrailLineProps> = ({
   fadeMode,
   opacity = 1.0,
   lineWidth = 2,
+  renderOrigin,
 }) => {
   // 1. ANTI-NaN & DUPLICATE SHIELD (Prevents vertex corruption on iOS/WebKit)
   const safePoints = useMemo(() => {
-    return points.filter((p, i, arr) => {
+    return points.map(p => {
+        if (!renderOrigin) return p;
+        return new THREE.Vector3(
+            p.x - (renderOrigin.x * KM_TO_UNIT),
+            p.y - (renderOrigin.y * KM_TO_UNIT),
+            p.z - (renderOrigin.z * KM_TO_UNIT)
+        );
+    }).filter((p, i, arr) => {
       // Filter out invalid coordinates (NaN/Infinity) that crash WebKit buffers
       if (
         !Number.isFinite(p.x) ||
@@ -40,7 +52,7 @@ export const TrailLine: React.FC<TrailLineProps> = ({
 
       return true;
     });
-  }, [points]);
+  }, [points, renderOrigin]);
 
   // 2. MEMORY OPTIMIZATION (Use basic RGB tuples to reduce Safari GC overhead)
   const vertexColors = useMemo(() => {

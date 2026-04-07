@@ -1,4 +1,6 @@
-'use client';
+/**
+ * Coordinate-stabilized MoonSystem component.
+ */
 
 import { useRef, useState, useEffect, Suspense, useMemo } from 'react';
 import { useFrame, useThree, useLoader } from '@react-three/fiber';
@@ -33,8 +35,8 @@ import { SPHERE_MID, HITBOX_SPHERE } from '@/lib/geometryPool';
 interface MoonSystemProps {
   parentId: string;
   parentClass: BodyClass;
-  parentPosition: [number, number, number];
-  worldParentPosition?: [number, number, number];
+  parentPosition: [number, number, number]; // Render units (local to planet group)
+  worldParentPositionKm: { x: number; y: number; z: number }; // Absolute KM of parent
   viewMode: ViewMode;
   tier: string;
 }
@@ -46,7 +48,7 @@ interface MoonMeshProps {
   parentClass: BodyClass;
   viewMode: ViewMode;
   tier: string;
-  parentPosition: [number, number, number];
+  worldParentPositionKm: { x: number; y: number; z: number };
 }
 
 // ---------------------------------------------------------------------------
@@ -117,7 +119,7 @@ function MoonMesh({
   parentClass,
   viewMode,
   tier,
-  parentPosition
+  worldParentPositionKm
 }: MoonMeshProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
@@ -189,10 +191,13 @@ function MoonMesh({
     const timeMultiplier = solarState.timeMultiplier;
 
     if (groupRef.current && masterSegments.length > 0) {
-      const SCALE = (1 / 1_000_000) * orbitScale;
+      const SCALE = KM_TO_UNIT * orbitScale;
       const sampled = sampleTrajectoryAtTime(masterSegments, simTime, lookupCacheRef.current);
 
       if (sampled) {
+        // Moon trajectories from the backend are already parent-relative KM.
+        // Since MoonSystem is a child of the parent CelestialBody, 
+        // we just need to scale them to render units.
         const { x, y, z } = sampled.position;
         const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);
 
@@ -215,16 +220,30 @@ function MoonMesh({
 
   const name = config.englishName;
 
+  const resolveCurrentMoonPosition = () => {
+    const simTimeMs = useSolarStore.getState().currentTime.getTime();
+    const sampled = masterSegments.length > 0
+      ? sampleTrajectoryAtTime(masterSegments, simTimeMs, lookupCacheRef.current)
+      : null;
+
+    return sampled?.position ?? moonTrajectory[0]?.position ?? { x: 0, y: 0, z: 0 };
+  };
+
   const handleClick = () => {
-    const currentPos = moonTrajectory.length > 0 ? moonTrajectory[0].position : { x: 0, y: 0, z: 0 };
+    const currentPos = resolveCurrentMoonPosition();
+    const absolutePos = {
+      x: worldParentPositionKm.x + currentPos.x,
+      y: worldParentPositionKm.y + currentPos.y,
+      z: worldParentPositionKm.z + currentPos.z,
+    };
     const distanceToParentKm = Math.sqrt(currentPos.x ** 2 + currentPos.y ** 2 + currentPos.z ** 2);
     
     setSelectedPlanet({
       bodyId,
       name: config.name,
       englishName: config.englishName,
-      position: currentPos,
-      velocity: moonTrajectory.length > 0 ? moonTrajectory[0].velocity : { x: 0, y: 0, z: 0 },
+      position: absolutePos,
+      velocity: moonTrajectory[0]?.velocity ?? { x: 0, y: 0, z: 0 },
       trajectory: moonTrajectory,
       radius: radius,
       distanceFromSun: 0,
@@ -235,19 +254,17 @@ function MoonMesh({
   };
 
   const handleDoubleClick = () => {
-    const currentPos = moonTrajectory.length > 0 ? moonTrajectory[0].position : { x: 0, y: 0, z: 0 };
-    
-    // Calculate realistic world position for camera travel
-    const realisticWorldPos = {
-      x: (parentPosition?.[0] ?? 0) + (currentPos.x * KM_TO_UNIT),
-      y: (parentPosition?.[1] ?? 0) + (currentPos.y * KM_TO_UNIT),
-      z: (parentPosition?.[2] ?? 0) + (currentPos.z * KM_TO_UNIT),
+    const currentPos = resolveCurrentMoonPosition();
+    const absolutePos = {
+      x: worldParentPositionKm.x + currentPos.x,
+      y: worldParentPositionKm.y + currentPos.y,
+      z: worldParentPositionKm.z + currentPos.z,
     };
 
     handleClick(); // Set selected state
     setViewMode('realistic');
     const realisticRadius = getRadius(bodyId, 'MOON', 'realistic');
-    setTravelTarget(realisticWorldPos, realisticRadius * 8);
+    setTravelTarget(absolutePos, realisticRadius * 8);
   };
 
   const events = {
@@ -328,6 +345,7 @@ export function MoonSystem({
   parentId,
   parentClass,
   parentPosition,
+  worldParentPositionKm,
   viewMode,
   tier,
 }: MoonSystemProps) {
@@ -360,7 +378,7 @@ export function MoonSystem({
               parentId={parentId}
               parentName={parentConfig?.englishName ?? parentId}
               parentClass={parentClass}
-              parentPosition={parentPosition}
+              worldParentPositionKm={worldParentPositionKm}
               viewMode={viewMode}
               tier={tier}
             />
@@ -379,7 +397,7 @@ function MoonOrbitLine({ moonId, parentId, parentClass, viewMode }: { moonId: st
   if (!config || !moonTrajectory || moonTrajectory.length < 2) return null;
 
   const orbitScale = getMoonOrbitScale(parentId, parentClass, config.meanDistanceAU * AU_TO_KM, viewMode);
-  const SCALE = (1 / 1_000_000) * orbitScale;
+  const SCALE = KM_TO_UNIT * orbitScale;
 
   // Compute orbit coverage from real timestamps instead of assuming a fixed 30-day window.
   const observedSpanDays = getTrajectorySpanDays(moonTrajectory);

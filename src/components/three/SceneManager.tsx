@@ -20,14 +20,13 @@ import {
   PLANET_MOONS,
   TextureTier,
 } from '@/lib/textureConfig';
-import { getRadius, scalePositionFromKm } from '@/lib/scales';
+import { getRadius, scalePositionFromKm, KM_TO_UNIT } from '@/lib/scales';
 import { CameraController } from '@/hooks/useCameraAnimation';
 import * as THREE from 'three';
 import { useSolarStore } from '@/store/solarStore';
 import { useMissionStore } from '@/store/missionStore';
 import { useShallow } from 'zustand/react/shallow';
 import { TrajectoryManager } from './TrajectoryManager';
-import { KM_TO_UNIT } from '@/lib/scales';
 import StaticOrbitLine from './StaticOrbitLine';
 import DynamicTrailLine from './DynamicTrailLine';
 import {
@@ -109,7 +108,7 @@ const SEGMENTS_BY_TIER: Record<string, number> = {
 
 function calculateMillionKmFromSun(position: [number, number, number]): number {
   const [x, y, z] = position;
-  return Math.sqrt(x * x + y * y + z * z);
+  return Math.sqrt(x * x + y * y + z * z) * KM_TO_UNIT;
 }
 
 const ALL_PLANET_IDS = [
@@ -137,14 +136,13 @@ function PlanetTrajectoryGroup({ segments, fullOrbitData }: PlanetTrajectoryGrou
   const allPoints = useMemo(() => flattenTrajectorySegments(segments), [segments]);
 
   const samples = useMemo(() => {
-    return allPoints.map((p) => ({
-      timestampMs: parseTimestampMs(p.timestamp),
-      point: new THREE.Vector3(
-        p.position.x * KM_TO_UNIT,
-        p.position.y * KM_TO_UNIT,
-        p.position.z * KM_TO_UNIT
-      ),
-    })).filter((s, i, arr) => {
+    return allPoints.map((p) => {
+      // Pass absolute KM positions
+      return {
+        timestampMs: parseTimestampMs(p.timestamp),
+        point: new THREE.Vector3(p.position.x, p.position.y, p.position.z),
+      };
+    }).filter((s, i, arr) => {
       // Anti-NaN & Duplicate Shield (from TrailLine logic)
       if (!Number.isFinite(s.point.x) || !Number.isFinite(s.point.y) || !Number.isFinite(s.point.z)) {
         return false;
@@ -289,7 +287,11 @@ export function SceneContent({
           rotationSpeed: config.rotationSpeed,
           axialTilt: config.axialTilt,
           dayLength: config.dayLength,
-          distanceFromSun: calculateMillionKmFromSun(position),
+          distanceFromSun: calculateMillionKmFromSun([
+            body.position.x,
+            body.position.y,
+            body.position.z,
+          ]),
           bodyClass: config.bodyClass,
           segments,
         };
@@ -297,24 +299,34 @@ export function SceneContent({
       .filter((p): p is NonNullable<typeof p> => p !== null);
   }, [ephemerisData, tier, viewMode]);
 
+  const ephemerisById = useMemo(() => {
+    const map: Record<string, EphemerisData> = {};
+    if (!ephemerisData) return map;
+    for (const body of ephemerisData) {
+      map[body.bodyId] = body;
+    }
+    return map;
+  }, [ephemerisData]);
+
   const handlePlanetClick = (bodyId: string) => {
     setSelectedMissionTargetId(null);
     resetTravel();
-    const planet = planetsToRender.find(p => p?.bodyId === bodyId);
+    const planet = ephemerisById[bodyId];
 
     if (planet) {
+      const config = getPlanetConfig(planet.bodyId);
       const selected: SelectedPlanet = {
         bodyId: planet.bodyId,
-        name: planet.name,
-        englishName: planet.englishName,
+        name: config?.name || planet.name,
+        englishName: config?.englishName || planet.name,
         position: {
-          x: planet.position[0],
-          y: planet.position[1],
-          z: planet.position[2],
+          x: planet.position.x,
+          y: planet.position.y,
+          z: planet.position.z,
         },
         velocity: planet.velocity,
-        radius: planet.radius,
-        distanceFromSun: planet.distanceFromSun,
+        radius: getRadius(planet.bodyId, config?.bodyClass || 'ROCKY_PLANET', viewMode),
+        distanceFromSun: calculateMillionKmFromSun([planet.position.x, planet.position.y, planet.position.z]),
         trajectory: planet.trajectory,
       };
       setSelectedPlanet(selected);
@@ -323,25 +335,26 @@ export function SceneContent({
 
   const handlePlanetDoubleClick = (bodyId: string) => {
     setSelectedMissionTargetId(null);
-    const planet = planetsToRender.find(p => p?.bodyId === bodyId);
+    const planet = ephemerisById[bodyId];
 
     if (planet) {
-      const realisticRadius = getRadius(planet.bodyId, planet.bodyClass, 'realistic');
+      const config = getPlanetConfig(planet.bodyId);
+      const realisticRadius = getRadius(planet.bodyId, config?.bodyClass || 'ROCKY_PLANET', 'realistic');
       const moonSystemMultiplier = PLANET_MOONS[planet.bodyId] ? 5 : 1;
       const cameraRadius = realisticRadius * moonSystemMultiplier;
 
       const selected: SelectedPlanet = {
         bodyId: planet.bodyId,
-        name: planet.name,
-        englishName: planet.englishName,
+        name: config?.name || planet.name,
+        englishName: config?.englishName || planet.name,
         position: {
-          x: planet.position[0],
-          y: planet.position[1],
-          z: planet.position[2],
+          x: planet.position.x,
+          y: planet.position.y,
+          z: planet.position.z,
         },
         velocity: planet.velocity,
         radius: cameraRadius,
-        distanceFromSun: planet.distanceFromSun,
+        distanceFromSun: calculateMillionKmFromSun([planet.position.x, planet.position.y, planet.position.z]),
         trajectory: planet.trajectory,
       };
       setSelectedPlanet(selected);
@@ -355,26 +368,31 @@ export function SceneContent({
     : null;
 
   const earthPlanet = planetsToRender.find((planet) => planet?.bodyId === BODY_IDS.EARTH) ?? null;
+  const earthEphemeris = ephemerisById[BODY_IDS.EARTH] ?? null;
   const isEarthMissionContextActive = selectedPlanet?.bodyId === BODY_IDS.EARTH;
 
   const earthSelectionContext = useMemo<SelectedPlanet | null>(() => {
-    if (!earthPlanet) return null;
+    if (!earthPlanet || !earthEphemeris) return null;
 
     return {
       bodyId: earthPlanet.bodyId,
       name: earthPlanet.name,
       englishName: earthPlanet.englishName,
       position: {
-        x: earthPlanet.position[0],
-        y: earthPlanet.position[1],
-        z: earthPlanet.position[2],
+        x: earthEphemeris.position.x,
+        y: earthEphemeris.position.y,
+        z: earthEphemeris.position.z,
       },
-      velocity: earthPlanet.velocity,
+      velocity: earthEphemeris.velocity,
       radius: earthPlanet.radius,
-      distanceFromSun: earthPlanet.distanceFromSun,
-      trajectory: earthPlanet.trajectory,
+      distanceFromSun: calculateMillionKmFromSun([
+        earthEphemeris.position.x,
+        earthEphemeris.position.y,
+        earthEphemeris.position.z,
+      ]),
+      trajectory: earthEphemeris.trajectory,
     };
-  }, [earthPlanet]);
+  }, [earthEphemeris, earthPlanet]);
 
   const spacecraftLocalPosition = useMemo<[number, number, number] | null>(() => {
     if (!missionState?.sceneCoordinates) return null;
@@ -440,14 +458,14 @@ export function SceneContent({
   }, [missionState?.sceneCoordinates, missionState?.velocity, missionTrajectory]);
 
   const spacecraftWorldPosition = useMemo(() => {
-    if (!earthPlanet || !spacecraftLocalPosition) return null;
+    if (!earthEphemeris || !missionState?.sceneCoordinates) return null;
 
     return {
-      x: earthPlanet.position[0] + spacecraftLocalPosition[0],
-      y: earthPlanet.position[1] + spacecraftLocalPosition[1],
-      z: earthPlanet.position[2] + spacecraftLocalPosition[2],
+      x: earthEphemeris.position.x + missionState.sceneCoordinates.x,
+      y: earthEphemeris.position.y + missionState.sceneCoordinates.y,
+      z: earthEphemeris.position.z + missionState.sceneCoordinates.z,
     };
-  }, [earthPlanet, spacecraftLocalPosition]);
+  }, [earthEphemeris, missionState?.sceneCoordinates]);
 
   // --- Guided Event Camera ---
   const armedAutoFocusEventsRef = useRef<Set<string>>(new Set());
@@ -479,6 +497,7 @@ export function SceneContent({
 
       if (!armedAutoFocusEventsRef.current.has(ev.id)) {
         // Trigger non-intrusive focus
+        // spacecraftWorldPosition is now Absolute KM
         setTravelTarget(spacecraftWorldPosition, SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS);
         armedAutoFocusEventsRef.current.add(ev.id);
 
@@ -521,11 +540,12 @@ export function SceneContent({
 
         if (!nearestPoint) return null;
 
-        const pos = scalePositionFromKm(
+        // Position is Earth-relative KM
+        const pos: [number, number, number] = [
           nearestPoint.position.x,
           nearestPoint.position.y,
           nearestPoint.position.z
-        );
+        ];
 
         return {
           id: ev.id,
@@ -629,7 +649,11 @@ export function SceneContent({
                     parentId={planet.bodyId}
                     parentClass={planet.bodyClass}
                     parentPosition={[0, 0, 0]}
-                    worldParentPosition={planet.position}
+                    worldParentPositionKm={{
+                      x: ephemerisById[planet.bodyId]?.position.x ?? 0,
+                      y: ephemerisById[planet.bodyId]?.position.y ?? 0,
+                      z: ephemerisById[planet.bodyId]?.position.z ?? 0,
+                    }}
                     viewMode={viewMode}
                     tier={tier}
                   />

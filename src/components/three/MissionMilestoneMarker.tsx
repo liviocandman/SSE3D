@@ -4,6 +4,7 @@ import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text, Line } from '@react-three/drei';
 import * as THREE from 'three';
+import { KM_TO_UNIT } from '@/lib/scales';
 
 interface MissionMilestoneMarkerProps {
   label: string;
@@ -21,21 +22,24 @@ export const MissionMilestoneMarker: React.FC<MissionMilestoneMarkerProps> = ({
   const textRef = useRef<{ fillOpacity: number } | null>(null);
   const diamondRef = useRef<THREE.Mesh>(null);
   const worldPositionRef = useRef(new THREE.Vector3());
-  
+
   // Internal values to avoid React state updates in useFrame
   const opacityRef = useRef(0);
 
   useFrame((state) => {
     if (!groupRef.current) return;
-    
+
+    const relX = position[0] * KM_TO_UNIT;
+    const relY = position[1] * KM_TO_UNIT;
+    const relZ = position[2] * KM_TO_UNIT;
+
     const t = state.clock.getElapsedTime();
+
+    // Apply relative position + breathing
+    groupRef.current.position.set(relX, relY + Math.sin(t * 2) * 0.001, relZ);
+
     const worldPos = groupRef.current.getWorldPosition(worldPositionRef.current);
     const dist = state.camera.position.distanceTo(worldPos);
-
-    // 1. Position Breathing Animation
-    groupRef.current.position.y = position[1] + Math.sin(t * 2) * 0.001;
-
-    // 2. Distance-based Fade Logic
     const fadeStart = 0.8;
     const fadeEnd = 0.2;
     let targetOpacity = 0;
@@ -46,7 +50,7 @@ export const MissionMilestoneMarker: React.FC<MissionMilestoneMarkerProps> = ({
     // Smooth lerp for opacity
     opacityRef.current = THREE.MathUtils.lerp(opacityRef.current, targetOpacity, 0.1);
 
-    // 3. Direct Material/Prop updates (P1 fix: no useState)
+    // 3. Direct Material/Prop updates 
     const currentOp = opacityRef.current;
     const isVisible = currentOp > 0.01;
 
@@ -90,7 +94,7 @@ export const MissionMilestoneMarker: React.FC<MissionMilestoneMarkerProps> = ({
         >
           {label.toUpperCase()}
         </Text>
-        
+
         {/* Decorative diamond at base of label */}
         <mesh ref={diamondRef} position={[0, -0.005, 0]} rotation={[0, 0, Math.PI / 4]}>
           <planeGeometry args={[0.005, 0.005]} />

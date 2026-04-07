@@ -3,10 +3,12 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Line } from '@react-three/drei';
 import { calculateTrailAlpha } from '@/lib/trailUtils';
+import { KM_TO_UNIT } from '@/lib/scales';
 import { useSolarStore } from '@/store/solarStore';
 import { findTemporalInterval, createTemporalLookupCache, resetCacheIfDataChanged } from '@/lib/temporalLookup';
 
 interface DynamicTrailLineProps {
+  /** Absolute positions in KM */
   samples: { timestampMs: number; point: THREE.Vector3 }[];
   maxTrailPoints: number;
   color: string | THREE.Color;
@@ -120,14 +122,17 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
     const fc = fadeColor.current;
     const sc = scratchColor.current;
 
+    const solarState = useSolarStore.getState();
+    const renderOrigin = solarState.renderOrigin;
+
     for (let i = 0; i < count; i++) {
       const p = samples[lastVisibleIndex - i].point;
       const idx = i * 3;
 
-      // Direct write into pre-allocated Float32Array (Zero allocation)
-      pos[idx] = p.x;
-      pos[idx + 1] = p.y;
-      pos[idx + 2] = p.z;
+      // Convert absolute KM to relative render units
+      pos[idx] = (p.x - renderOrigin.x) * KM_TO_UNIT;
+      pos[idx + 1] = (p.y - renderOrigin.y) * KM_TO_UNIT;
+      pos[idx + 2] = (p.z - renderOrigin.z) * KM_TO_UNIT;
 
       const alpha = calculateTrailAlpha(i, count, 'tail');
       sc.copy(bc).lerp(fc, 1 - alpha);
@@ -138,16 +143,19 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
     }
 
     // Direct mutation without triggering React renders
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const geometry = lineRef.current.geometry as any; 
+    const geometry = lineRef.current.geometry as unknown as {
+      setPositions: (array: Float32Array) => void;
+      setColors: (array: Float32Array) => void;
+      attributes: Record<string, { needsUpdate: boolean }>;
+    };
     if (geometry.setPositions && geometry.setColors) {
       // Use subarray to provide a view of the buffer (Zero allocation)
       geometry.setPositions(pos.subarray(0, count * 3));
       geometry.setColors(col.subarray(0, count * 3));
       
       // Notify Three.js that the attributes need an update
-      geometry.attributes.instanceStart.needsUpdate = true;
-      geometry.attributes.instanceEnd.needsUpdate = true;
+      if (geometry.attributes.instanceStart) geometry.attributes.instanceStart.needsUpdate = true;
+      if (geometry.attributes.instanceEnd) geometry.attributes.instanceEnd.needsUpdate = true;
     }
     
     lineRef.current.computeLineDistances();
@@ -155,8 +163,7 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
 
   return (
     <Line
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ref={lineRef as any}
+      ref={lineRef as unknown as NonNullable<React.ComponentProps<typeof Line>["ref"]>}
       points={initialPoints} 
       vertexColors={[[1, 1, 1], [1, 1, 1]]} // Placeholder colors
       transparent

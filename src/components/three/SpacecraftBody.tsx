@@ -91,9 +91,10 @@ export function SpacecraftBody({
   const proxyRef = useRef<THREE.Group>(null);
   const detailedRef = useRef<THREE.Group>(null);
   const worldPositionRef = useRef(new THREE.Vector3());
-  const previousWorldPositionRef = useRef<THREE.Vector3 | null>(null);
+  const previousLocalPositionRef = useRef<THREE.Vector3 | null>(null);
   const progradeQuaternionRef = useRef(new THREE.Quaternion());
   const progradeDirectionRef = useRef(new THREE.Vector3(1, 0, 0));
+  const localPositionRef = useRef(new THREE.Vector3());
   const lodModeRef = useRef<SpacecraftLodMode>('marker');
   const detailedLoadRequestedRef = useRef(false);
   const detailedUnlockedRef = useRef(false);
@@ -205,9 +206,11 @@ export function SpacecraftBody({
         }
 
         if (!headingResolved) {
-          const previousWorldPosition = previousWorldPositionRef.current;
-          if (previousWorldPosition) {
-            const travelDirection = worldPosition.clone().sub(previousWorldPosition);
+          const currentLocalPosition = localPositionRef.current.set(position[0], position[1], position[2]);
+          const previousLocalPosition = previousLocalPositionRef.current;
+
+          if (previousLocalPosition) {
+            const travelDirection = currentLocalPosition.clone().sub(previousLocalPosition);
             if (travelDirection.lengthSq() > 1e-18) {
               progradeDirectionRef.current.copy(travelDirection).normalize();
               progradeQuaternionRef.current.copy(buildProgradeQuaternion(progradeDirectionRef.current));
@@ -219,10 +222,10 @@ export function SpacecraftBody({
       }
     }
 
-    if (previousWorldPositionRef.current) {
-      previousWorldPositionRef.current.copy(worldPosition);
+    if (previousLocalPositionRef.current) {
+      previousLocalPositionRef.current.set(position[0], position[1], position[2]);
     } else {
-      previousWorldPositionRef.current = worldPosition.clone();
+      previousLocalPositionRef.current = new THREE.Vector3(position[0], position[1], position[2]);
     }
   });
 

@@ -8,12 +8,15 @@
 import { useRef, useEffect } from "react";
 import { useThree, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
+import { useSolarStore } from "@/store/solarStore";
+import { KM_TO_UNIT } from "@/lib/scales";
+import { isRenderOriginNearTarget } from "@/lib/renderFrame";
 
 // --- Types ---
 
 interface CameraTarget {
-  position: THREE.Vector3;
-  lookAt: THREE.Vector3;
+  /** Desired camera offset relative to target in units */
+  localOffsetUnits: THREE.Vector3;
 }
 
 interface UseCameraAnimationOptions {
@@ -43,7 +46,6 @@ interface UseCameraAnimationReturn {
 const DEFAULT_DURATION = 1.5; // seconds
 const DEFAULT_OFFSET_DISTANCE = 80; // units from target
 const DEFAULT_CAMERA_POSITION = new THREE.Vector3(0, 50, 150);
-const DEFAULT_LOOK_AT = new THREE.Vector3(0, 0, 0);
 const MIN_FOCUS_OFFSET = 0.00005;
 
 // Smooth easing function (ease-out cubic)
@@ -68,74 +70,73 @@ export function useCameraAnimation(
   const startLookAtRef = useRef(new THREE.Vector3(0, 0, 0)); // Track starting lookAt
   const targetRef = useRef<CameraTarget | null>(null);
 
-  // Tracking
+  const worldPositionRef = useRef(new THREE.Vector3());
   const targetObjectNameRef = useRef<string | null>(null);
-  const lastTargetPosRef = useRef(new THREE.Vector3());
+
+  const setRenderOrigin = useSolarStore(state => state.setRenderOrigin);
 
   // Animation frame loop
   useFrame((_, delta) => {
-    const movementDelta = new THREE.Vector3(0, 0, 0);
+    const solarState = useSolarStore.getState();
+    const renderOrigin = new THREE.Vector3(
+      solarState.renderOrigin.x,
+      solarState.renderOrigin.y,
+      solarState.renderOrigin.z
+    );
 
-    // If tracking a moving object, calculate its movement delta
+    // 1. Handle Tracking / Origin Updates
     if (targetObjectNameRef.current) {
       const obj = scene.getObjectByName(targetObjectNameRef.current);
       if (obj) {
-        const currentWorldPos = new THREE.Vector3();
-        obj.getWorldPosition(currentWorldPos);
+        const worldPos = obj.getWorldPosition(worldPositionRef.current);
+        const absolutePosKm = new THREE.Vector3(
+          renderOrigin.x + worldPos.x / KM_TO_UNIT,
+          renderOrigin.y + worldPos.y / KM_TO_UNIT,
+          renderOrigin.z + worldPos.z / KM_TO_UNIT
+        );
 
-        movementDelta.subVectors(currentWorldPos, lastTargetPosRef.current);
-        lastTargetPosRef.current.copy(currentWorldPos);
+        if (!isRenderOriginNearTarget(solarState.renderOrigin, absolutePosKm, 0.001)) {
+          setRenderOrigin(absolutePosKm, 'custom');
+        }
 
-        // Shift destination target continuously
-        if (targetRef.current && isAnimatingRef.current) {
-          targetRef.current.lookAt.copy(currentWorldPos);
-          targetRef.current.position.add(movementDelta);
+        if (!isAnimatingRef.current) {
+          if (controls && "target" in controls) {
+            (controls.target as THREE.Vector3).set(0, 0, 0);
+            (controls as unknown as { update: () => void }).update();
+          }
         }
       }
     }
 
+    // 2. Handle Active Animation
     if (isAnimatingRef.current && targetRef.current) {
-      // Update progress
       animationProgressRef.current += delta / duration;
 
       if (animationProgressRef.current >= 1) {
-        // Animation complete
         animationProgressRef.current = 1;
         isAnimatingRef.current = false;
       }
 
       const t = easing(animationProgressRef.current);
 
-      // Interpolate camera position
       camera.position.lerpVectors(
         startPositionRef.current,
-        targetRef.current.position,
-        t,
+        targetRef.current.localOffsetUnits,
+        t
       );
 
-      // Interpolate the lookAt target (from Sun to planet)
-      const currentLookAt = new THREE.Vector3().lerpVectors(
+      const currentLocalLookAt = new THREE.Vector3().lerpVectors(
         startLookAtRef.current,
-        targetRef.current.lookAt,
-        t,
+        new THREE.Vector3(0, 0, 0),
+        t
       );
 
-      // Update OrbitControls target
       if (controls && "target" in controls) {
-        (controls.target as THREE.Vector3).copy(currentLookAt);
+        (controls.target as THREE.Vector3).copy(currentLocalLookAt);
         (controls as unknown as { update: () => void }).update();
       }
 
-      camera.lookAt(currentLookAt);
-    } else if (!isAnimatingRef.current && movementDelta.lengthSq() > 0) {
-      // Animation finished, just lock exactly onto the moving target!
-      // Apply movement delta to camera to follow the planet while allowing OrbitControls to work
-      camera.position.add(movementDelta);
-
-      if (controls && "target" in controls) {
-        (controls.target as THREE.Vector3).add(movementDelta);
-        (controls as unknown as { update: () => void }).update();
-      }
+      camera.lookAt(currentLocalLookAt);
     }
   });
 
@@ -144,57 +145,86 @@ export function useCameraAnimation(
     radius?: number,
     targetName?: string,
   ) => {
-    const target = new THREE.Vector3(
-      targetPosition.x,
-      targetPosition.y,
-      targetPosition.z,
+    const solarState = useSolarStore.getState();
+    const currentOrigin = new THREE.Vector3(
+      solarState.renderOrigin.x,
+      solarState.renderOrigin.y,
+      solarState.renderOrigin.z
     );
 
-    // If tracking by name, always prefer the exact current world position over the passed static coordinates
+    const targetAbsoluteKm = new THREE.Vector3(
+      targetPosition.x,
+      targetPosition.y,
+      targetPosition.z
+    );
+
     if (targetName) {
       const obj = scene.getObjectByName(targetName);
       if (obj) {
-        obj.getWorldPosition(target);
+        const worldPos = obj.getWorldPosition(worldPositionRef.current);
+        targetAbsoluteKm.set(
+          worldPos.x / KM_TO_UNIT + currentOrigin.x,
+          worldPos.y / KM_TO_UNIT + currentOrigin.y,
+          worldPos.z / KM_TO_UNIT + currentOrigin.z
+        );
       }
     }
 
-    // Calculate offset distance based on planet radius
+    setRenderOrigin(targetAbsoluteKm, 'selected_body');
+
     const dynamicOffset = radius ? Math.max(MIN_FOCUS_OFFSET, radius * 3) : offsetDistance;
+    const localOffsetUnits = new THREE.Vector3(0, dynamicOffset * 0.3, dynamicOffset);
 
-    // Calculate camera position
-    const currentCameraDir = camera.position.clone().normalize();
-    const offset = currentCameraDir.multiplyScalar(dynamicOffset);
-    offset.y = Math.max(offset.y, dynamicOffset * 0.3);
-
-    const cameraTargetPosition = target.clone().add(offset);
-
-    // Store animation state
+    const originShiftUnits = new THREE.Vector3()
+      .subVectors(currentOrigin, targetAbsoluteKm)
+      .multiplyScalar(KM_TO_UNIT);
+    
+    camera.position.add(originShiftUnits);
     startPositionRef.current.copy(camera.position);
 
-    // Capture current lookAt target
     if (controls && "target" in controls) {
-      startLookAtRef.current.copy(controls.target as THREE.Vector3);
+      const oldLocalTarget = (controls.target as THREE.Vector3).clone();
+      startLookAtRef.current.copy(oldLocalTarget.add(originShiftUnits));
     } else {
-      startLookAtRef.current.set(0, 0, 0);
+      startLookAtRef.current.copy(originShiftUnits);
     }
 
     targetRef.current = {
-      position: cameraTargetPosition,
-      lookAt: target,
+      localOffsetUnits: localOffsetUnits,
     };
 
     targetObjectNameRef.current = targetName || null;
-    lastTargetPosRef.current.copy(target);
-
     animationProgressRef.current = 0;
     isAnimatingRef.current = true;
   };
 
   const resetCamera = () => {
+    const solarState = useSolarStore.getState();
+    const currentOrigin = new THREE.Vector3(
+      solarState.renderOrigin.x,
+      solarState.renderOrigin.y,
+      solarState.renderOrigin.z
+    );
+    const globalOrigin = new THREE.Vector3(0, 0, 0);
+
+    setRenderOrigin(globalOrigin, 'global');
+
+    const originShiftUnits = new THREE.Vector3()
+      .subVectors(currentOrigin, globalOrigin)
+      .multiplyScalar(KM_TO_UNIT);
+
+    camera.position.add(originShiftUnits);
     startPositionRef.current.copy(camera.position);
+
+    if (controls && "target" in controls) {
+       const oldLocalTarget = (controls.target as THREE.Vector3).clone();
+       startLookAtRef.current.copy(oldLocalTarget.add(originShiftUnits));
+    } else {
+       startLookAtRef.current.copy(originShiftUnits);
+    }
+
     targetRef.current = {
-      position: DEFAULT_CAMERA_POSITION.clone(),
-      lookAt: DEFAULT_LOOK_AT.clone(),
+      localOffsetUnits: DEFAULT_CAMERA_POSITION.clone(),
     };
     targetObjectNameRef.current = null;
     animationProgressRef.current = 0;
