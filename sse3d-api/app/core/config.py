@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     mission_policy_spin_enabled: bool = True
     mission_policy_tail_to_sun_spin_rate_deg_per_sec: float = 0.25
 
+    # Orbit Ready configuration
+    orbit_ready_enabled: bool = True
+    orbit_ready_algorithm_version: str = "orbit-ready-v1"
+
     # SPICE kernel configuration
     spice_enabled: bool = True
     spice_strict_kernels: bool = False

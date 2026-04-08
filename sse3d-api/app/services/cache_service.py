@@ -1,5 +1,6 @@
 from upstash_redis import AsyncRedis
-from app.models.schemas import EphemerisData
+from app.models.schemas import EphemerisData, OrbitLineProfile
+from app.services.orbit_line_service import ALGORITHM_VERSION
 from app.core.config import settings
 import json
 import zlib
@@ -24,13 +25,31 @@ def _get_ttl(body_id: str, date_str: str = "") -> int:
             return ttl
     return 21600
 
-def _cache_key(body_id: str, date: str, center: str = "10") -> str:
-    if center == "10":
-        return f"ephemeris:{body_id}:{date}"
-    return f"ephemeris:{body_id}:center_{center}:{date}"
+def _cache_key(
+    body_id: str, 
+    date: str, 
+    center: str = "10",
+    orbit_ready: bool = False,
+    orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO
+) -> str:
+    parts = [f"ephemeris:{body_id}"]
+    if center != "10":
+        parts.append(f"center_{center}")
+    parts.append(date)
+    
+    if orbit_ready:
+        parts.append(f"orbit_ready_{ALGORITHM_VERSION}")
+        if orbit_profile != OrbitLineProfile.AUTO:
+            parts.append(f"profile_{orbit_profile.value}")
+            
+    return ":".join(parts)
 
 async def get_bulk_cached(
-    body_ids: list[str], date: str, center: str = "10"
+    body_ids: list[str], 
+    date: str, 
+    center: str = "10",
+    orbit_ready: bool = False,
+    orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO
 ) -> tuple[list[EphemerisData], list[str]]:
     try:
         redis = AsyncRedis(
@@ -39,7 +58,8 @@ async def get_bulk_cached(
         )
         cached, missing = [], []
         for bid in body_ids:
-            raw = await redis.get(_cache_key(bid, date, center=center))
+            key = _cache_key(bid, date, center=center, orbit_ready=orbit_ready, orbit_profile=orbit_profile)
+            raw = await redis.get(key)
             if raw:
                 cached.append(EphemerisData.model_validate(json.loads(raw)))
             else:
@@ -49,14 +69,20 @@ async def get_bulk_cached(
         print(f"[Cache] Error reading from Redis: {e}")
         return [], body_ids
 
-async def set_bulk_cached(date: str, items: list[EphemerisData], center: str = "10") -> None:
+async def set_bulk_cached(
+    date: str, 
+    items: list[EphemerisData], 
+    center: str = "10",
+    orbit_ready: bool = False,
+    orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO
+) -> None:
     try:
         redis = AsyncRedis(
             url=settings.upstash_redis_rest_url,
             token=settings.upstash_redis_rest_token,
         )
         for item in items:
-            key = _cache_key(item.body_id, date, center=center)
+            key = _cache_key(item.body_id, date, center=center, orbit_ready=orbit_ready, orbit_profile=orbit_profile)
             ttl = _get_ttl(item.body_id, date_str=date)
             await redis.set(key, item.model_dump_json(by_alias=True), ex=ttl)
     except Exception as e:

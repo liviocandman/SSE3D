@@ -4,9 +4,11 @@ from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 
 from app.data.fallback import load_fallback
-from app.models.schemas import EphemerisData, EphemerisMeta, EphemerisResponse
+from app.models.schemas import EphemerisData, EphemerisMeta, EphemerisResponse, OrbitLineProfile
 from app.services.spice_engine import fetch_all_spice
 from app.services.spice_kernel_manager import get_spice_runtime_status
+from app.services.cache_service import get_bulk_cached, set_bulk_cached
+from app.core.config import settings
 
 router = APIRouter(prefix="/ephemeris", tags=["Ephemeris"])
 
@@ -20,6 +22,8 @@ async def get_ephemeris(
     center_body: str = Query(default="10"),
     span_days: int = Query(default=30, alias="spanDays", ge=1, le=1825),
     full_orbit: bool = Query(default=False, alias="fullOrbit"),
+    orbit_ready: bool = Query(default=False, alias="orbitReady"),
+    orbit_profile: OrbitLineProfile = Query(default=OrbitLineProfile.AUTO, alias="orbitProfile"),
     force: bool = Query(default=False),
 ):
     del force  # kept for API compatibility
@@ -35,14 +39,41 @@ async def get_ephemeris(
 
         date_str = actual_date.isoformat()
         body_ids = [i.strip() for i in ids.split(",")] if ids else DEFAULT_BODY_IDS
+        orbit_ready_effective = bool(orbit_ready and settings.orbit_ready_enabled)
 
-        spice_data = await fetch_all_spice(
+        cached_data, missing_ids = await get_bulk_cached(
             body_ids,
             date_str,
-            center_body=center_body,
-            span_days=span_days,
-            full_orbit=full_orbit,
+            center=center_body,
+            orbit_ready=orbit_ready_effective,
+            orbit_profile=orbit_profile,
         )
+
+        fetched_spice: list[EphemerisData] = []
+        if missing_ids:
+            fetched_spice = await fetch_all_spice(
+                missing_ids,
+                date_str,
+                center_body=center_body,
+                span_days=span_days,
+                full_orbit=full_orbit,
+                orbit_ready=orbit_ready_effective,
+                orbit_profile=orbit_profile,
+            )
+            if fetched_spice:
+                await set_bulk_cached(
+                    date_str,
+                    fetched_spice,
+                    center=center_body,
+                    orbit_ready=orbit_ready_effective,
+                    orbit_profile=orbit_profile,
+                )
+
+        spice_by_id = {item.body_id: item for item in cached_data}
+        for item in fetched_spice:
+            spice_by_id[item.body_id] = item
+
+        spice_data = [spice_by_id[body_id] for body_id in body_ids if body_id in spice_by_id]
 
         fetched_ids = {item.body_id for item in spice_data}
         fallback_data: list[EphemerisData] = []
@@ -68,8 +99,8 @@ async def get_ephemeris(
                 source=source,
                 timestamp=date.today().isoformat(),
                 requested_date=date_str,
-                cache_hits=0,
-                cache_misses=max(0, len(body_ids) - len(spice_data)),
+                cache_hits=len(cached_data),
+                cache_misses=max(0, len(body_ids) - len(cached_data)),
             ),
         )
     except HTTPException:

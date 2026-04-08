@@ -36,6 +36,17 @@ ORBITAL_PERIODS_DAYS: Dict[str, float] = {
     "901": 6.387,
 }
 
+# Moon profile classification
+# Rapid moons need shorter windows and higher frequency for orbit lines
+RAPID_MOON_IDS = {"401", "402"}
+
+# Profile thresholds (defaults)
+RAPID_WINDOW_HOURS = 24
+REGULAR_WINDOW_DAYS = 30
+MIN_POINTS_PER_PROFILE = 20
+TARGET_POINTS_RAPID = 180
+TARGET_POINTS_REGULAR = 300
+
 ALL_BODY_IDS: list[str] = [
     "10", "199", "299", "399", "499", "599", "699", "799", "899", "999",
     "301", "401", "402", "501", "502", "503", "504", "601", "602", "603", "604",
