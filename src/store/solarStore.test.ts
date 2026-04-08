@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useSolarStore } from './solarStore';
 import type { EphemerisData, EphemerisTrajectory } from '@/lib/types';
+import { INITIAL_CLOCK_STATE } from '@/lib/time/clockTypes';
 
 function makeTrajectory(startIso: string, points: number, stepHours = 6): EphemerisTrajectory[] {
   const startMs = new Date(startIso).getTime();
@@ -27,12 +28,33 @@ function bodyPayload(bodyId: string, trajectory: EphemerisTrajectory[]): Ephemer
   ];
 }
 
+/**
+ * Helper to set store state while keeping the new clock domain in sync.
+ */
+function setTestState(overrides: any) {
+  const currentState = useSolarStore.getState();
+  const nextState = { ...currentState, ...overrides };
+  
+  // If we set legacy props, ensure clock is updated too
+  if (overrides.currentTime || overrides.isPlaying !== undefined || overrides.timeAuthority || overrides.timeMultiplier !== undefined) {
+    nextState.clock = {
+      ...currentState.clock,
+      currentTimeMs: (overrides.currentTime || currentState.currentTime).getTime(),
+      isPlaying: overrides.isPlaying !== undefined ? overrides.isPlaying : currentState.isPlaying,
+      authority: overrides.timeAuthority || currentState.timeAuthority,
+      multiplier: overrides.timeMultiplier !== undefined ? overrides.timeMultiplier : currentState.timeMultiplier,
+    };
+  }
+  
+  useSolarStore.setState(nextState);
+}
+
 describe('useSolarStore', () => {
   beforeEach(() => {
-    useSolarStore.setState({
+    setTestState({
       currentDate: '2026-03-26',
       trajectoryBaseDate: '2026-03-26',
-      currentTime: new Date(2026, 2, 26),
+      currentTime: new Date('2026-03-26T00:00:00Z'),
       timeAuthority: 'user',
       timeMultiplier: 1,
       isPlaying: false,
@@ -114,7 +136,7 @@ describe('useSolarStore', () => {
   });
 
   it('should not advance time while mission live authority is active', () => {
-    useSolarStore.setState({
+    setTestState({
       currentTime: new Date('2026-03-26T00:00:00.000Z'),
       currentDate: '2026-03-26',
       isPlaying: true,
@@ -130,7 +152,7 @@ describe('useSolarStore', () => {
   });
 
   it('should advance time using seconds simulated per real second', () => {
-    useSolarStore.setState({
+    setTestState({
       currentTime: new Date('2026-03-26T00:00:00.000Z'),
       currentDate: '2026-03-26',
       isPlaying: true,
@@ -183,7 +205,7 @@ describe('useSolarStore', () => {
   // --- Phase 6: Temporal model correctness ---
 
   it('advanceTime does nothing when isPlaying is false', () => {
-    useSolarStore.setState({
+    setTestState({
       currentTime: new Date('2026-03-26T00:00:00.000Z'),
       currentDate: '2026-03-26',
       isPlaying: false,
@@ -198,7 +220,7 @@ describe('useSolarStore', () => {
   });
 
   it('advanceTime uses millisecond arithmetic: deltaSeconds * timeMultiplier * 1000', () => {
-    useSolarStore.setState({
+    setTestState({
       currentTime: new Date('2026-03-26T00:00:00.000Z'),
       currentDate: '2026-03-26',
       isPlaying: true,
@@ -214,7 +236,7 @@ describe('useSolarStore', () => {
   });
 
   it('stepCurrentTimeByMs uses millisecond arithmetic', () => {
-    useSolarStore.setState({
+    setTestState({
       currentTime: new Date('2026-03-26T12:00:00.000Z'),
       currentDate: '2026-03-26',
       trajectoryBaseDate: '2026-03-26',
@@ -228,7 +250,7 @@ describe('useSolarStore', () => {
   });
 
   it('setCurrentTime triggers rebase when jumping forward more than 25 days', () => {
-    useSolarStore.setState({
+    setTestState({
       currentTime: new Date('2026-03-26T00:00:00.000Z'),
       currentDate: '2026-03-26',
       trajectoryBaseDate: '2026-03-26',
@@ -241,7 +263,7 @@ describe('useSolarStore', () => {
   });
 
   it('stepCurrentTimeByMs triggers rebase consistently with setCurrentTime', () => {
-    useSolarStore.setState({
+    setTestState({
       currentTime: new Date('2026-03-26T00:00:00.000Z'),
       currentDate: '2026-03-26',
       trajectoryBaseDate: '2026-03-26',
@@ -257,7 +279,7 @@ describe('useSolarStore', () => {
   });
 
   it('currentDate is always derived from currentTime (UTC)', () => {
-    useSolarStore.setState({
+    setTestState({
       currentTime: new Date('2026-03-26T23:59:59.000Z'),
       currentDate: '2026-03-26',
       trajectoryBaseDate: '2026-03-26',
@@ -272,7 +294,7 @@ describe('useSolarStore', () => {
   });
 
   it('timeAuthority transition to user allows playback', () => {
-    useSolarStore.setState({
+    setTestState({
       currentTime: new Date('2026-03-26T00:00:00.000Z'),
       currentDate: '2026-03-26',
       isPlaying: true,

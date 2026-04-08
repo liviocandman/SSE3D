@@ -8,6 +8,7 @@ import {
   fetchMissionHealth,
 } from '@/services/missionClient';
 import { MissionMode } from '@/lib/missionTypes';
+import { temporalMetrics } from '@/lib/time/metrics';
 
 export function useMissionData() {
   const missionMode = useMissionStore((state) => state.missionMode);
@@ -54,6 +55,12 @@ export function useMissionData() {
         return true;
       }
 
+      // Some endpoints (e.g., health) are not timestamp-addressable.
+      // In paused replay, accept the response if mode/request identity still matches.
+      if (requestAt === undefined) {
+        return true;
+      }
+
       return requestAt === getReplayTimestampParam();
     },
     [getReplayTimestampParam]
@@ -92,6 +99,8 @@ export function useMissionData() {
         
         if (isMounted) {
           if (!shouldApplyReplayResponse(currentMode, atParam, requestId, stateRequestIdRef.current)) {
+            console.debug('[MissionData] Dropping stale mission state response');
+            temporalMetrics.recordDroppedResponse();
             return;
           }
           
@@ -102,9 +111,25 @@ export function useMissionData() {
             // Temporal bridge: Sync Solar system time to the live mission time
             const timestampDate = new Date(data.sourceTimestamp);
             if (!Number.isNaN(timestampDate.getTime())) {
-              useSolarStore.getState().setIsPlaying(false);
-              useSolarStore.getState().setTimeAuthority('mission_live');
-              useSolarStore.getState().setCurrentTime(timestampDate);
+              const solarStore = useSolarStore.getState();
+              
+              // Only bridge if we are in LIVE mode
+              if (solarStore.timeAuthority !== 'mission_live') {
+                console.info('[MissionData] Bridging authority to mission_live');
+                solarStore.setTimeAuthority('mission_live');
+                temporalMetrics.recordAuthoritySwitch();
+              }
+              
+              solarStore.setIsPlaying(false);
+              solarStore.setCurrentTime(timestampDate);
+            }
+          } else if (!isLive) {
+            // Replay mode: ensure authority is 'user'
+            const solarStore = useSolarStore.getState();
+            if (solarStore.timeAuthority !== 'user') {
+              console.info('[MissionData] Returning authority to user');
+              solarStore.setTimeAuthority('user');
+              temporalMetrics.recordAuthoritySwitch();
             }
           }
         }

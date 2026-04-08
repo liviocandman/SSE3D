@@ -21,14 +21,16 @@ vi.mock('@/lib/catmullRom', async (importOriginal) => {
 });
 
 // Mock solarStore
-vi.mock('@/store/solarStore', () => ({
-  useSolarStore: {
-    getState: () => ({
-      currentTime: new Date('2026-01-01T01:00:00Z'),
-      renderOrigin: { x: 0, y: 0, z: 0 },
-    }),
-  },
-}));
+vi.mock('@/store/solarStore', () => {
+  return {
+    useSolarStore: {
+      getState: vi.fn(() => ({
+        currentTime: new Date('2026-01-01T01:00:00Z'),
+        renderOrigin: { x: 0, y: 0, z: 0 },
+      })),
+    },
+  };
+});
 
 // Mock fiber
 vi.mock('@react-three/fiber', () => ({
@@ -37,25 +39,16 @@ vi.mock('@react-three/fiber', () => ({
 
 // Mock drei
 vi.mock('@react-three/drei', () => {
-  type LineMockProps = {
-    points?: unknown;
-    dashed?: boolean;
-  };
-
-  const MockLine = React.forwardRef<HTMLDivElement, LineMockProps>(
-    ({ points, dashed }, ref) => (
-      <div
-        ref={ref}
-        data-testid="line"
-        data-dashed={dashed ? 'true' : 'false'}
-        data-points={JSON.stringify(points)}
-      />
-    )
-  );
-  MockLine.displayName = 'MockLine';
-
+  const React = require('react');
   return {
-    Line: MockLine,
+    Line: React.forwardRef(({ points, dashed }: any, ref: any) => (
+      <div 
+        ref={ref}
+        data-testid="line" 
+        data-dashed={dashed ? 'true' : 'false'} 
+        data-points={JSON.stringify(points)} 
+      />
+    )),
   };
 });
 

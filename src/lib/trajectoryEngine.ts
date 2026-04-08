@@ -27,15 +27,13 @@ export interface BufferPlan {
   fetchDates: string[];
 }
 
+import { parseTimestampMs } from './utils';
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MERGE_GAP_MS = 36 * 60 * 60 * 1000; // 36h merges overlap/adjacent blocks
 
 function parseTimeMs(timestamp: string): number {
-  if (!timestamp) return 0;
-  // NASA timestamps (e.g., "2026-Mar-26 00:00:00") do not have a UTC suffix.
-  // Appending 'Z' ensures consistent parsing across all local timezones.
-  const utcString = timestamp.includes('Z') ? timestamp : `${timestamp}Z`;
-  return new Date(utcString).getTime();
+  return parseTimestampMs(timestamp);
 }
 
 function toDateStringUTC(ms: number): string {
