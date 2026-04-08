@@ -16,6 +16,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSolarStore } from '@/store/solarStore';
+import { clockRuntime } from '@/lib/time/clockRuntime';
 
 type TimerListener = (time: Date) => void;
 interface SharedDisplayClock {
@@ -25,6 +26,13 @@ interface SharedDisplayClock {
 }
 
 const sharedClocks = new Map<number, SharedDisplayClock>();
+
+function getDisplayTimeSnapshot(): Date {
+  if (clockRuntime.isInitialized()) {
+    return new Date(clockRuntime.getTimeMs());
+  }
+  return useSolarStore.getState().currentTime;
+}
 
 function getSharedClock(intervalMs: number): SharedDisplayClock {
   const existing = sharedClocks.get(intervalMs);
@@ -43,9 +51,9 @@ function startSharedTimer(intervalMs: number) {
   const clock = getSharedClock(intervalMs);
   if (clock.intervalId !== null) return;
 
-  clock.lastTime = useSolarStore.getState().currentTime;
+  clock.lastTime = getDisplayTimeSnapshot();
   clock.intervalId = setInterval(() => {
-    clock.lastTime = useSolarStore.getState().currentTime;
+    clock.lastTime = getDisplayTimeSnapshot();
     clock.listeners.forEach((listener) => listener(clock.lastTime!));
   }, intervalMs);
 }
@@ -70,15 +78,15 @@ function stopSharedTimer(intervalMs: number) {
 export function useDisplayTime(intervalMs = 500): Date {
   const clock = getSharedClock(intervalMs);
   const [displayTime, setDisplayTime] = useState<Date>(() => 
-    clock.lastTime || useSolarStore.getState().currentTime
+    clock.lastTime || getDisplayTimeSnapshot()
   );
 
   useEffect(() => {
     const currentClock = getSharedClock(intervalMs);
     currentClock.listeners.add(setDisplayTime);
     
-    // Immediately sync to the latest store time in case things changed before mount.
-    setDisplayTime(useSolarStore.getState().currentTime);
+    // Immediately sync to the latest clock snapshot in case things changed before mount.
+    setDisplayTime(getDisplayTimeSnapshot());
     
     startSharedTimer(intervalMs);
 

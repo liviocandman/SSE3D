@@ -22,6 +22,10 @@ const BACKGROUND_PAGINATION_EVERY_FRAMES = 300;
 const FETCH_LOCK_TTL_MS = 5000;
 const FETCH_COOLDOWN_MS = 15_000;
 
+function toDateStringUTC(ms: number): string {
+  return new Date(ms).toISOString().split("T")[0];
+}
+
 export function buildFetchBodyIds(activeIds: (string | null | undefined)[]): string[] {
   const [selectedBodyId, hoveredBodyId] = activeIds;
   return buildContextualFetchBodyIds({
@@ -188,7 +192,7 @@ export function TrajectoryManager() {
     }, JUMP_DEBOUNCE_MS);
 
     return () => clearTimeout(debounceTimeout);
-  }, [currentDate, fetchBlock, groupByFetchSpan, hoveredPlanetId, selectedPlanet?.bodyId, timeMultiplier]);
+  }, [fetchBlock, groupByFetchSpan, hoveredPlanetId, selectedPlanet?.bodyId, timeMultiplier]);
 
   // 1B. Target-change fetch
   useEffect(() => {
@@ -196,6 +200,7 @@ export function TrajectoryManager() {
       const targetIds = buildFetchBodyIds([selectedPlanet?.bodyId, hoveredPlanetId]);
       const state = useSolarStore.getState();
       const timeMs = clockRuntime.getTimeMs();
+      const runtimeDate = toDateStringUTC(timeMs);
       const segmentsByBody = state.masterTrajectorySegments;
 
       const missingIds = targetIds.filter((id) => {
@@ -207,7 +212,7 @@ export function TrajectoryManager() {
       if (missingIds.length > 0) {
         const missingIdsBySpan = groupByFetchSpan(missingIds);
         for (const [fetchSpanDays, idsForSpan] of missingIdsBySpan) {
-          fetchBlock(currentDate, fetchSpanDays, idsForSpan);
+          fetchBlock(runtimeDate, fetchSpanDays, idsForSpan);
         }
       }
     }, TARGET_CHANGE_DEBOUNCE_MS);
@@ -222,6 +227,7 @@ export function TrajectoryManager() {
 
     const state = useSolarStore.getState();
     const timeMs = clockRuntime.getTimeMs();
+    const runtimeDate = toDateStringUTC(timeMs);
 
     const segmentsByBody = state.masterTrajectorySegments;
     const bodyIds = buildFetchBodyIds([state.selectedPlanet?.bodyId, state.hoveredPlanetId]);
@@ -237,7 +243,7 @@ export function TrajectoryManager() {
         thresholdDays,
         fetchSpanDays,
         timeMultiplier,
-        currentDate: state.currentDate,
+        currentDate: runtimeDate,
       });
 
       for (const date of plan.fetchDates) {

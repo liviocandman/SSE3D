@@ -19,6 +19,7 @@ import { createTemporalLookupCache } from "@/lib/temporalLookup";
 import { sampleTrajectoryAtTime } from "@/lib/trajectoryEngine";
 import { PLANET_MOONS } from "@/lib/textureConfig";
 import { clockRuntime } from "@/lib/time/clockRuntime";
+import { BODY_IDS } from "@/lib/types";
 
 // --- Types ---
 
@@ -187,11 +188,38 @@ export function useCameraAnimation(
           }
         }
 
-        // 2) Orion authoritative source: mission state globalCoordinates (absolute KM).
+        // 2) Orion authoritative source: mission state sceneCoordinates (Earth-relative KM).
         if (!authoritativePosKm && (followTargetId === 'Orion' || followTargetId === 'orion')) {
           const missionState = useMissionStore.getState().missionState;
-          if (missionState?.globalCoordinates) {
-            authoritativePosKm = missionState.globalCoordinates;
+          const sceneCoordinates = missionState?.sceneCoordinates;
+          if (
+            sceneCoordinates &&
+            Number.isFinite(sceneCoordinates.x) &&
+            Number.isFinite(sceneCoordinates.y) &&
+            Number.isFinite(sceneCoordinates.z)
+          ) {
+            const earthSegments = state.masterTrajectorySegments[BODY_IDS.EARTH] ?? [];
+            const sampledEarth = earthSegments.length > 0
+              ? sampleTrajectoryAtTime(
+                  earthSegments,
+                  simTimeMs,
+                  followParentLookupCacheRef.current
+                )
+              : null;
+
+            if (sampledEarth?.position) {
+              authoritativePosKm = {
+                x: sampledEarth.position.x + sceneCoordinates.x,
+                y: sampledEarth.position.y + sceneCoordinates.y,
+                z: sampledEarth.position.z + sceneCoordinates.z,
+              };
+            } else if (state.selectedPlanet?.bodyId === BODY_IDS.EARTH) {
+              authoritativePosKm = {
+                x: state.selectedPlanet.position.x + sceneCoordinates.x,
+                y: state.selectedPlanet.position.y + sceneCoordinates.y,
+                z: state.selectedPlanet.position.z + sceneCoordinates.z,
+              };
+            }
           }
         }
         
@@ -381,17 +409,28 @@ export function CameraController({
 }: CameraControllerProps) {
   const { focusOn, stopTracking } = useCameraAnimation();
   const prevTargetId = useRef<string | undefined>(undefined);
+  const prevTargetPositionKm = useRef<{ x: number; y: number; z: number } | null>(null);
+  const TARGET_POSITION_EPSILON_KM = 1;
 
   useEffect(() => {
     if (targetPositionKm) {
-      if (targetId !== prevTargetId.current) {
+      const prevPos = prevTargetPositionKm.current;
+      const targetMovedEnough =
+        !prevPos ||
+        Math.abs(prevPos.x - targetPositionKm.x) > TARGET_POSITION_EPSILON_KM ||
+        Math.abs(prevPos.y - targetPositionKm.y) > TARGET_POSITION_EPSILON_KM ||
+        Math.abs(prevPos.z - targetPositionKm.z) > TARGET_POSITION_EPSILON_KM;
+
+      if (targetId !== prevTargetId.current || targetMovedEnough) {
         focusOn(targetPositionKm, targetRadiusKm, targetId);
         prevTargetId.current = targetId;
+        prevTargetPositionKm.current = targetPositionKm;
       }
     } else {
       if (prevTargetId.current) {
         stopTracking();
         prevTargetId.current = undefined;
+        prevTargetPositionKm.current = null;
       }
     }
   }, [targetPositionKm, targetRadiusKm, targetId, focusOn, stopTracking]);

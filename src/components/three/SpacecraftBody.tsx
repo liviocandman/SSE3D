@@ -130,6 +130,7 @@ export function SpacecraftBody({
   const autoFocusFrameCounterRef = useRef(0);
   const lastDistanceRef = useRef(Number.POSITIVE_INFINITY);
   const setTravelTarget = useSolarStore(state => state.setTravelTarget);
+  const missionState = useMissionStore(state => state.missionState);
   const missionEvents = useMissionStore(state => state.missionEvents);
   const autoFocusEvents = useMissionStore(state => state.autoFocusEvents);
   const missionTrajectory = useMissionStore(state => state.missionTrajectory);
@@ -148,6 +149,33 @@ export function SpacecraftBody({
     setIsDetailedReady(true);
   }, []);
 
+  const resolveSpacecraftWorldPositionKm = useCallback(() => {
+    const sceneCoordinates = missionState?.sceneCoordinates;
+    if (
+      earthEphemeris &&
+      sceneCoordinates &&
+      Number.isFinite(sceneCoordinates.x) &&
+      Number.isFinite(sceneCoordinates.y) &&
+      Number.isFinite(sceneCoordinates.z)
+    ) {
+      return {
+        x: normalizeKm(earthEphemeris.position.x + sceneCoordinates.x),
+        y: normalizeKm(earthEphemeris.position.y + sceneCoordinates.y),
+        z: normalizeKm(earthEphemeris.position.z + sceneCoordinates.z),
+      };
+    }
+
+    if (earthEphemeris && groupRef.current) {
+      return {
+        x: normalizeKm(earthEphemeris.position.x + (groupRef.current.position.x / KM_TO_UNIT)),
+        y: normalizeKm(earthEphemeris.position.y + (groupRef.current.position.y / KM_TO_UNIT)),
+        z: normalizeKm(earthEphemeris.position.z + (groupRef.current.position.z / KM_TO_UNIT)),
+      };
+    }
+
+    return null;
+  }, [earthEphemeris, missionState?.sceneCoordinates]);
+
   useEffect(() => {
     if (isSelected && !detailedLoadRequestedRef.current) {
       detailedLoadRequestedRef.current = true;
@@ -162,9 +190,21 @@ export function SpacecraftBody({
 
     const simTimeMs = clockRuntime.getTimeMs();
 
-    // 1. Sample position from trajectory segment
+    // 1. Resolve spacecraft local position (Earth-relative KM)
     let sampledPosition: [number, number, number] | null = null;
-    if (missionTrajectorySegment) {
+    const sceneCoordinates = missionState?.sceneCoordinates;
+    if (
+      sceneCoordinates &&
+      Number.isFinite(sceneCoordinates.x) &&
+      Number.isFinite(sceneCoordinates.y) &&
+      Number.isFinite(sceneCoordinates.z)
+    ) {
+      sampledPosition = scalePositionFromKm(
+        normalizeKm(sceneCoordinates.x),
+        normalizeKm(sceneCoordinates.y),
+        normalizeKm(sceneCoordinates.z)
+      );
+    } else if (missionTrajectorySegment) {
       const sampled = sampleTrajectoryAtTime([missionTrajectorySegment], simTimeMs);
       if (sampled) {
         const scaled = scalePositionFromKm(
@@ -367,15 +407,12 @@ export function SpacecraftBody({
 
         if (!armedAutoFocusEventsRef.current.has(ev.id)) {
           // Trigger non-intrusive focus
-          const spacecraftWorldPos = {
-            x: normalizeKm(earthEphemeris.position.x + (groupRef.current.position.x / KM_TO_UNIT)),
-            y: normalizeKm(earthEphemeris.position.y + (groupRef.current.position.y / KM_TO_UNIT)),
-            z: normalizeKm(earthEphemeris.position.z + (groupRef.current.position.z / KM_TO_UNIT)),
-          };
-          
-          setTravelTarget(spacecraftWorldPos, SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS);
-          armedAutoFocusEventsRef.current.add(ev.id);
-          break;
+          const spacecraftWorldPos = resolveSpacecraftWorldPositionKm();
+          if (spacecraftWorldPos) {
+            setTravelTarget(spacecraftWorldPos, SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS);
+            armedAutoFocusEventsRef.current.add(ev.id);
+            break;
+          }
         }
       }
     }
@@ -387,12 +424,8 @@ export function SpacecraftBody({
       onDoubleClick(vehicleId);
     }
 
-    if (earthEphemeris && groupRef.current) {
-      const spacecraftWorldPos = {
-        x: normalizeKm(earthEphemeris.position.x + (groupRef.current.position.x / KM_TO_UNIT)),
-        y: normalizeKm(earthEphemeris.position.y + (groupRef.current.position.y / KM_TO_UNIT)),
-        z: normalizeKm(earthEphemeris.position.z + (groupRef.current.position.z / KM_TO_UNIT)),
-      };
+    const spacecraftWorldPos = resolveSpacecraftWorldPositionKm();
+    if (spacecraftWorldPos) {
       const radius = type === 'click' ? SPACECRAFT_SELECTION_RADIUS_UNITS : SPACECRAFT_CLOSEUP_RADIUS_UNITS;
       setTravelTarget(spacecraftWorldPos, radius);
     }

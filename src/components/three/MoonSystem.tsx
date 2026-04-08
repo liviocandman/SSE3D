@@ -24,10 +24,12 @@ import {
 } from '@/lib/scales';
 import { useSolarStore } from '@/store/solarStore';
 import { useShallow } from 'zustand/react/shallow';
-import { sampleTrajectoryAtTime } from '@/lib/trajectoryEngine';
+import { sampleTrajectoryAtTime, type TrajectorySegment } from '@/lib/trajectoryEngine';
 import { createTemporalLookupCache } from '@/lib/temporalLookup';
 import { SPHERE_MID, HITBOX_SPHERE } from '@/lib/geometryPool';
 import { clockRuntime } from '@/lib/time/clockRuntime';
+import type { EphemerisTrajectory } from '@/lib/types';
+import { isRapidMoonBody } from '@/lib/trajectoryPolicy';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -65,6 +67,8 @@ const MIN_SMOOTHING_POINTS = 6;
 const MIN_CURVE_SAMPLES = 128;
 const MAX_CURVE_SAMPLES = 256;
 const MOON_CLOSEUP_TRAVEL_RADIUS_MULTIPLIER = 2;
+const EMPTY_TRAJECTORY: EphemerisTrajectory[] = [];
+const EMPTY_SEGMENTS: TrajectorySegment[] = [];
 
 // Global singleton to prevent recreating workers and to avoid React Suspense
 // (Removed local globalKtx2Loader and getKtx2Loader, now using getSharedKTX2Loader)
@@ -87,6 +91,53 @@ function getTrajectorySpanDays(
   }
 
   return (endMs - startMs) / DAY_MS;
+}
+
+function resolveSegmentAroundTime(segments: TrajectorySegment[], simTimeMs: number): TrajectorySegment | null {
+  if (segments.length === 0) return null;
+
+  const containing = segments.find(
+    (segment) => simTimeMs >= segment.startTimeMs && simTimeMs <= segment.endTimeMs
+  );
+  if (containing) return containing;
+
+  let nearest = segments[0];
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (const segment of segments) {
+    const distance =
+      simTimeMs < segment.startTimeMs
+        ? segment.startTimeMs - simTimeMs
+        : simTimeMs > segment.endTimeMs
+          ? simTimeMs - segment.endTimeMs
+          : 0;
+    if (distance < nearestDistance) {
+      nearest = segment;
+      nearestDistance = distance;
+    }
+  }
+  return nearest;
+}
+
+function buildOrbitWindow(
+  trajectory: EphemerisTrajectory[],
+  simTimeMs: number,
+  orbitalPeriodDays: number
+): EphemerisTrajectory[] {
+  if (trajectory.length < 2) return trajectory;
+
+  const periodMs = Math.max(orbitalPeriodDays * DAY_MS, 1);
+  const halfWindowMs = Math.max(periodMs * 0.6, 2 * 60 * 60 * 1000);
+  const windowed = trajectory.filter((point) => {
+    const t = parseUtcTimestampMs(point.timestamp);
+    if (!Number.isFinite(t)) return false;
+    return Math.abs(t - simTimeMs) <= halfWindowMs;
+  });
+
+  if (windowed.length >= MIN_FAST_MOON_ORBIT_POINTS) {
+    return windowed;
+  }
+
+  return trajectory;
 }
 
 function estimateMeanRadius(points: THREE.Vector3[]): number {
@@ -143,12 +194,10 @@ function MoonMesh({
   const config = useMemo(() => getPlanetConfig(bodyId), [bodyId]);
 
   // Reactive subscription: This component only re-renders if this specific moon's data changes.
-  const moonTrajectory = useSolarStore(
-    useShallow((s) => s.masterTrajectory[bodyId] || [])
-  );
-  const masterSegments = useSolarStore(
-    useShallow((s) => s.masterTrajectorySegments[bodyId] || [])
-  );
+  const selectedMoonTrajectory = useSolarStore(useShallow((s) => s.masterTrajectory[bodyId]));
+  const selectedMasterSegments = useSolarStore(useShallow((s) => s.masterTrajectorySegments[bodyId]));
+  const moonTrajectory = selectedMoonTrajectory ?? EMPTY_TRAJECTORY;
+  const masterSegments = selectedMasterSegments ?? EMPTY_SEGMENTS;
 
   // Pre-calculate properties for hooks safely
   const radius = getRadius(bodyId, 'MOON', viewMode);
@@ -381,10 +430,44 @@ export function MoonSystem({
   viewMode,
   tier,
 }: MoonSystemProps) {
+  const appendFullOrbits = useSolarStore((state) => state.appendFullOrbits);
   const moonIds = PLANET_MOONS[parentId] ?? [];
   const hasMoons = moonIds.length > 0;
 
   const parentConfig = getPlanetConfig(parentId);
+  const moonIdsKey = moonIds.join(',');
+
+  useEffect(() => {
+    if (!hasMoons) return;
+
+    let cancelled = false;
+    const fetchFullMoonOrbits = async () => {
+      const currentMoonIds = PLANET_MOONS[parentId] ?? [];
+      const fullOrbits = useSolarStore.getState().fullOrbits;
+      const missingMoonIds = currentMoonIds.filter((moonId) => {
+        const orbit = fullOrbits[moonId];
+        return !orbit || orbit.length < 2;
+      });
+
+      if (missingMoonIds.length === 0) return;
+
+      try {
+        const response = await fetch(`/api/ephemeris?ids=${missingMoonIds.join(',')}&fullOrbit=true`);
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (!cancelled && Array.isArray(payload?.data)) {
+          appendFullOrbits(payload.data);
+        }
+      } catch {
+        // Orbit fallback remains on sliding trajectory data if full-orbit request fails.
+      }
+    };
+
+    fetchFullMoonOrbits();
+    return () => {
+      cancelled = true;
+    };
+  }, [appendFullOrbits, hasMoons, moonIdsKey, parentId]);
 
   if (!hasMoons) return null;
 
@@ -423,21 +506,37 @@ export function MoonSystem({
 
 function MoonOrbitLine({ moonId, parentId, parentClass, viewMode }: { moonId: string, parentId: string, parentClass: BodyClass, viewMode: ViewMode }) {
   const moonTrajectory = useSolarStore(useShallow((s) => s.masterTrajectory[moonId]));
+  const moonSegments = useSolarStore(useShallow((s) => s.masterTrajectorySegments[moonId]));
+  const fullOrbit = useSolarStore((state) => state.fullOrbits[moonId]);
   const config = getPlanetConfig(moonId);
 
   // No trajectory data yet: skip rendering until data arrives.
-  if (!config || !moonTrajectory || moonTrajectory.length < 2) return null;
+  if (!config) return null;
+
+  const simTimeMs = clockRuntime.getTimeMs();
+  const orbitalPeriodDays = Math.max(config.orbitalPeriod || FALLBACK_SPAN_DAYS, 1e-6);
+  const stableSegments = moonSegments ?? EMPTY_SEGMENTS;
+  const activeSegment = resolveSegmentAroundTime(stableSegments, simTimeMs);
+  const baseTrajectory = (fullOrbit && fullOrbit.length >= 2)
+    ? fullOrbit
+    : (activeSegment?.points && activeSegment.points.length >= 2)
+      ? activeSegment.points
+      : moonTrajectory ?? EMPTY_TRAJECTORY;
+  if (baseTrajectory.length < 2) return null;
+  const trajectoryWindow = isRapidMoonBody(moonId)
+    ? buildOrbitWindow(baseTrajectory, simTimeMs, orbitalPeriodDays)
+    : baseTrajectory;
+  if (trajectoryWindow.length < 2) return null;
 
   const orbitScale = getMoonOrbitScale(parentId, parentClass, config.meanDistanceAU * AU_TO_KM, viewMode);
   const SCALE = KM_TO_UNIT * orbitScale;
 
   // Compute orbit coverage from real timestamps instead of assuming a fixed 30-day window.
-  const observedSpanDays = getTrajectorySpanDays(moonTrajectory);
-  const orbitalPeriodDays = Math.max(config.orbitalPeriod || FALLBACK_SPAN_DAYS, 1e-6);
+  const observedSpanDays = getTrajectorySpanDays(trajectoryWindow);
   const spanDays = observedSpanDays > 0 ? observedSpanDays : FALLBACK_SPAN_DAYS;
   const orbitsInSpan = spanDays / orbitalPeriodDays;
 
-  let pointsToTake = moonTrajectory.length;
+  let pointsToTake = trajectoryWindow.length;
   let isClosed = false;
 
   if (orbitsInSpan >= MIN_CLOSED_ORBIT_COVERAGE) {
@@ -445,10 +544,10 @@ function MoonOrbitLine({ moonId, parentId, parentClass, viewMode }: { moonId: st
     isClosed = true;
 
     // Keep approximately one revolution, but never below a minimum point budget.
-    const desiredPointsPerOrbit = Math.ceil(moonTrajectory.length / Math.max(orbitsInSpan, 1));
-    const minOrbitPoints = Math.min(moonTrajectory.length, MIN_FAST_MOON_ORBIT_POINTS);
+    const desiredPointsPerOrbit = Math.ceil(trajectoryWindow.length / Math.max(orbitsInSpan, 1));
+    const minOrbitPoints = Math.min(trajectoryWindow.length, MIN_FAST_MOON_ORBIT_POINTS);
     pointsToTake = Math.min(
-      moonTrajectory.length,
+      trajectoryWindow.length,
       Math.max(desiredPointsPerOrbit, minOrbitPoints),
     );
   } else {
@@ -458,7 +557,7 @@ function MoonOrbitLine({ moonId, parentId, parentClass, viewMode }: { moonId: st
 
   const rawPoints: THREE.Vector3[] = [];
   for (let i = 0; i < pointsToTake; i++) {
-    const t = moonTrajectory[i];
+    const t = trajectoryWindow[i];
     const p = new THREE.Vector3(t.position.x * SCALE, t.position.y * SCALE, t.position.z * SCALE);
 
     // Coordinate safety filter for GPU stability.
