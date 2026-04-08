@@ -1,18 +1,26 @@
-import { fireEvent, render } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SceneContent } from './SceneManager';
 import { useMissionStore } from '@/store/missionStore';
 import { useSolarStore } from '@/store/solarStore';
 import { MissionPhase } from '@/lib/missionTypes';
-import { SPACECRAFT_CLOSEUP_RADIUS_UNITS, SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS } from './SpacecraftBody';
 import type { EphemerisData } from '@/lib/types';
-import React from 'react';
+import type { ForwardedRef } from 'react';
 
 type QualityTierState = { tier: 'high' | 'mid' | 'low'; settings: { devicePixelRatio: number; antialias: boolean } };
 type MockComponentProps = { children?: React.ReactNode };
 type MockBillboardProps = { children?: React.ReactNode };
 type MockSpacecraftProps = { vehicleId: string; onClick?: (id: string) => void; onDoubleClick?: (id: string) => void };
+type MockSpacecraftBodyProps = MockSpacecraftProps & { missionTrajectorySegment: unknown; earthEphemeris: unknown };
 type MockMilestoneProps = { label: string };
+type MockLineProps = { dashed?: boolean };
+type MockCelestialBodyProps = {
+  children?: React.ReactNode;
+  onClick?: (id: string) => void;
+  onDoubleClick?: (id: string) => void;
+  bodyId: string;
+};
+type StoreSelector<TState> = (state: TState) => unknown;
 type MissionStoreMockState = {
   missionState: { vehicleId: string; sceneCoordinates: { x: number; y: number; z: number }; phase?: MissionPhase } | null;
   missionTrajectory?: { past: Array<{ timestamp: string; position: { x: number; y: number; z: number }; segment: string }>; planned: Array<unknown> };
@@ -51,13 +59,23 @@ type SolarStoreMockState = {
 
 function applySolarStoreMock(state: SolarStoreMockState) {
   vi.mocked(useSolarStore).mockImplementation(
-    ((selector?: any) => (typeof selector === 'function' ? selector(state) : state)) as any,
+    ((selector?: unknown) => {
+      if (typeof selector === 'function') {
+        return (selector as StoreSelector<SolarStoreMockState>)(state);
+      }
+      return state;
+    }) as typeof useSolarStore,
   );
 }
 
 function applyMissionStoreMock(state: MissionStoreMockState) {
   vi.mocked(useMissionStore).mockImplementation(
-    ((selector?: any) => (typeof selector === 'function' ? selector(state) : state)) as any,
+    ((selector?: unknown) => {
+      if (typeof selector === 'function') {
+        return (selector as StoreSelector<MissionStoreMockState>)(state);
+      }
+      return state;
+    }) as typeof useMissionStore,
   );
 }
 
@@ -93,21 +111,23 @@ vi.mock('@react-three/fiber', () => ({
   useLoader: vi.fn(() => ({})),
 }));
 
-vi.mock('@react-three/drei', () => {
-  const React = require('react');
+vi.mock('@react-three/drei', async () => {
+  const ReactModule = await import('react');
+  const { createElement, forwardRef } = ReactModule;
+
   return {
     OrbitControls: () => <div />,
     Stars: () => <div />,
     Billboard: ({ children }: MockBillboardProps) => <div data-testid="billboard">{children}</div>,
     Text: ({ children }: MockBillboardProps) => <div data-testid="text">{children}</div>,
-    Line: React.forwardRef(({ points, dashed }: any, ref: any) => (
-      <div 
-        ref={ref}
-        data-testid="line" 
-        data-dashed={dashed ? 'true' : 'false'} 
-      />
-    )),
-    Html: ({ children }: any) => <div data-testid="html">{children}</div>,
+    Line: forwardRef(function MockLine({ dashed }: MockLineProps, ref: ForwardedRef<HTMLDivElement>) {
+      return createElement('div', {
+        ref,
+        'data-testid': 'line',
+        'data-dashed': dashed ? 'true' : 'false',
+      });
+    }),
+    Html: ({ children }: MockBillboardProps) => <div data-testid="html">{children}</div>,
   };
 });
 
@@ -117,7 +137,7 @@ vi.mock('@react-three/postprocessing', () => ({
 }));
 
 vi.mock('./SpacecraftBody', () => ({
-  SpacecraftBody: ({ vehicleId, onClick, onDoubleClick }: MockSpacecraftProps & { missionTrajectorySegment: any; earthEphemeris: any }) => (
+  SpacecraftBody: ({ vehicleId, onClick, onDoubleClick }: MockSpacecraftBodyProps) => (
     <div data-testid="spacecraft" onClick={() => onClick?.(vehicleId)} onDoubleClick={() => onDoubleClick?.(vehicleId)}>
       {vehicleId}
     </div>
@@ -128,7 +148,7 @@ vi.mock('./SpacecraftBody', () => ({
 }));
 
 vi.mock('./MissionTrajectoryLine', () => ({
-  MissionTrajectoryLine: ({ missionTrajectorySegment }: { missionTrajectorySegment: any }) => <div data-testid="trajectory-line" />,
+  MissionTrajectoryLine: () => <div data-testid="trajectory-line" />,
 }));
 
 vi.mock('./MissionMilestoneMarker', () => ({
@@ -152,7 +172,7 @@ vi.mock('./TrajectoryManager', () => ({
 }));
 
 vi.mock('./CelestialBody', () => ({
-  CelestialBody: ({ children, onClick, onDoubleClick, bodyId }: any) => (
+  CelestialBody: ({ children, onClick, onDoubleClick, bodyId }: MockCelestialBodyProps) => (
     <div data-testid="celestial-body" data-body-id={bodyId} onClick={() => onClick?.(bodyId)} onDoubleClick={() => onDoubleClick?.(bodyId)}>
       {children}
     </div>

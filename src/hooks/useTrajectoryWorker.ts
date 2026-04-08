@@ -21,6 +21,10 @@ export function useTrajectoryWorker() {
   const responseCacheRef = useRef<Map<string, ResponseCacheEntry>>(new Map());
 
   useEffect(() => {
+    const pending = pendingRequests.current;
+    const inFlight = inFlightByKeyRef.current;
+    const responseCache = responseCacheRef.current;
+
     // Initialize worker with standard Next.js / Webpack / Vite compatible syntax
     const worker = new Worker(
       new URL("../workers/trajectory.worker.ts", import.meta.url),
@@ -45,10 +49,10 @@ export function useTrajectoryWorker() {
     workerRef.current = worker;
 
     return () => {
-      pendingRequests.current.forEach((request) => request.reject(new Error("AbortError")));
-      pendingRequests.current.clear();
-      inFlightByKeyRef.current.clear();
-      responseCacheRef.current.clear();
+      pending.forEach((request) => request.reject(new Error("AbortError")));
+      pending.clear();
+      inFlight.clear();
+      responseCache.clear();
       worker.terminate();
       workerRef.current = null;
     };

@@ -70,12 +70,13 @@ export function TrajectoryManager() {
   useEffect(() => {
     const timeouts = activeTimeouts.current;
     const loading = loadingRef.current;
+    const lastFetchAt = lastFetchAtRef.current;
     return () => {
       // Clear all pending lock removals
       timeouts.forEach(clearTimeout);
       timeouts.clear();
       loading.clear();
-      lastFetchAtRef.current.clear();
+      lastFetchAt.clear();
       
       if (jumpAbortControllerRef.current) {
         jumpAbortControllerRef.current.abort();
@@ -192,7 +193,7 @@ export function TrajectoryManager() {
     }, JUMP_DEBOUNCE_MS);
 
     return () => clearTimeout(debounceTimeout);
-  }, [fetchBlock, groupByFetchSpan, hoveredPlanetId, selectedPlanet?.bodyId, timeMultiplier]);
+  }, [currentDate, fetchBlock, groupByFetchSpan, hoveredPlanetId, selectedPlanet?.bodyId, timeMultiplier]);
 
   // 1B. Target-change fetch
   useEffect(() => {

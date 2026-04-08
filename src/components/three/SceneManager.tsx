@@ -14,7 +14,7 @@ import {
   flattenTrajectorySegments,
   buildTrajectorySegment,
 } from '@/lib/trajectoryEngine';
-import type { EphemerisData, SelectedPlanet, EphemerisTrajectory } from '@/lib/types';
+import type { EphemerisData, SelectedPlanet } from '@/lib/types';
 import {
   getPlanetConfig,
   getTexturePath,

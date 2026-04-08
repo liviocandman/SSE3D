@@ -30,13 +30,13 @@ describe('findTemporalInterval', () => {
     expect(findTemporalInterval(times, T0 + 5 * STEP)).toBeNull();
   });
 
-  it('returns alpha=0 for timestamp exactly at the left sample', () => {
+  it('closes the previous interval for exact internal samples', () => {
     const times = makeTimes(T0, 5, STEP);
     const result = findTemporalInterval(times, T0 + STEP) as TemporalInterval;
     expect(result).not.toBeNull();
-    expect(result.leftIndex).toBe(1);
-    expect(result.rightIndex).toBe(2);
-    expect(result.alpha).toBeCloseTo(0);
+    expect(result.leftIndex).toBe(0);
+    expect(result.rightIndex).toBe(1);
+    expect(result.alpha).toBeCloseTo(1);
   });
 
   it('returns alpha=1 for timestamp exactly at the right sample', () => {

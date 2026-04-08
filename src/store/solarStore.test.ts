@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useSolarStore } from './solarStore';
 import type { EphemerisData, EphemerisTrajectory } from '@/lib/types';
-import { INITIAL_CLOCK_STATE } from '@/lib/time/clockTypes';
 
 function makeTrajectory(startIso: string, points: number, stepHours = 6): EphemerisTrajectory[] {
   const startMs = new Date(startIso).getTime();
@@ -31,7 +30,7 @@ function bodyPayload(bodyId: string, trajectory: EphemerisTrajectory[]): Ephemer
 /**
  * Helper to set store state while keeping the new clock domain in sync.
  */
-function setTestState(overrides: any) {
+function setTestState(overrides: Partial<ReturnType<typeof useSolarStore.getState>>) {
   const currentState = useSolarStore.getState();
   const nextState = { ...currentState, ...overrides };
   

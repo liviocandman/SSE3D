@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tickClock, setClockTime, stepClock, applyRange } from './clockEngine';
+import { tickClock, setClockTime, stepClock } from './clockEngine';
 import { ClockState, DEFAULT_CLOCK_RANGE } from './clockTypes';
 
 const INITIAL_STATE: ClockState = {

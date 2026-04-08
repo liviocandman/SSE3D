@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { MissionTrajectoryLine } from './MissionTrajectoryLine';
 import { densifyWithCatmullRom } from '@/lib/catmullRom';
 import { MissionTrajectorySegment, type MissionTrajectoryPoint } from '@/lib/missionTypes';
-import React from 'react';
+import type { ForwardedRef } from 'react';
 
 // Mock scales
 vi.mock('@/lib/scales', () => ({
@@ -38,17 +38,24 @@ vi.mock('@react-three/fiber', () => ({
 }));
 
 // Mock drei
-vi.mock('@react-three/drei', () => {
-  const React = require('react');
+type MockLineProps = {
+  points?: unknown;
+  dashed?: boolean;
+};
+
+vi.mock('@react-three/drei', async () => {
+  const ReactModule = await import('react');
+  const { createElement, forwardRef } = ReactModule;
+
   return {
-    Line: React.forwardRef(({ points, dashed }: any, ref: any) => (
-      <div 
-        ref={ref}
-        data-testid="line" 
-        data-dashed={dashed ? 'true' : 'false'} 
-        data-points={JSON.stringify(points)} 
-      />
-    )),
+    Line: forwardRef(function MockLine({ points, dashed }: MockLineProps, ref: ForwardedRef<HTMLDivElement>) {
+      return createElement('div', {
+        ref,
+        'data-testid': 'line',
+        'data-dashed': dashed ? 'true' : 'false',
+        'data-points': JSON.stringify(points),
+      });
+    }),
   };
 });
 
