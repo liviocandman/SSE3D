@@ -18,6 +18,7 @@ import { CAMERA_MODEL_V2_ORIGIN_ONLY } from "@/lib/types";
 import { createTemporalLookupCache } from "@/lib/temporalLookup";
 import { sampleTrajectoryAtTime } from "@/lib/trajectoryEngine";
 import { PLANET_MOONS } from "@/lib/textureConfig";
+import { clockRuntime } from "@/lib/time/clockRuntime";
 
 // --- Types ---
 
@@ -72,7 +73,6 @@ export function useCameraAnimation(
   } = options;
 
   const { camera, controls, scene } = useThree();
-  const store = useSolarStore();
 
   // --- Common Refs ---
   const isAnimatingRef = useRef(false);
@@ -113,13 +113,14 @@ export function useCameraAnimation(
 
   // Animation frame loop
   useFrame((_, delta) => {
+    const solarStore = useSolarStore.getState();
     const { v1, v2, v3, v4, worldPos, prevPos } = pool.current;
 
     if (CAMERA_MODEL_V2_ORIGIN_ONLY) {
       // ==========================================
       // V2: ORIGIN-ONLY MODEL
       // ==========================================
-      const { cameraNavMode, originStartKm, originTargetKm, travelStartMs, travelDurationMs, followTargetId } = store;
+      const { cameraNavMode, originStartKm, originTargetKm, travelStartMs, travelDurationMs, followTargetId } = solarStore;
       const now = performance.now();
 
       // 1. Resolve Navigation State -> Next Origin Target
@@ -132,15 +133,15 @@ export function useCameraAnimation(
         v2.set(originTargetKm.x, originTargetKm.y, originTargetKm.z);
         v3.lerpVectors(v1, v2, t);
 
-        if (!isRenderOriginNearTarget(store.renderOrigin, v3, 0.000001)) {
-          store.setRenderOrigin({ x: v3.x, y: v3.y, z: v3.z }, 'custom');
+        if (!isRenderOriginNearTarget(solarStore.renderOrigin, v3, 0.000001)) {
+          solarStore.setRenderOrigin({ x: v3.x, y: v3.y, z: v3.z }, 'custom');
         }
 
         if (t >= 1) {
           if (followTargetId) {
-            store.setFollowTarget(followTargetId);
+            solarStore.setFollowTarget(followTargetId);
           } else {
-            store.stopOriginNavigation();
+            solarStore.stopOriginNavigation();
           }
         }
       } 
@@ -148,7 +149,7 @@ export function useCameraAnimation(
         // Authoritative Source of Truth lookup (Avoid getObjectByName jitter)
         let authoritativePosKm: { x: number; y: number; z: number } | null = null;
         const state = useSolarStore.getState();
-        const simTimeMs = state.currentTime.getTime();
+        const simTimeMs = clockRuntime.getTimeMs();
 
         // 1) Planet/moon source from trajectory segments at current sim time.
         const masterSegments = state.masterTrajectorySegments[followTargetId] ?? [];
@@ -195,8 +196,8 @@ export function useCameraAnimation(
         }
         
         if (authoritativePosKm) {
-          if (!isRenderOriginNearTarget(store.renderOrigin, authoritativePosKm, 0.000001)) {
-            store.setRenderOrigin(authoritativePosKm, 'selected_body');
+          if (!isRenderOriginNearTarget(solarStore.renderOrigin, authoritativePosKm, 0.000001)) {
+            solarStore.setRenderOrigin(authoritativePosKm, 'selected_body');
           }
         }
       }
@@ -213,7 +214,7 @@ export function useCameraAnimation(
       // ==========================================
       // V1: CAMERA-CENTRIC MODEL (Restored)
       // ==========================================
-      const solarState = store;
+      const solarState = solarStore;
       let hasTarget = false;
       v1.set(solarState.renderOrigin.x, solarState.renderOrigin.y, solarState.renderOrigin.z);
 
@@ -242,7 +243,7 @@ export function useCameraAnimation(
         displayOriginKm.current.z = THREE.MathUtils.damp(displayOriginKm.current.z, targetOriginKm.current.z, originDamp, delta);
 
         if (!isRenderOriginNearTarget(solarState.renderOrigin, displayOriginKm.current, 0.000001)) {
-          store.setRenderOrigin(displayOriginKm.current, 'custom');
+          solarStore.setRenderOrigin(displayOriginKm.current, 'custom');
           v3.set(v1.x - displayOriginKm.current.x, v1.y - displayOriginKm.current.y, v1.z - displayOriginKm.current.z)
             .multiplyScalar(KM_TO_UNIT);
           currentPivotUnits.current.add(v3);
@@ -299,8 +300,9 @@ export function useCameraAnimation(
     radiusKm?: number,
     targetId?: string,
   ) => {
+    const solarStore = useSolarStore.getState();
     if (CAMERA_MODEL_V2_ORIGIN_ONLY) {
-      const currentOrigin = store.renderOrigin;
+      const currentOrigin = solarStore.renderOrigin;
       const distanceKm = Math.sqrt(
         Math.pow(targetPositionKm.x - currentOrigin.x, 2) +
         Math.pow(targetPositionKm.y - currentOrigin.y, 2) +
@@ -308,7 +310,7 @@ export function useCameraAnimation(
       );
 
       const durationMs = Math.max(1000, Math.min(4000, Math.log10(distanceKm + 1) * 1000));
-      store.startOriginTravel(targetPositionKm, durationMs, performance.now(), targetId ?? null);
+      solarStore.startOriginTravel(targetPositionKm, durationMs, performance.now(), targetId ?? null);
 
       if (radiusKm) {
         const framingDistance = Math.max(CAMERA_CONFIG.MIN_FOCUS_OFFSET, radiusKm * KM_TO_UNIT * CAMERA_CONFIG.FOCUS_RADIUS_MULTIPLIER);
@@ -316,7 +318,7 @@ export function useCameraAnimation(
       }
     } else {
       const { v1, v2, v3, worldPos } = pool.current;
-      v1.set(store.renderOrigin.x, store.renderOrigin.y, store.renderOrigin.z);
+      v1.set(solarStore.renderOrigin.x, solarStore.renderOrigin.y, solarStore.renderOrigin.z);
       v2.set(targetPositionKm.x, targetPositionKm.y, targetPositionKm.z);
       if (targetId) {
         const obj = scene.getObjectByName(targetId);
@@ -335,8 +337,9 @@ export function useCameraAnimation(
   };
 
   const stopTracking = () => {
+    const solarStore = useSolarStore.getState();
     if (CAMERA_MODEL_V2_ORIGIN_ONLY) {
-      store.stopOriginNavigation();
+      solarStore.stopOriginNavigation();
     } else {
       targetRef.current = null;
       targetObjectNameRef.current = null;
@@ -345,8 +348,9 @@ export function useCameraAnimation(
   };
 
   const resetCamera = () => {
+    const solarStore = useSolarStore.getState();
     if (CAMERA_MODEL_V2_ORIGIN_ONLY) {
-      store.startOriginTravel({ x: 0, y: 0, z: 0 }, 2000, performance.now());
+      solarStore.startOriginTravel({ x: 0, y: 0, z: 0 }, 2000, performance.now());
     } else {
       targetOriginKm.current.set(0, 0, 0);
       targetRef.current = { localOffsetUnits: new THREE.Vector3().set(...CAMERA_CONFIG.DEFAULT_OFFSET) };

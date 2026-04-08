@@ -7,6 +7,7 @@ import { toRelativeRenderUnitsInto } from '@/lib/renderFrame';
 import { KM_TO_UNIT } from '@/lib/scales';
 import { useSolarStore } from '@/store/solarStore';
 import { findTemporalInterval, createTemporalLookupCache, resetCacheIfDataChanged } from '@/lib/temporalLookup';
+import { clockRuntime } from '@/lib/time/clockRuntime';
 
 interface DynamicTrailLineProps {
   /** Absolute positions in KM */
@@ -83,8 +84,7 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
   useFrame(() => {
     if (!lineRef.current) return;
 
-    const currentTime = useSolarStore.getState().currentTime;
-    const simTimeMs = currentTime.getTime();
+    const simTimeMs = clockRuntime.getTimeMs();
     const cutoffMs = simTimeMs + graceMs;
 
     let lastVisibleIndex = -1;

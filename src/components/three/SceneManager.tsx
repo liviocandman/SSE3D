@@ -13,7 +13,6 @@ import {
   type TrajectorySegment,
   flattenTrajectorySegments,
   buildTrajectorySegment,
-  sampleTrajectoryAtTime,
 } from '@/lib/trajectoryEngine';
 import type { EphemerisData, SelectedPlanet, EphemerisTrajectory } from '@/lib/types';
 import {
@@ -28,15 +27,13 @@ import { CameraController } from '@/hooks/useCameraAnimation';
 import * as THREE from 'three';
 import { useSolarStore } from '@/store/solarStore';
 import { useMissionStore } from '@/store/missionStore';
+import { clockRuntime } from '@/lib/time/clockRuntime';
 import { useShallow } from 'zustand/react/shallow';
 import { TrajectoryManager } from './TrajectoryManager';
 import StaticOrbitLine from './StaticOrbitLine';
 import DynamicTrailLine from './DynamicTrailLine';
 import {
   SpacecraftBody,
-  SPACECRAFT_CLOSEUP_RADIUS_UNITS,
-  SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS,
-  SPACECRAFT_SELECTION_RADIUS_UNITS,
 } from './SpacecraftBody';
 import { MissionTrajectoryLine } from './MissionTrajectoryLine';
 import { MissionMilestoneMarker } from './MissionMilestoneMarker';
@@ -84,10 +81,41 @@ function SelectionRing({ position, radius }: { position: [number, number, number
 }
 
 function GlobalTimeController() {
-  const advanceTime = useSolarStore(state => state.advanceTime);
+  const lastStorePushMsRef = useRef<number | null>(null);
+  const lastStoreSyncAtRef = useRef(0);
+
   useFrame((_, delta) => {
-    // This is a transient update to the store state every frame
-    advanceTime(delta);
+    const solarStore = useSolarStore.getState();
+    const storeTimeMs = solarStore.currentTime.getTime();
+
+    if (!clockRuntime.isInitialized()) {
+      clockRuntime.initialize(storeTimeMs);
+      lastStorePushMsRef.current = storeTimeMs;
+      lastStoreSyncAtRef.current = performance.now();
+      return;
+    }
+
+    const runtimeTimeMs = clockRuntime.getTimeMs();
+    const wasPushedByRuntime = lastStorePushMsRef.current === storeTimeMs;
+    if (!wasPushedByRuntime && Math.abs(storeTimeMs - runtimeTimeMs) > 1) {
+      clockRuntime.setTimeMs(storeTimeMs);
+    }
+
+    const canAdvance = solarStore.isPlaying && solarStore.timeAuthority === 'user';
+    if (canAdvance) {
+      clockRuntime.tick(delta, solarStore.timeMultiplier);
+    }
+
+    const now = performance.now();
+    const shouldSyncStore = now - lastStoreSyncAtRef.current >= 250;
+    if (!shouldSyncStore) return;
+
+    const nextRuntimeMs = clockRuntime.getTimeMs();
+    if (Math.abs(nextRuntimeMs - storeTimeMs) > 1) {
+      lastStorePushMsRef.current = nextRuntimeMs;
+      solarStore.setCurrentTime(new Date(nextRuntimeMs));
+    }
+    lastStoreSyncAtRef.current = now;
   });
   return null;
 }
@@ -120,11 +148,6 @@ const ALL_PLANET_IDS = [
 ];
 
 const TRAIL_GRACE_MS = 12 * 60 * 60 * 1000;
-
-
-function normalizeKm(value: number): number {
-  return Math.round(value * 1e9) / 1e9;
-}
 
 interface PlanetTrajectoryGroupProps {
   segments: TrajectorySegment[];
@@ -193,7 +216,6 @@ export function SceneContent({
     missionState,
     missionTrajectory,
     missionEvents,
-    autoFocusEvents,
     estimatedAttitudeEnabled,
     selectedMissionTargetId,
     setSelectedMissionTargetId,
@@ -202,7 +224,6 @@ export function SceneContent({
       missionState: state.missionState,
       missionTrajectory: state.missionTrajectory,
       missionEvents: state.missionEvents,
-      autoFocusEvents: state.autoFocusEvents,
       estimatedAttitudeEnabled: state.estimatedAttitudeEnabled,
       selectedMissionTargetId: state.selectedMissionTargetId,
       setSelectedMissionTargetId: state.setSelectedMissionTargetId,

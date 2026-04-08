@@ -9,6 +9,14 @@ import {
 } from '@/services/missionClient';
 import { MissionMode } from '@/lib/missionTypes';
 import { temporalMetrics } from '@/lib/time/metrics';
+import { clockRuntime } from '@/lib/time/clockRuntime';
+
+const LIVE_STATE_POLL_MS = 20_000;
+const REPLAY_STATE_POLL_PLAYING_MS = 4_000;
+const REPLAY_STATE_POLL_PAUSED_MS = 12_000;
+const TRAJECTORY_POLL_MS = 60_000;
+const HEALTH_POLL_MS = 60_000;
+const EVENTS_POLL_MS = 300_000;
 
 export function useMissionData() {
   const missionMode = useMissionStore((state) => state.missionMode);
@@ -30,8 +38,7 @@ export function useMissionData() {
       return undefined;
     }
 
-    const currentTime = useSolarStore.getState().currentTime;
-    const date = new Date(currentTime);
+    const date = new Date(clockRuntime.getTimeMs());
     return date.toISOString().split('.')[0] + 'Z';
   }, [isLive]);
 
@@ -112,6 +119,7 @@ export function useMissionData() {
             const timestampDate = new Date(data.sourceTimestamp);
             if (!Number.isNaN(timestampDate.getTime())) {
               const solarStore = useSolarStore.getState();
+              clockRuntime.setTimeMs(timestampDate.getTime());
               
               // Only bridge if we are in LIVE mode
               if (solarStore.timeAuthority !== 'mission_live') {
@@ -140,7 +148,14 @@ export function useMissionData() {
         console.error('Failed to fetch mission state', err);
       } finally {
         if (isMounted) {
-          const delay = isLive ? 20000 : 2000;
+          const missionStore = useMissionStore.getState();
+          const isReplayPlaying = useSolarStore.getState().isPlaying;
+          const delay =
+            missionStore.missionMode === MissionMode.LIVE
+              ? LIVE_STATE_POLL_MS
+              : isReplayPlaying
+                ? REPLAY_STATE_POLL_PLAYING_MS
+                : REPLAY_STATE_POLL_PAUSED_MS;
           stateTimeout = setTimeout(fetchState, delay);
         }
       }
@@ -163,7 +178,7 @@ export function useMissionData() {
         console.error('Failed to fetch mission trajectory', err);
       } finally {
         if (isMounted) {
-          trajectoryTimeout = setTimeout(fetchTrajectory, 30000);
+          trajectoryTimeout = setTimeout(fetchTrajectory, TRAJECTORY_POLL_MS);
         }
       }
     };
@@ -185,7 +200,7 @@ export function useMissionData() {
         console.error('Failed to fetch mission events', err);
       } finally {
         if (isMounted) {
-          eventsTimeout = setTimeout(fetchEvents, 300000); // 5 minutes
+          eventsTimeout = setTimeout(fetchEvents, EVENTS_POLL_MS);
         }
       }
     };
@@ -206,7 +221,7 @@ export function useMissionData() {
         console.error('Failed to fetch mission health', err);
       } finally {
         if (isMounted) {
-          healthTimeout = setTimeout(fetchHealth, 20000);
+          healthTimeout = setTimeout(fetchHealth, HEALTH_POLL_MS);
         }
       }
     };

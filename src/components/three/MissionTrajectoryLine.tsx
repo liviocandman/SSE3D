@@ -6,8 +6,8 @@ import { scalePositionFromKm } from '@/lib/scales';
 import { MissionTrajectoryPoint } from '@/lib/missionTypes';
 import { densifyWithCatmullRom } from '@/lib/catmullRom';
 import { EphemerisTrajectory } from '@/lib/types';
-import { useSolarStore } from '@/store/solarStore';
 import { sampleTrajectoryAtTime, type TrajectorySegment } from '@/lib/trajectoryEngine';
+import { clockRuntime } from '@/lib/time/clockRuntime';
 
 interface MissionTrajectoryLineProps {
   past: MissionTrajectoryPoint[];
@@ -92,8 +92,7 @@ export const MissionTrajectoryLine: React.FC<MissionTrajectoryLineProps> = ({
   }, [basePlannedPoints.length]);
 
   useFrame(() => {
-    const solarState = useSolarStore.getState();
-    const simTimeMs = solarState.currentTime.getTime();
+    const simTimeMs = clockRuntime.getTimeMs();
 
     // Sample current position in Earth-relative KM
     let currentPosLocalUnits: [number, number, number] | null = null;

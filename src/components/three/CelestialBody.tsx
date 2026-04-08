@@ -14,6 +14,7 @@ import type { EphemerisTrajectory } from "@/lib/types";
 import { buildTrajectorySegment, sampleTrajectoryAtTime } from "@/lib/trajectoryEngine";
 import { createTemporalLookupCache } from "@/lib/temporalLookup";
 import { calculateAbsoluteRotation } from "@/lib/rotationUtils";
+import { clockRuntime } from "@/lib/time/clockRuntime";
 
 // --- Types ---
 
@@ -76,7 +77,7 @@ export function CelestialBody({
   }) as THREE.Texture;
 
 
-  const labelRef = useRef<any>(null);
+  const labelRef = useRef<THREE.Object3D | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const { camera } = useThree();
 
@@ -121,7 +122,7 @@ export function CelestialBody({
   // Animation loop
   useFrame((state, delta) => {
     const solarState = useSolarStore.getState();
-    const simTime = solarState.currentTime.getTime();
+    const simTime = clockRuntime.getTimeMs();
 
     // Use current segments from store, fallback to initial props
     const currentSegments = masterSegments.length > 0 ? masterSegments : fallbackSegments;

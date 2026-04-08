@@ -27,6 +27,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { sampleTrajectoryAtTime } from '@/lib/trajectoryEngine';
 import { createTemporalLookupCache } from '@/lib/temporalLookup';
 import { SPHERE_MID, HITBOX_SPHERE } from '@/lib/geometryPool';
+import { clockRuntime } from '@/lib/time/clockRuntime';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -188,7 +189,7 @@ function MoonMesh({
   useFrame((_, delta) => {
     if (!config) return;
     const solarState = useSolarStore.getState();
-    const simTime = solarState.currentTime.getTime();
+    const simTime = clockRuntime.getTimeMs();
     const isPlaying = solarState.isPlaying;
     const timeMultiplier = solarState.timeMultiplier;
 
@@ -223,7 +224,7 @@ function MoonMesh({
   const name = config.englishName;
 
   const resolveCurrentMoonPosition = () => {
-    const simTimeMs = useSolarStore.getState().currentTime.getTime();
+    const simTimeMs = clockRuntime.getTimeMs();
     const sampled = masterSegments.length > 0
       ? sampleTrajectoryAtTime(masterSegments, simTimeMs, lookupCacheRef.current)
       : null;
@@ -246,7 +247,7 @@ function MoonMesh({
       if (parentSegments.length > 0) {
         const sampledParent = sampleTrajectoryAtTime(
           parentSegments,
-          state.currentTime.getTime(),
+          clockRuntime.getTimeMs(),
           parentLookupCacheRef.current
         );
         if (sampledParent?.position) {

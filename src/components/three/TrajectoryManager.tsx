@@ -4,64 +4,30 @@ import { useCallback, useEffect, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useSolarStore } from "@/store/solarStore";
 import { useShallow } from "zustand/react/shallow";
-import { PLANET_MOONS } from "@/lib/textureConfig";
 import { computeBufferPlan, hasCoverageNearTime } from "@/lib/trajectoryEngine";
 import { useTrajectoryWorker } from "@/hooks/useTrajectoryWorker";
+import { clockRuntime } from "@/lib/time/clockRuntime";
+import {
+  buildContextualFetchBodyIds,
+  buildTrajectoryRequestKey,
+  getBodyFetchWindow,
+  getCoverageToleranceMs,
+} from "@/lib/trajectoryPolicy";
 
 import { useQualityTier } from "@/contexts/QualityTierContext";
 
-const MINUTE_MS = 60 * 1000;
-const HOUR_MS = 60 * MINUTE_MS;
-const BASE_COVERAGE_TOLERANCE_MS = 6 * HOUR_MS;
-const MIN_COVERAGE_TOLERANCE_MS = 30 * MINUTE_MS;
-const MOON_MIN_COVERAGE_TOLERANCE_MS = 15 * MINUTE_MS;
-const MOON_MAX_COVERAGE_TOLERANCE_MS = 2 * HOUR_MS;
-const RAPID_MOON_IDS = new Set(["401", "402"]);
-
-// Eager load Jupiter (599) and Saturn (699) since they are the most visited and have many moons
-const CORE_PLANET_IDS = [
-  "199", "299", "399", "499", "599", "699", "799", "899"
-];
-
-export function getDynamicBufferParams() {
-  // 30 days of data with a 15-day prefetch threshold.
-  return { fetchSpanDays: 30, thresholdDays: 15 };
-}
+const JUMP_DEBOUNCE_MS = 450;
+const TARGET_CHANGE_DEBOUNCE_MS = 250;
+const BACKGROUND_PAGINATION_EVERY_FRAMES = 300;
+const FETCH_LOCK_TTL_MS = 5000;
+const FETCH_COOLDOWN_MS = 15_000;
 
 export function buildFetchBodyIds(activeIds: (string | null | undefined)[]): string[] {
-  const ids = new Set(CORE_PLANET_IDS); // Set ensures uniqueness
-
-  // Always eager load moons for Jupiter and Saturn
-  if (PLANET_MOONS["599"]) PLANET_MOONS["599"].forEach(id => ids.add(id));
-  if (PLANET_MOONS["699"]) PLANET_MOONS["699"].forEach(id => ids.add(id));
-
-  activeIds.forEach(bodyId => {
-    if (!bodyId) return;
-    ids.add(bodyId);
-    if (PLANET_MOONS[bodyId]) {
-      PLANET_MOONS[bodyId].forEach((moonId) => ids.add(moonId));
-    }
+  const [selectedBodyId, hoveredBodyId] = activeIds;
+  return buildContextualFetchBodyIds({
+    selectedBodyId: selectedBodyId ?? undefined,
+    hoveredBodyId: hoveredBodyId ?? undefined,
   });
-
-  return Array.from(ids);
-}
-
-function isMoonBody(bodyId: string): boolean {
-  for (const moons of Object.values(PLANET_MOONS)) {
-    if (moons.includes(bodyId)) return true;
-  }
-  return false;
-}
-
-function getCoverageToleranceMs(bodyId: string, timeMultiplier: number): number {
-  const adaptiveMs = Math.abs(timeMultiplier) * MINUTE_MS;
-  if (RAPID_MOON_IDS.has(bodyId)) {
-    return Math.max(MOON_MIN_COVERAGE_TOLERANCE_MS, Math.min(adaptiveMs, MOON_MAX_COVERAGE_TOLERANCE_MS));
-  }
-  if (isMoonBody(bodyId)) {
-    return Math.max(MOON_MIN_COVERAGE_TOLERANCE_MS, Math.min(adaptiveMs, BASE_COVERAGE_TOLERANCE_MS));
-  }
-  return Math.max(MIN_COVERAGE_TOLERANCE_MS, Math.min(adaptiveMs, BASE_COVERAGE_TOLERANCE_MS));
 }
 
 function debugTrajectoryLog(message: string): void {
@@ -90,6 +56,7 @@ export function TrajectoryManager() {
 
   const { fetchTrajectory } = useTrajectoryWorker();
   const loadingRef = useRef<Set<string>>(new Set());
+  const lastFetchAtRef = useRef<Map<string, number>>(new Map());
   const activeTimeouts = useRef<Set<NodeJS.Timeout>>(new Set());
   const frameCountRef = useRef(0);
   const lastFetchRef = useRef<string | null>(null);
@@ -104,6 +71,7 @@ export function TrajectoryManager() {
       timeouts.forEach(clearTimeout);
       timeouts.clear();
       loading.clear();
+      lastFetchAtRef.current.clear();
       
       if (jumpAbortControllerRef.current) {
         jumpAbortControllerRef.current.abort();
@@ -111,20 +79,62 @@ export function TrajectoryManager() {
     };
   }, []);
 
+  const lockRequestKey = useCallback((requestKey: string) => {
+    const now = Date.now();
+    if (loadingRef.current.has(requestKey)) {
+      return false;
+    }
+
+    const lastFetchAt = lastFetchAtRef.current.get(requestKey);
+    if (lastFetchAt !== undefined && now - lastFetchAt < FETCH_COOLDOWN_MS) {
+      return false;
+    }
+
+    loadingRef.current.add(requestKey);
+    lastFetchAtRef.current.set(requestKey, now);
+    return true;
+  }, []);
+
+  const unlockRequestKey = useCallback((requestKey: string) => {
+    const timerId = setTimeout(() => {
+      loadingRef.current.delete(requestKey);
+      activeTimeouts.current.delete(timerId);
+    }, FETCH_LOCK_TTL_MS);
+
+    activeTimeouts.current.add(timerId);
+  }, []);
+
+  const groupByFetchSpan = useCallback((ids: string[]) => {
+    const grouped = new Map<number, string[]>();
+    for (const id of ids) {
+      const { fetchSpanDays } = getBodyFetchWindow(id);
+      const list = grouped.get(fetchSpanDays);
+      if (list) {
+        list.push(id);
+      } else {
+        grouped.set(fetchSpanDays, [id]);
+      }
+    }
+    return grouped;
+  }, []);
+
   const fetchBlock = useCallback(
-    async (date: string, spanDays: number, specificIds?: string[], signal?: AbortSignal) => {
+    async (
+      date: string,
+      spanDays: number,
+      specificIds?: string[],
+      signal?: AbortSignal
+    ): Promise<void> => {
       const state = useSolarStore.getState();
       const ids =
         specificIds && specificIds.length > 0
           ? specificIds
           : buildFetchBodyIds([state.selectedPlanet?.bodyId, state.hoveredPlanetId]);
 
-      const blockCacheKey = `block_${date}_${spanDays}_${ids.join(",")}`;
-      if (loadingRef.current.has(blockCacheKey)) {
+      const requestKey = buildTrajectoryRequestKey(date, spanDays, ids, tier);
+      if (!lockRequestKey(requestKey)) {
         return;
       }
-
-      loadingRef.current.add(blockCacheKey);
       debugTrajectoryLog(
         `[TrajectoryManager] Loading block at ${date} (span: ${spanDays}d) for ${ids.length} bodies.`,
       );
@@ -141,27 +151,21 @@ export function TrajectoryManager() {
           console.error(`[TrajectoryManager] Failed to fetch block at ${date}:`, err);
         }
       } finally {
-        const timerId = setTimeout(() => {
-          loadingRef.current.delete(blockCacheKey);
-          activeTimeouts.current.delete(timerId);
-        }, 5000);
-        activeTimeouts.current.add(timerId);
+        unlockRequestKey(requestKey);
       }
     },
-    [appendTrajectoryData, fetchTrajectory, tier],
+    [appendTrajectoryData, fetchTrajectory, lockRequestKey, tier, unlockRequestKey],
   );
 
   // 1A. Time Travel Fetch (DEBOUNCED)
-  // Only fires when scrubbing the timeline aggressively.
   useEffect(() => {
     if (lastFetchRef.current === currentDate) return;
 
     const debounceTimeout = setTimeout(() => {
       const bodyIds = buildFetchBodyIds([selectedPlanet?.bodyId, hoveredPlanetId]);
       const state = useSolarStore.getState();
-      const timeMs = state.currentTime.getTime();
+      const timeMs = clockRuntime.getTimeMs();
       const segmentsByBody = state.masterTrajectorySegments;
-      const { fetchSpanDays } = getDynamicBufferParams();
 
       const missingIds = bodyIds.filter((id) => {
         const segments = segmentsByBody[id] || [];
@@ -170,71 +174,63 @@ export function TrajectoryManager() {
       });
 
       if (missingIds.length > 0) {
-        const cacheKey = `jump_${currentDate}_${fetchSpanDays}_${missingIds.join(",")}`;
+        if (jumpAbortControllerRef.current) {
+          jumpAbortControllerRef.current.abort();
+        }
+        jumpAbortControllerRef.current = new AbortController();
 
-        if (!loadingRef.current.has(cacheKey)) {
-          if (jumpAbortControllerRef.current) {
-            jumpAbortControllerRef.current.abort();
-          }
-          jumpAbortControllerRef.current = new AbortController();
-
-          loadingRef.current.add(cacheKey);
-          fetchBlock(currentDate, fetchSpanDays, missingIds, jumpAbortControllerRef.current.signal);
-          lastFetchRef.current = currentDate;
-
-          setTimeout(() => loadingRef.current.delete(cacheKey), 5000);
+        const missingIdsBySpan = groupByFetchSpan(missingIds);
+        for (const [fetchSpanDays, idsForSpan] of missingIdsBySpan) {
+          fetchBlock(currentDate, fetchSpanDays, idsForSpan, jumpAbortControllerRef.current.signal);
         }
       }
-    }, 300);
+      lastFetchRef.current = currentDate;
+    }, JUMP_DEBOUNCE_MS);
 
     return () => clearTimeout(debounceTimeout);
-  }, [currentDate, hoveredPlanetId, selectedPlanet?.bodyId, fetchBlock, timeMultiplier]);
+  }, [currentDate, fetchBlock, groupByFetchSpan, hoveredPlanetId, selectedPlanet?.bodyId, timeMultiplier]);
 
-  // 1B. Target Change Fetch (IMMEDIATE)
-  // Fires instantly when hovering or clicking a new planet (0ms delay).
-  // Does NOT abort previous requests to avoid killing the Eager Load.
+  // 1B. Target-change fetch
   useEffect(() => {
-    const targetIds = buildFetchBodyIds([selectedPlanet?.bodyId, hoveredPlanetId]);
-    const state = useSolarStore.getState();
-    const timeMs = state.currentTime.getTime();
-    const segmentsByBody = state.masterTrajectorySegments;
-    const { fetchSpanDays } = getDynamicBufferParams();
+    const debounceTimeout = setTimeout(() => {
+      const targetIds = buildFetchBodyIds([selectedPlanet?.bodyId, hoveredPlanetId]);
+      const state = useSolarStore.getState();
+      const timeMs = clockRuntime.getTimeMs();
+      const segmentsByBody = state.masterTrajectorySegments;
 
-    const missingIds = targetIds.filter((id) => {
-      const segments = segmentsByBody[id] || [];
-      const toleranceMs = getCoverageToleranceMs(id, timeMultiplier);
-      return !hasCoverageNearTime(segments, timeMs, toleranceMs);
-    });
+      const missingIds = targetIds.filter((id) => {
+        const segments = segmentsByBody[id] || [];
+        const toleranceMs = getCoverageToleranceMs(id, timeMultiplier);
+        return !hasCoverageNearTime(segments, timeMs, toleranceMs);
+      });
 
-    if (missingIds.length > 0) {
-      const cacheKey = `target_${currentDate}_${fetchSpanDays}_${missingIds.join(",")}`;
-
-      if (!loadingRef.current.has(cacheKey)) {
-        loadingRef.current.add(cacheKey);
-        // Notice: No abort signal passed here. We don't want a hover to cancel a click.
-        fetchBlock(currentDate, fetchSpanDays, missingIds);
-        setTimeout(() => loadingRef.current.delete(cacheKey), 5000);
+      if (missingIds.length > 0) {
+        const missingIdsBySpan = groupByFetchSpan(missingIds);
+        for (const [fetchSpanDays, idsForSpan] of missingIdsBySpan) {
+          fetchBlock(currentDate, fetchSpanDays, idsForSpan);
+        }
       }
-    }
-  }, [selectedPlanet?.bodyId, hoveredPlanetId, currentDate, fetchBlock, timeMultiplier]);
+    }, TARGET_CHANGE_DEBOUNCE_MS);
+
+    return () => clearTimeout(debounceTimeout);
+  }, [currentDate, fetchBlock, groupByFetchSpan, hoveredPlanetId, selectedPlanet?.bodyId, timeMultiplier]);
 
   // 2. Background pagination driven by segment coverage
   useFrame(() => {
     frameCountRef.current++;
-    if (frameCountRef.current % 60 !== 0) return;
+    if (frameCountRef.current % BACKGROUND_PAGINATION_EVERY_FRAMES !== 0) return;
 
     const state = useSolarStore.getState();
-    const timeMs = state.currentTime.getTime();
-    const { fetchSpanDays, thresholdDays } = getDynamicBufferParams();
+    const timeMs = clockRuntime.getTimeMs();
 
     const segmentsByBody = state.masterTrajectorySegments;
     const bodyIds = buildFetchBodyIds([state.selectedPlanet?.bodyId, state.hoveredPlanetId]);
 
-    const fetchDates = new Set<string>();
-    const missingIdsForDate: Record<string, Set<string>> = {};
+    const groupedFetches = new Map<string, { date: string; fetchSpanDays: number; ids: Set<string> }>();
 
     for (const id of bodyIds) {
       const segments = segmentsByBody[id] || [];
+      const { fetchSpanDays, thresholdDays } = getBodyFetchWindow(id);
       const plan = computeBufferPlan({
         segments,
         timeMs,
@@ -245,22 +241,23 @@ export function TrajectoryManager() {
       });
 
       for (const date of plan.fetchDates) {
-        fetchDates.add(date);
-        if (!missingIdsForDate[date]) missingIdsForDate[date] = new Set();
-        missingIdsForDate[date].add(id);
+        if (!date) continue;
+        const groupKey = `${date}|${fetchSpanDays}`;
+        const existing = groupedFetches.get(groupKey);
+        if (existing) {
+          existing.ids.add(id);
+        } else {
+          groupedFetches.set(groupKey, {
+            date,
+            fetchSpanDays,
+            ids: new Set([id]),
+          });
+        }
       }
     }
 
-    for (const date of fetchDates) {
-      const idsToFetch = Array.from(missingIdsForDate[date]);
-      const preciseCacheKey = `page_${date}_${fetchSpanDays}_${idsToFetch.join(",")}`;
-
-      if (!loadingRef.current.has(preciseCacheKey)) {
-        loadingRef.current.add(preciseCacheKey);
-        fetchBlock(date, fetchSpanDays, idsToFetch);
-
-        setTimeout(() => loadingRef.current.delete(preciseCacheKey), 10000);
-      }
+    for (const { date, fetchSpanDays, ids } of groupedFetches.values()) {
+      fetchBlock(date, fetchSpanDays, Array.from(ids));
     }
   });
 

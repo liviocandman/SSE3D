@@ -11,6 +11,7 @@ import { useSolarStore } from '@/store/solarStore';
 import { useMissionStore } from '@/store/missionStore';
 import { sampleTrajectoryAtTime, type TrajectorySegment } from '@/lib/trajectoryEngine';
 import type { EphemerisData } from '@/lib/types';
+import { clockRuntime } from '@/lib/time/clockRuntime';
 
 export interface SpacecraftBodyProps {
   vehicleId: string;
@@ -159,9 +160,7 @@ export function SpacecraftBody({
       return;
     }
 
-    const solarState = useSolarStore.getState();
-    const currentTime = solarState.currentTime;
-    const simTimeMs = currentTime.getTime();
+    const simTimeMs = clockRuntime.getTimeMs();
 
     // 1. Sample position from trajectory segment
     let sampledPosition: [number, number, number] | null = null;

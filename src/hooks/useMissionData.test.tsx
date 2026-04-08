@@ -4,6 +4,7 @@ import { useMissionData } from './useMissionData';
 import { useMissionStore } from '@/store/missionStore';
 import { useSolarStore } from '@/store/solarStore';
 import { MissionMode, type MissionEventsResponse, type MissionHealth, type MissionState, type MissionTrajectory } from '@/lib/missionTypes';
+import { clockRuntime } from '@/lib/time/clockRuntime';
 import * as missionClient from '@/services/missionClient';
 
 // Mock the client
@@ -18,6 +19,11 @@ describe('useMissionData hook', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useMissionStore.getState().resetMissionState();
+    const baselineTime = new Date('2026-04-03T12:00:00.000Z');
+    clockRuntime.setTimeMs(baselineTime.getTime());
+    useSolarStore.getState().setCurrentTime(baselineTime);
+    useSolarStore.getState().setIsPlaying(false);
+    useSolarStore.getState().setTimeAuthority('user');
     
     // Default mock responses
     vi.mocked(missionClient.fetchMissionTrajectory).mockResolvedValue({} as MissionTrajectory);
@@ -70,7 +76,9 @@ describe('useMissionData hook', () => {
 
   it('should fetch replay data with formatted timestamp', async () => {
     useMissionStore.getState().setMissionMode(MissionMode.REPLAY);
-    useSolarStore.getState().setCurrentTime(new Date('2026-04-05T12:00:00.123Z'));
+    const replayTime = new Date('2026-04-05T12:00:00.123Z');
+    clockRuntime.setTimeMs(replayTime.getTime());
+    useSolarStore.getState().setCurrentTime(replayTime);
 
     vi.mocked(missionClient.fetchMissionState).mockResolvedValue({} as MissionState);
 
@@ -109,7 +117,9 @@ describe('useMissionData hook', () => {
   it('should ignore stale replay state responses after the replay timestamp changes', async () => {
     useMissionStore.getState().setMissionMode(MissionMode.REPLAY);
     useSolarStore.getState().setIsPlaying(false);
-    useSolarStore.getState().setCurrentTime(new Date('2026-04-05T12:00:00.000Z'));
+    const initialReplayTime = new Date('2026-04-05T12:00:00.000Z');
+    clockRuntime.setTimeMs(initialReplayTime.getTime());
+    useSolarStore.getState().setCurrentTime(initialReplayTime);
 
     let resolveState: ((value: MissionState) => void) | undefined;
     vi.mocked(missionClient.fetchMissionState).mockImplementation(
@@ -128,7 +138,9 @@ describe('useMissionData hook', () => {
       );
     });
 
-    useSolarStore.getState().setCurrentTime(new Date('2026-04-05T13:00:00.000Z'));
+    const movedReplayTime = new Date('2026-04-05T13:00:00.000Z');
+    clockRuntime.setTimeMs(movedReplayTime.getTime());
+    useSolarStore.getState().setCurrentTime(movedReplayTime);
 
     resolveState?.({
       missionId: 'artemis-2',
