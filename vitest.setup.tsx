@@ -123,10 +123,10 @@ if (typeof global.Response === 'undefined') {
 if (typeof global.Worker === 'undefined') {
   // @ts-expect-error - polyfilling global
   global.Worker = class {
-    onmessage: ((ev: MessageEvent) => any) | null = null;
-    postMessage(message: any) {}
+    onmessage: ((ev: MessageEvent<unknown>) => void) | null = null;
+    postMessage(message: unknown) { void message; }
     terminate() {}
-    addEventListener() {}
-    removeEventListener() {}
+    addEventListener(type: string, listener: EventListenerOrEventListenerObject) { void type; void listener; }
+    removeEventListener(type: string, listener: EventListenerOrEventListenerObject) { void type; void listener; }
   };
 }

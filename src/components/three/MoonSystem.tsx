@@ -75,7 +75,8 @@ const EMPTY_SEGMENTS: TrajectorySegment[] = [];
 
 function parseUtcTimestampMs(timestamp: string): number {
   if (!timestamp) return Number.NaN;
-  const utcString = timestamp.includes('Z') ? timestamp : `${timestamp}Z`;
+  const hasOffset = /(Z|[+-]\d{2}:?\d{2})$/i.test(timestamp);
+  const utcString = hasOffset ? timestamp : `${timestamp}Z`;
   return new Date(utcString).getTime();
 }
 

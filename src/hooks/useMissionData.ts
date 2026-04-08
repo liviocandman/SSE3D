@@ -119,7 +119,6 @@ export function useMissionData() {
             const timestampDate = new Date(data.sourceTimestamp);
             if (!Number.isNaN(timestampDate.getTime())) {
               const solarStore = useSolarStore.getState();
-              clockRuntime.setTimeMs(timestampDate.getTime());
               
               // Only bridge if we are in LIVE mode
               if (solarStore.timeAuthority !== 'mission_live') {

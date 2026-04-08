@@ -104,72 +104,84 @@ export const MissionTrajectoryLine: React.FC<MissionTrajectoryLineProps> = ({
     }
 
     // Update Past Line
-    if (pastLineRef.current && currentPosLocalUnits) {
-      const count = basePastPoints.length + 1;
-      const pos = pastPosBuffer.current;
-      
-      // Copy base points (already in local render units)
-      for (let i = 0; i < basePastPoints.length; i++) {
-        const p = basePastPoints[i];
-        pos[i * 3] = p[0];
-        pos[i * 3 + 1] = p[1];
-        pos[i * 3 + 2] = p[2];
-      }
-      
-      // Append current point (also in local render units)
-      pos[(count - 1) * 3] = currentPosLocalUnits[0];
-      pos[(count - 1) * 3 + 1] = currentPosLocalUnits[1];
-      pos[(count - 1) * 3 + 2] = currentPosLocalUnits[2];
+    if (pastLineRef.current) {
+      if (basePastPoints.length > 0) {
+        const hasCurrentPos = !!currentPosLocalUnits;
+        const count = basePastPoints.length + (hasCurrentPos ? 1 : 0);
+        const pos = pastPosBuffer.current;
+        
+        // Copy base points (already in local render units)
+        for (let i = 0; i < basePastPoints.length; i++) {
+          const p = basePastPoints[i];
+          pos[i * 3] = p[0];
+          pos[i * 3 + 1] = p[1];
+          pos[i * 3 + 2] = p[2];
+        }
+        
+        // Append current point (also in local render units)
+        if (hasCurrentPos) {
+          pos[(count - 1) * 3] = currentPosLocalUnits![0];
+          pos[(count - 1) * 3 + 1] = currentPosLocalUnits![1];
+          pos[(count - 1) * 3 + 2] = currentPosLocalUnits![2];
+        }
 
-      const geometry = pastLineRef.current.geometry;
-      if (isLineSegmentsGeometry(geometry)) {
-        geometry.setPositions(pos.subarray(0, count * 3));
-        if (geometry.attributes.instanceStart) {
-          geometry.attributes.instanceStart.needsUpdate = true;
+        const geometry = pastLineRef.current.geometry;
+        if (isLineSegmentsGeometry(geometry)) {
+          geometry.setPositions(pos.subarray(0, count * 3));
+          if (geometry.attributes.instanceStart) {
+            geometry.attributes.instanceStart.needsUpdate = true;
+          }
+          if (geometry.attributes.instanceEnd) {
+            geometry.attributes.instanceEnd.needsUpdate = true;
+          }
         }
-        if (geometry.attributes.instanceEnd) {
-          geometry.attributes.instanceEnd.needsUpdate = true;
-        }
+        pastLineRef.current.visible = true;
+      } else {
+        pastLineRef.current.visible = false;
       }
-      pastLineRef.current.visible = true;
-    } else if (pastLineRef.current) {
-      pastLineRef.current.visible = false;
     }
 
     // Update Planned Line
-    if (plannedLineRef.current && currentPosLocalUnits) {
-      const count = basePlannedPoints.length + 1;
-      const pos = plannedPosBuffer.current;
-      
-      // Start with current point
-      pos[0] = currentPosLocalUnits[0];
-      pos[1] = currentPosLocalUnits[1];
-      pos[2] = currentPosLocalUnits[2];
-
-      // Copy base points
-      for (let i = 0; i < basePlannedPoints.length; i++) {
-        const p = basePlannedPoints[i];
-        pos[(i + 1) * 3] = p[0];
-        pos[(i + 1) * 3 + 1] = p[1];
-        pos[(i + 1) * 3 + 2] = p[2];
-      }
-
-      const geometry = plannedLineRef.current.geometry;
-      if (isLineSegmentsGeometry(geometry)) {
-        geometry.setPositions(pos.subarray(0, count * 3));
-        if (geometry.attributes.instanceStart) {
-          geometry.attributes.instanceStart.needsUpdate = true;
+    if (plannedLineRef.current) {
+      if (basePlannedPoints.length > 0) {
+        const hasCurrentPos = !!currentPosLocalUnits;
+        const count = basePlannedPoints.length + (hasCurrentPos ? 1 : 0);
+        const pos = plannedPosBuffer.current;
+        
+        // Start with current point
+        if (hasCurrentPos) {
+          pos[0] = currentPosLocalUnits![0];
+          pos[1] = currentPosLocalUnits![1];
+          pos[2] = currentPosLocalUnits![2];
         }
-        if (geometry.attributes.instanceEnd) {
-          geometry.attributes.instanceEnd.needsUpdate = true;
+
+        const offset = hasCurrentPos ? 1 : 0;
+        // Copy base points
+        for (let i = 0; i < basePlannedPoints.length; i++) {
+          const p = basePlannedPoints[i];
+          pos[(i + offset) * 3] = p[0];
+          pos[(i + offset) * 3 + 1] = p[1];
+          pos[(i + offset) * 3 + 2] = p[2];
         }
+
+        const geometry = plannedLineRef.current.geometry;
+        if (isLineSegmentsGeometry(geometry)) {
+          geometry.setPositions(pos.subarray(0, count * 3));
+          if (geometry.attributes.instanceStart) {
+            geometry.attributes.instanceStart.needsUpdate = true;
+          }
+          if (geometry.attributes.instanceEnd) {
+            geometry.attributes.instanceEnd.needsUpdate = true;
+          }
+        }
+        const planRef = plannedLineRef.current as unknown as Record<string, unknown>;
+        if (typeof planRef.computeLineDistances === 'function') {
+          planRef.computeLineDistances();
+        }
+        plannedLineRef.current.visible = true;
+      } else {
+        plannedLineRef.current.visible = false;
       }
-      if ('computeLineDistances' in plannedLineRef.current && typeof plannedLineRef.current.computeLineDistances === 'function') {
-        plannedLineRef.current.computeLineDistances();
-      }
-      plannedLineRef.current.visible = true;
-    } else if (plannedLineRef.current) {
-      plannedLineRef.current.visible = false;
     }
   });
 

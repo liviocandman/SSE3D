@@ -12,7 +12,6 @@ import {
   TimeAuthority as ClockAuthority 
 } from '@/lib/time/clockTypes';
 import { 
-  tickClock, 
   setClockTime, 
   applyMultiplier, 
   setPlaying, 
@@ -20,6 +19,7 @@ import {
   stepClock
 } from '@/lib/time/clockEngine';
 import { temporalMetrics } from '@/lib/time/metrics';
+import { clockRuntime } from '@/lib/time/clockRuntime';
 
 interface TravelTarget {
   x: number;
@@ -76,6 +76,7 @@ interface SolarState {
   setCurrentDate: (date: string) => void;
   setCurrentTime: (time: Date) => void;
   stepCurrentTimeByMs: (deltaMs: number) => void;
+  syncTimeFromRuntime: (runtimeTimeMs: number) => void;
   setTimeMultiplier: (multiplier: number) => void;
   setIsPlaying: (playing: boolean) => void;
   advanceTime: (deltaSeconds: number) => void;
@@ -186,16 +187,33 @@ export const useSolarStore = create<SolarState>((set) => ({
 
   setCurrentDate: (date) => set((state) => {
     const newTimeMs = parseUTCDate(date, state.clock.currentTimeMs).getTime();
+    clockRuntime.setTimeMs(newTimeMs);
     return syncClockToStore(state, setClockTime(state.clock, newTimeMs));
   }),
 
-  setCurrentTime: (time) => set((state) => 
-    syncClockToStore(state, setClockTime(state.clock, time.getTime()))
-  ),
+  setCurrentTime: (time) => set((state) => {
+    const nextTimeMs = time.getTime();
+    clockRuntime.setTimeMs(nextTimeMs);
+    return syncClockToStore(state, setClockTime(state.clock, nextTimeMs));
+  }),
 
-  stepCurrentTimeByMs: (deltaMs) => set((state) => 
-    syncClockToStore(state, stepClock(state.clock, { magnitude: deltaMs, unit: 'ms' }))
-  ),
+  stepCurrentTimeByMs: (deltaMs) => set((state) => {
+    const nextClock = stepClock(state.clock, { magnitude: deltaMs, unit: 'ms' });
+    clockRuntime.setTimeMs(nextClock.currentTimeMs);
+    return syncClockToStore(state, nextClock);
+  }),
+
+  syncTimeFromRuntime: (runtimeTimeMs) => set((state) => {
+    if (!Number.isFinite(runtimeTimeMs)) {
+      return state;
+    }
+
+    if (Math.abs(runtimeTimeMs - state.clock.currentTimeMs) <= 1) {
+      return state;
+    }
+
+    return syncClockToStore(state, setClockTime(state.clock, runtimeTimeMs));
+  }),
 
   setTimeMultiplier: (multiplier) => set((state) => 
     syncClockToStore(state, applyMultiplier(state.clock, multiplier))
@@ -206,14 +224,20 @@ export const useSolarStore = create<SolarState>((set) => ({
   ),
 
   advanceTime: (deltaSeconds) => set((state) => {
-    const nextClock = tickClock(state.clock, deltaSeconds);
-    if (nextClock === state.clock) {
+    if (!state.isPlaying || state.timeAuthority !== 'user') {
       return state;
     }
+
+    const previousMs = state.clock.currentTimeMs;
+    const nextRuntimeMs = clockRuntime.tick(deltaSeconds, state.timeMultiplier);
+    if (!Number.isFinite(nextRuntimeMs) || Math.abs(nextRuntimeMs - previousMs) <= 1) {
+      return state;
+    }
+
     const expectedDeltaMs = deltaSeconds * state.clock.multiplier * 1000;
-    const actualDeltaMs = nextClock.currentTimeMs - state.clock.currentTimeMs;
+    const actualDeltaMs = nextRuntimeMs - previousMs;
     temporalMetrics.recordDrift(actualDeltaMs - expectedDeltaMs);
-    return syncClockToStore(state, nextClock);
+    return syncClockToStore(state, setClockTime(state.clock, nextRuntimeMs));
   }),
 
   appendTrajectoryData: (data) =>

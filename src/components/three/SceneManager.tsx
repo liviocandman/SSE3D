@@ -81,24 +81,34 @@ function SelectionRing({ position, radius }: { position: [number, number, number
 }
 
 function GlobalTimeController() {
-  useFrame((_, delta) => {
+  const lastSnapshotSyncSecRef = useRef(0);
+  const SNAPSHOT_SYNC_INTERVAL_SEC = 0.25;
+
+  useFrame((state, delta) => {
     const solarStore = useSolarStore.getState();
-    const storeTimeMs = solarStore.currentTime.getTime();
+    const syncSnapshot = solarStore.syncTimeFromRuntime;
 
     if (!clockRuntime.isInitialized()) {
-      clockRuntime.initialize(storeTimeMs);
+      clockRuntime.initialize(solarStore.currentTime.getTime());
       return;
     }
 
-    const runtimeTimeMs = clockRuntime.getTimeMs();
-    const shouldPullFromStore = !solarStore.isPlaying || solarStore.timeAuthority !== 'user';
-    if (shouldPullFromStore && Math.abs(storeTimeMs - runtimeTimeMs) > 1) {
-      clockRuntime.setTimeMs(storeTimeMs);
-    }
-
-    const canAdvance = solarStore.isPlaying && solarStore.timeAuthority === 'user';
+    const isPlaying = solarStore.isPlaying;
+    const auth = solarStore.timeAuthority;
+    const canAdvance = isPlaying && auth === 'user';
     if (canAdvance) {
       clockRuntime.tick(delta, solarStore.timeMultiplier);
+    }
+
+    const runtimeTimeMs = clockRuntime.getTimeMs();
+    const storeTimeMs = solarStore.currentTime.getTime();
+    const driftMs = Math.abs(runtimeTimeMs - storeTimeMs);
+    const elapsedSinceSync = state.clock.elapsedTime - lastSnapshotSyncSecRef.current;
+    const shouldSyncNow = !canAdvance || elapsedSinceSync >= SNAPSHOT_SYNC_INTERVAL_SEC;
+
+    if (driftMs > 1 && shouldSyncNow) {
+      syncSnapshot(runtimeTimeMs);
+      lastSnapshotSyncSecRef.current = state.clock.elapsedTime;
     }
   });
   return null;

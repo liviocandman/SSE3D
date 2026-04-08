@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useSolarStore } from './solarStore';
 import type { EphemerisData, EphemerisTrajectory } from '@/lib/types';
+import { clockRuntime } from '@/lib/time/clockRuntime';
 
 function makeTrajectory(startIso: string, points: number, stepHours = 6): EphemerisTrajectory[] {
   const startMs = new Date(startIso).getTime();
@@ -46,6 +47,7 @@ function setTestState(overrides: Partial<ReturnType<typeof useSolarStore.getStat
   }
   
   useSolarStore.setState(nextState);
+  clockRuntime.setTimeMs(nextState.currentTime.getTime());
 }
 
 describe('useSolarStore', () => {
