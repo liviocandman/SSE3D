@@ -31,7 +31,6 @@ export function Sun({
   const { tier } = useQualityTier();
   const camera = useThree((state) => state.camera);
   const gl = useThree((state) => state.gl);
-  const renderOrigin = useSolarStore((state) => state.renderOrigin);
 
   // Carregar Textura do Sol (KTX2 Optimized)
   const texturePath = getTexturePath(SUN_BODY_ID, tier as TextureTier);
@@ -46,6 +45,7 @@ export function Sun({
   useFrame((_, delta) => {
     if (!meshRef.current || !groupRef.current) return;
 
+    const renderOrigin = useSolarStore.getState().renderOrigin;
     toRelativeRenderUnitsInto(groupRef.current.position, absolutePositionKm, renderOrigin, KM_TO_UNIT);
 
     let targetScale;

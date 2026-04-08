@@ -10,7 +10,13 @@ import { useTrajectoryWorker } from "@/hooks/useTrajectoryWorker";
 
 import { useQualityTier } from "@/contexts/QualityTierContext";
 
-const COVERAGE_TOLERANCE_MS = 48 * 60 * 60 * 1000; // Increased to 48h to avoid flickering at segment boundaries
+const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
+const BASE_COVERAGE_TOLERANCE_MS = 6 * HOUR_MS;
+const MIN_COVERAGE_TOLERANCE_MS = 30 * MINUTE_MS;
+const MOON_MIN_COVERAGE_TOLERANCE_MS = 15 * MINUTE_MS;
+const MOON_MAX_COVERAGE_TOLERANCE_MS = 2 * HOUR_MS;
+const RAPID_MOON_IDS = new Set(["401", "402"]);
 
 // Eager load Jupiter (599) and Saturn (699) since they are the most visited and have many moons
 const CORE_PLANET_IDS = [
@@ -40,26 +46,45 @@ export function buildFetchBodyIds(activeIds: (string | null | undefined)[]): str
   return Array.from(ids);
 }
 
+function isMoonBody(bodyId: string): boolean {
+  for (const moons of Object.values(PLANET_MOONS)) {
+    if (moons.includes(bodyId)) return true;
+  }
+  return false;
+}
+
+function getCoverageToleranceMs(bodyId: string, timeMultiplier: number): number {
+  const adaptiveMs = Math.abs(timeMultiplier) * MINUTE_MS;
+  if (RAPID_MOON_IDS.has(bodyId)) {
+    return Math.max(MOON_MIN_COVERAGE_TOLERANCE_MS, Math.min(adaptiveMs, MOON_MAX_COVERAGE_TOLERANCE_MS));
+  }
+  if (isMoonBody(bodyId)) {
+    return Math.max(MOON_MIN_COVERAGE_TOLERANCE_MS, Math.min(adaptiveMs, BASE_COVERAGE_TOLERANCE_MS));
+  }
+  return Math.max(MIN_COVERAGE_TOLERANCE_MS, Math.min(adaptiveMs, BASE_COVERAGE_TOLERANCE_MS));
+}
+
+function debugTrajectoryLog(message: string): void {
+  if (process.env.NODE_ENV !== "production") {
+    console.info(message);
+  }
+}
+
 export function TrajectoryManager() {
   const { tier } = useQualityTier();
   const {
-    currentTime,
     currentDate,
     timeMultiplier,
     selectedPlanet,
     hoveredPlanetId,
-    masterTrajectorySegments,
     appendTrajectoryData,
   } = useSolarStore(
     useShallow((s) => ({
-      currentTime: s.currentTime,
       currentDate: s.currentDate,
       timeMultiplier: s.timeMultiplier,
       selectedPlanet: s.selectedPlanet,
       hoveredPlanetId: s.hoveredPlanetId,
-      masterTrajectorySegments: s.masterTrajectorySegments,
       appendTrajectoryData: s.appendTrajectoryData,
-      clearTrajectoryBuffer: s.clearTrajectoryBuffer,
     })),
   );
 
@@ -100,25 +125,20 @@ export function TrajectoryManager() {
       }
 
       loadingRef.current.add(blockCacheKey);
-      console.log(
-        `[TrajectoryManager] Worker-powered Loading block starting at ${date} (span: ${spanDays}d) for ${ids.length} bodies...`,
+      debugTrajectoryLog(
+        `[TrajectoryManager] Loading block at ${date} (span: ${spanDays}d) for ${ids.length} bodies.`,
       );
 
       try {
         const data = await fetchTrajectory(date, spanDays, ids, tier, signal);
         appendTrajectoryData(data);
-        console.log(
-          `[TrajectoryManager] Block starting at ${date} processed by worker and appended successfully.`,
-        );
+        debugTrajectoryLog(`[TrajectoryManager] Block at ${date} appended.`);
       } catch (err: unknown) {
         const error = err as Error;
         if (error.message === 'AbortError') {
-          console.log(`[TrajectoryManager] Fetch aborted for ${date}`);
+          debugTrajectoryLog(`[TrajectoryManager] Fetch aborted for ${date}`);
         } else {
-          console.error(
-            `[TrajectoryManager] Failed to fetch block at ${date}:`,
-            err,
-          );
+          console.error(`[TrajectoryManager] Failed to fetch block at ${date}:`, err);
         }
       } finally {
         const timerId = setTimeout(() => {
@@ -138,12 +158,15 @@ export function TrajectoryManager() {
 
     const debounceTimeout = setTimeout(() => {
       const bodyIds = buildFetchBodyIds([selectedPlanet?.bodyId, hoveredPlanetId]);
-      const timeMs = currentTime.getTime();
+      const state = useSolarStore.getState();
+      const timeMs = state.currentTime.getTime();
+      const segmentsByBody = state.masterTrajectorySegments;
       const { fetchSpanDays } = getDynamicBufferParams();
 
       const missingIds = bodyIds.filter((id) => {
-        const segments = masterTrajectorySegments[id] || [];
-        return !hasCoverageNearTime(segments, timeMs, COVERAGE_TOLERANCE_MS);
+        const segments = segmentsByBody[id] || [];
+        const toleranceMs = getCoverageToleranceMs(id, timeMultiplier);
+        return !hasCoverageNearTime(segments, timeMs, toleranceMs);
       });
 
       if (missingIds.length > 0) {
@@ -165,19 +188,22 @@ export function TrajectoryManager() {
     }, 300);
 
     return () => clearTimeout(debounceTimeout);
-  }, [currentDate, currentTime, selectedPlanet?.bodyId, hoveredPlanetId, masterTrajectorySegments, fetchBlock]);
+  }, [currentDate, hoveredPlanetId, selectedPlanet?.bodyId, fetchBlock, timeMultiplier]);
 
   // 1B. Target Change Fetch (IMMEDIATE)
   // Fires instantly when hovering or clicking a new planet (0ms delay).
   // Does NOT abort previous requests to avoid killing the Eager Load.
   useEffect(() => {
     const targetIds = buildFetchBodyIds([selectedPlanet?.bodyId, hoveredPlanetId]);
-    const timeMs = currentTime.getTime();
+    const state = useSolarStore.getState();
+    const timeMs = state.currentTime.getTime();
+    const segmentsByBody = state.masterTrajectorySegments;
     const { fetchSpanDays } = getDynamicBufferParams();
 
     const missingIds = targetIds.filter((id) => {
-      const segments = masterTrajectorySegments[id] || [];
-      return !hasCoverageNearTime(segments, timeMs, COVERAGE_TOLERANCE_MS);
+      const segments = segmentsByBody[id] || [];
+      const toleranceMs = getCoverageToleranceMs(id, timeMultiplier);
+      return !hasCoverageNearTime(segments, timeMs, toleranceMs);
     });
 
     if (missingIds.length > 0) {
@@ -190,31 +216,32 @@ export function TrajectoryManager() {
         setTimeout(() => loadingRef.current.delete(cacheKey), 5000);
       }
     }
-  }, [selectedPlanet?.bodyId, hoveredPlanetId, currentDate, currentTime, masterTrajectorySegments, fetchBlock]);
+  }, [selectedPlanet?.bodyId, hoveredPlanetId, currentDate, fetchBlock, timeMultiplier]);
 
   // 2. Background pagination driven by segment coverage
   useFrame(() => {
     frameCountRef.current++;
     if (frameCountRef.current % 60 !== 0) return;
 
-    const timeMs = currentTime.getTime();
+    const state = useSolarStore.getState();
+    const timeMs = state.currentTime.getTime();
     const { fetchSpanDays, thresholdDays } = getDynamicBufferParams();
 
-    const state = useSolarStore.getState();
+    const segmentsByBody = state.masterTrajectorySegments;
     const bodyIds = buildFetchBodyIds([state.selectedPlanet?.bodyId, state.hoveredPlanetId]);
 
     const fetchDates = new Set<string>();
     const missingIdsForDate: Record<string, Set<string>> = {};
 
     for (const id of bodyIds) {
-      const segments = masterTrajectorySegments[id] || [];
+      const segments = segmentsByBody[id] || [];
       const plan = computeBufferPlan({
         segments,
         timeMs,
         thresholdDays,
         fetchSpanDays,
         timeMultiplier,
-        currentDate,
+        currentDate: state.currentDate,
       });
 
       for (const date of plan.fetchDates) {

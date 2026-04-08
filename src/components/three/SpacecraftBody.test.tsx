@@ -69,9 +69,10 @@ describe('SpacecraftBody', () => {
       <SpacecraftBody
         vehicleId="orion"
         label="Orion Label"
-        position={[0, 0, 0]}
         isSelected={false}
         onClick={vi.fn()}
+        missionTrajectorySegment={null}
+        earthEphemeris={null}
       />
     );
     
@@ -88,9 +89,10 @@ describe('SpacecraftBody', () => {
       <SpacecraftBody
         vehicleId="orion"
         label="Orion Label"
-        position={[0, 0, 0]}
         isSelected={false}
         onClick={handleClick}
+        missionTrajectorySegment={null}
+        earthEphemeris={null}
       />
     );
     

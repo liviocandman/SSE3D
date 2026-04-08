@@ -1,5 +1,6 @@
 import type { EphemerisData, EphemerisTrajectory } from '../lib/types';
 import { densifyWithCatmullRom } from '../lib/catmullRom';
+import { parseTimestampMs } from '../lib/utils';
 
 /**
  * Trajectory Web Worker
@@ -25,8 +26,8 @@ function normalizePoints(points: EphemerisTrajectory[]): EphemerisTrajectory[] {
   }
   
   return Array.from(unique.values()).sort((a, b) => {
-    const t1 = new Date(a.timestamp.includes('Z') ? a.timestamp : `${a.timestamp}Z`).getTime();
-    const t2 = new Date(b.timestamp.includes('Z') ? b.timestamp : `${b.timestamp}Z`).getTime();
+    const t1 = parseTimestampMs(a.timestamp);
+    const t2 = parseTimestampMs(b.timestamp);
     return t1 - t2;
   });
 }
@@ -85,9 +86,7 @@ self.onmessage = async (e: MessageEvent) => {
       });
     } catch (err: unknown) {
       const error = err as Error;
-      if (error.name === 'AbortError') {
-        console.log(`[Worker] Job ${jobId} aborted`);
-      } else {
+      if (error.name !== 'AbortError') {
         self.postMessage({
           type: 'ERROR',
           jobId,

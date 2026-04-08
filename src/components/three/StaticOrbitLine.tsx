@@ -25,6 +25,7 @@ const StaticOrbitLine: React.FC<StaticOrbitLineProps> = ({
   lineWidth = 0.5,
 }) => {
   const groupRef = React.useRef<THREE.Group>(null);
+  const lastRenderOriginRef = React.useRef<THREE.Vector3 | null>(null);
 
   const points = useMemo(() => {
     const converted = trajectory.map((p) => new THREE.Vector3(
@@ -44,10 +45,19 @@ const StaticOrbitLine: React.FC<StaticOrbitLineProps> = ({
   useFrame(() => {
     if (!groupRef.current) return;
     const renderOrigin = useSolarStore.getState().renderOrigin;
+
+    if (!lastRenderOriginRef.current) {
+      lastRenderOriginRef.current = new THREE.Vector3(renderOrigin.x, renderOrigin.y, renderOrigin.z);
+    } else if (
+      Math.abs(lastRenderOriginRef.current.x - renderOrigin.x) < 1e-9 &&
+      Math.abs(lastRenderOriginRef.current.y - renderOrigin.y) < 1e-9 &&
+      Math.abs(lastRenderOriginRef.current.z - renderOrigin.z) < 1e-9
+    ) {
+      return;
+    } else {
+      lastRenderOriginRef.current.set(renderOrigin.x, renderOrigin.y, renderOrigin.z);
+    }
     
-    // Position the whole group relative to the origin.
-    // Since points are already in absolute render units (scaled KM),
-    // we just need to shift the group by -renderOrigin in render units.
     toRelativeRenderUnitsInto(
       groupRef.current.position,
       { x: 0, y: 0, z: 0 },

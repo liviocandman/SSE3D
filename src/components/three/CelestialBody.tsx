@@ -76,7 +76,7 @@ export function CelestialBody({
   }) as THREE.Texture;
 
 
-  const [fontSize, setFontSize] = useState(5);
+  const labelRef = useRef<any>(null);
   const [isHovered, setIsHovered] = useState(false);
   const { camera } = useThree();
 
@@ -212,18 +212,21 @@ export function CelestialBody({
     // Real distance needed for label size and marker opacity (calculated only when throttled)
     const distance = Math.sqrt(distanceSq);
 
-    // --- Adaptive Label Font Size ---
-    let newFontSize: number;
-    if (distance < 100) {
-      newFontSize = 0.5 + (distance / 100) * 1;
-    } else if (distance < 6000) {
-      newFontSize = 1.5 + ((distance - 100) / 700) * 6.5;
-    } else {
-      newFontSize = 8 + Math.min(192, ((distance - 6000) / 4200) * 192);
-    }
-    newFontSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, newFontSize));
-    if (Math.abs(newFontSize - fontSize) > 0.5) {
-      setFontSize(newFontSize);
+    // --- Adaptive Label Font Size (via scale to avoid re-renders) ---
+    if (labelRef.current) {
+      let newFontSize: number;
+      if (distance < 100) {
+        newFontSize = 0.5 + (distance / 100) * 1;
+      } else if (distance < 6000) {
+        newFontSize = 1.5 + ((distance - 100) / 700) * 6.5;
+      } else {
+        newFontSize = 8 + Math.min(192, ((distance - 6000) / 4200) * 192);
+      }
+      newFontSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, newFontSize));
+      
+      // Fixed base fontSize is 10, so we use scale to reach newFontSize
+      const s = newFontSize / 10;
+      labelRef.current.scale.set(s, s, s);
     }
   });
 
@@ -325,12 +328,13 @@ export function CelestialBody({
       {/* 3D Text Label - white and above planet on hover */}
       <Billboard follow lockX={false} lockY={false} lockZ={false}>
         <Text
+          ref={labelRef}
           position={[0, labelYPosition, 0]}
-          fontSize={fontSize}
+          fontSize={10}
           color={labelColor}
           anchorX="center"
           anchorY={labelAnchorY as "top" | "bottom"}
-          outlineWidth={fontSize * 0.04}
+          outlineWidth={0.4}
           outlineColor="#000000"
           onClick={handleClick}
           onDoubleClick={handleDoubleClick}

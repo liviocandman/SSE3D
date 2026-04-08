@@ -118,3 +118,15 @@ if (typeof global.Response === 'undefined') {
   // @ts-expect-error - polyfilling global
   global.Response = class {};
 }
+
+// Mock Web Worker
+if (typeof global.Worker === 'undefined') {
+  // @ts-expect-error - polyfilling global
+  global.Worker = class {
+    onmessage: ((ev: MessageEvent) => any) | null = null;
+    postMessage(message: any) {}
+    terminate() {}
+    addEventListener() {}
+    removeEventListener() {}
+  };
+}

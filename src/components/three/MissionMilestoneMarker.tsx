@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text, Line } from '@react-three/drei';
 import * as THREE from 'three';
@@ -22,37 +22,41 @@ export const MissionMilestoneMarker: React.FC<MissionMilestoneMarkerProps> = ({
   const textRef = useRef<{ fillOpacity: number } | null>(null);
   const diamondRef = useRef<THREE.Mesh>(null);
   const worldPositionRef = useRef(new THREE.Vector3());
+  const frameCounterRef = useRef(0);
 
   // Internal values to avoid React state updates in useFrame
   const opacityRef = useRef(0);
+  const targetOpacityRef = useRef(0);
+
+  const scaledPosition = useMemo(() => ({
+    x: position[0] * KM_TO_UNIT,
+    y: position[1] * KM_TO_UNIT,
+    z: position[2] * KM_TO_UNIT,
+  }), [position]);
 
   useFrame((state) => {
     if (!groupRef.current) return;
 
-    // Position is Earth-relative KM from SceneManager
-    // Since this component is a child of CelestialBody (Earth), 
-    // it is already in the relative frame. 
-    // We only need to scale KM to render units.
-    const relX = position[0] * KM_TO_UNIT;
-    const relY = position[1] * KM_TO_UNIT;
-    const relZ = position[2] * KM_TO_UNIT;
-
     const t = state.clock.getElapsedTime();
 
     // Apply relative position + breathing
-    groupRef.current.position.set(relX, relY + Math.sin(t * 2) * 0.001, relZ);
+    groupRef.current.position.set(scaledPosition.x, scaledPosition.y + Math.sin(t * 2) * 0.001, scaledPosition.z);
 
-    const worldPos = groupRef.current.getWorldPosition(worldPositionRef.current);
-    const dist = state.camera.position.distanceTo(worldPos);
-    const fadeStart = 0.8;
-    const fadeEnd = 0.2;
-    let targetOpacity = 0;
-    if (dist < fadeStart) {
-      targetOpacity = THREE.MathUtils.smoothstep(dist, fadeStart, fadeEnd) * initialOpacity;
+    frameCounterRef.current += 1;
+    if (frameCounterRef.current % 4 === 0) {
+      const worldPos = groupRef.current.getWorldPosition(worldPositionRef.current);
+      const dist = state.camera.position.distanceTo(worldPos);
+      const fadeStart = 0.8;
+      const fadeEnd = 0.2;
+      let targetOpacity = 0;
+      if (dist < fadeStart) {
+        targetOpacity = THREE.MathUtils.smoothstep(dist, fadeStart, fadeEnd) * initialOpacity;
+      }
+      targetOpacityRef.current = targetOpacity;
     }
 
     // Smooth lerp for opacity
-    opacityRef.current = THREE.MathUtils.lerp(opacityRef.current, targetOpacity, 0.1);
+    opacityRef.current = THREE.MathUtils.lerp(opacityRef.current, targetOpacityRef.current, 0.1);
 
     // 3. Direct Material/Prop updates 
     const currentOp = opacityRef.current;

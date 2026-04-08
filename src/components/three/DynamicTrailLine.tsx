@@ -161,8 +161,6 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
       if (geometry.attributes.instanceStart) geometry.attributes.instanceStart.needsUpdate = true;
       if (geometry.attributes.instanceEnd) geometry.attributes.instanceEnd.needsUpdate = true;
     }
-    
-    lineRef.current.computeLineDistances();
   });
 
   return (

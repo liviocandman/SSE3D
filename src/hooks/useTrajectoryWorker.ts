@@ -55,18 +55,33 @@ export function useTrajectoryWorker() {
       const jobId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
       return new Promise((resolve, reject) => {
-        pendingRequests.current.set(jobId, { resolve, reject });
+        const cleanup = () => {
+          if (signal && abortHandler) {
+            signal.removeEventListener("abort", abortHandler);
+          }
+          pendingRequests.current.delete(jobId);
+        };
+
+        const abortHandler = signal ? () => {
+          workerRef.current?.postMessage({ type: "CANCEL", jobId });
+          reject(new Error("AbortError"));
+          cleanup();
+        } : null;
+
+        pendingRequests.current.set(jobId, { 
+          resolve: (data) => {
+            resolve(data);
+            cleanup();
+          }, 
+          reject: (err) => {
+            reject(err);
+            cleanup();
+          } 
+        });
 
         // Handle external abort signal
-        if (signal) {
-          signal.addEventListener("abort", () => {
-            workerRef.current?.postMessage({ type: "CANCEL", jobId });
-            const req = pendingRequests.current.get(jobId);
-            if (req) {
-              req.reject(new Error("AbortError"));
-              pendingRequests.current.delete(jobId);
-            }
-          });
+        if (signal && abortHandler) {
+          signal.addEventListener("abort", abortHandler);
         }
 
         workerRef.current?.postMessage({

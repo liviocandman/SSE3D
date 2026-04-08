@@ -2,22 +2,26 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
-import { toRelativeRenderUnitsInto } from '@/lib/renderFrame';
-import { KM_TO_UNIT } from '@/lib/scales';
+import { KM_TO_UNIT, scalePositionFromKm } from '@/lib/scales';
 import { OrionProxyModel } from './OrionProxyModel';
 import type { MissionQuaternion } from '@/lib/missionTypes';
+import { MissionPhase } from '@/lib/missionTypes';
 import { ORION_MESH_TO_BODY_QUATERNION } from '@/lib/missionAttitudeCalibration';
+import { useSolarStore } from '@/store/solarStore';
+import { useMissionStore } from '@/store/missionStore';
+import { sampleTrajectoryAtTime, type TrajectorySegment } from '@/lib/trajectoryEngine';
+import type { EphemerisData } from '@/lib/types';
 
 export interface SpacecraftBodyProps {
   vehicleId: string;
   label: string;
-  position: [number, number, number];
-  fallbackHeading?: [number, number, number] | null;
   isSelected: boolean;
   onClick: (id: string) => void;
   onDoubleClick?: (id: string) => void;
   attitudeQuaternion?: MissionQuaternion;
   useAttitude?: boolean; // Story 8.3: Feature flag
+  missionTrajectorySegment: TrajectorySegment | null;
+  earthEphemeris: EphemerisData | null;
 }
 
 export const SPACECRAFT_SELECTION_RADIUS_UNITS = 0.0005;
@@ -37,6 +41,8 @@ const PROXY_TARGET_HEIGHT_UNITS = 0.0001;
 const DETAILED_TARGET_HEIGHT_UNITS = 0.00012;
 const SPACECRAFT_POSITION_DAMPING = 16;
 const SPACECRAFT_ATTITUDE_DAMPING = 12;
+const LOD_UPDATE_INTERVAL_FRAMES = 3;
+const AUTO_FOCUS_CHECK_INTERVAL_FRAMES = 6;
 
 const LazyOrionDetailedModel = lazy(async () => {
   const orionDetailedModule = await import('./OrionDetailedModel');
@@ -78,16 +84,20 @@ function buildProgradeQuaternion(direction: THREE.Vector3) {
   return new THREE.Quaternion().setFromRotationMatrix(basis);
 }
 
+function normalizeKm(value: number): number {
+  return Math.round(value * 1e9) / 1e9;
+}
+
 export function SpacecraftBody({
   vehicleId,
   label,
-  position,
-  fallbackHeading = null,
   isSelected,
   onClick,
   onDoubleClick,
   attitudeQuaternion,
   useAttitude = false,
+  missionTrajectorySegment,
+  earthEphemeris,
 }: SpacecraftBodyProps) {
   const groupRef = useRef<THREE.Group>(null);
   const markerRef = useRef<THREE.Sprite>(null);
@@ -95,11 +105,12 @@ export function SpacecraftBody({
   const proxyRef = useRef<THREE.Group>(null);
   const detailedRef = useRef<THREE.Group>(null);
   const worldPositionRef = useRef(new THREE.Vector3());
+  const travelDirectionRef = useRef(new THREE.Vector3());
   const previousLocalPositionRef = useRef<THREE.Vector3 | null>(null);
   const progradeQuaternionRef = useRef(new THREE.Quaternion());
   const progradeDirectionRef = useRef(new THREE.Vector3(1, 0, 0));
   const localPositionRef = useRef(new THREE.Vector3());
-  const targetLocalPositionRef = useRef(new THREE.Vector3(position[0], position[1], position[2]));
+  const targetLocalPositionRef = useRef(new THREE.Vector3(0, 0, 0));
   const positionInitializedRef = useRef(false);
   const targetAttitudeQuaternionRef = useRef(new THREE.Quaternion());
   const lodModeRef = useRef<SpacecraftLodMode>('marker');
@@ -111,6 +122,25 @@ export function SpacecraftBody({
     () => new THREE.Quaternion().copy(ORION_MESH_TO_BODY_QUATERNION),
     []
   );
+
+  // --- Auto-focus State ---
+  const armedAutoFocusEventsRef = useRef<Set<string>>(new Set());
+  const lodFrameCounterRef = useRef(0);
+  const autoFocusFrameCounterRef = useRef(0);
+  const lastDistanceRef = useRef(Number.POSITIVE_INFINITY);
+  const setTravelTarget = useSolarStore(state => state.setTravelTarget);
+  const missionEvents = useMissionStore(state => state.missionEvents);
+  const autoFocusEvents = useMissionStore(state => state.autoFocusEvents);
+  const missionTrajectory = useMissionStore(state => state.missionTrajectory);
+
+  // Pre-calculate event timestamps to avoid new Date() in useFrame
+  const eventsWithTime = useMemo(() => {
+    if (!missionEvents?.events) return [];
+    return missionEvents.events.map(ev => ({
+      ...ev,
+      timeMs: new Date(ev.timestamp).getTime()
+    }));
+  }, [missionEvents]);
 
   const markerTexture = useMemo(() => createCircleTexture('#d0dadfff'), []);
   const handleDetailedReady = useCallback(() => {
@@ -124,28 +154,52 @@ export function SpacecraftBody({
     }
   }, [isSelected]);
 
-  useEffect(() => {
-    targetLocalPositionRef.current.set(position[0], position[1], position[2]);
-    const group = groupRef.current as (THREE.Group & { position?: THREE.Vector3 }) | null;
-    if (group && group.position?.copy && !positionInitializedRef.current) {
-      group.position.copy(targetLocalPositionRef.current);
-      positionInitializedRef.current = true;
-    }
-  }, [position]);
-
   useFrame((state, delta) => {
     if (!groupRef.current || !markerRef.current || !visualRootRef.current || !proxyRef.current || !detailedRef.current) {
       return;
     }
 
+    const solarState = useSolarStore.getState();
+    const currentTime = solarState.currentTime;
+    const simTimeMs = currentTime.getTime();
+
+    // 1. Sample position from trajectory segment
+    let sampledPosition: [number, number, number] | null = null;
+    if (missionTrajectorySegment) {
+      const sampled = sampleTrajectoryAtTime([missionTrajectorySegment], simTimeMs);
+      if (sampled) {
+        const scaled = scalePositionFromKm(
+          normalizeKm(sampled.position.x),
+          normalizeKm(sampled.position.y),
+          normalizeKm(sampled.position.z)
+        );
+        sampledPosition = scaled;
+      }
+    }
+
+    if (sampledPosition) {
+      targetLocalPositionRef.current.set(sampledPosition[0], sampledPosition[1], sampledPosition[2]);
+      if (!positionInitializedRef.current) {
+        groupRef.current.position.copy(targetLocalPositionRef.current);
+        positionInitializedRef.current = true;
+      }
+    }
+
+    // 2. Position Damping
     const positionLerpFactor = 1 - Math.exp(-SPACECRAFT_POSITION_DAMPING * delta);
     groupRef.current.position.lerp(targetLocalPositionRef.current, positionLerpFactor);
 
-    const worldPosition = groupRef.current.getWorldPosition(worldPositionRef.current);
-    const dist = state.camera.position.distanceTo(worldPosition);
+    lodFrameCounterRef.current += 1;
+    if (lodFrameCounterRef.current >= LOD_UPDATE_INTERVAL_FRAMES) {
+      lodFrameCounterRef.current = 0;
+      const worldPosition = groupRef.current.getWorldPosition(worldPositionRef.current);
+      lastDistanceRef.current = state.camera.position.distanceTo(worldPosition);
+    }
+    const dist = lastDistanceRef.current;
     const currentLod = lodModeRef.current;
     let nextLod: SpacecraftLodMode = currentLod;
 
+    // 3. LOD Switching
     if (!detailedLoadRequestedRef.current && (isSelected || dist <= SPACECRAFT_DETAILED_PRELOAD_DISTANCE_UNITS)) {
       detailedLoadRequestedRef.current = true;
       setShouldLoadDetailed(true);
@@ -197,6 +251,7 @@ export function SpacecraftBody({
     );
     markerRef.current.scale.set(markerScale, markerScale, 1);
 
+    // 4. Attitude and Heading
     if (visualRootRef.current) {
       if (useAttitude && attitudeQuaternion) {
         targetAttitudeQuaternionRef.current
@@ -211,16 +266,46 @@ export function SpacecraftBody({
       } else {
         let headingResolved = false;
 
-        if (fallbackHeading) {
-          const trajectoryHeading = new THREE.Vector3(
-            fallbackHeading[0],
-            fallbackHeading[1],
-            fallbackHeading[2]
-          );
-          if (trajectoryHeading.lengthSq() > 1e-18) {
-            progradeDirectionRef.current.copy(trajectoryHeading).normalize();
-            progradeQuaternionRef.current.copy(buildProgradeQuaternion(progradeDirectionRef.current));
-            headingResolved = true;
+        // Try to derive heading from trajectory
+        if (missionTrajectory) {
+          const currentPosKm = {
+            x: groupRef.current.position.x / KM_TO_UNIT,
+            y: groupRef.current.position.y / KM_TO_UNIT,
+            z: groupRef.current.position.z / KM_TO_UNIT,
+          };
+          const EPS = 1e-12;
+
+          if (missionTrajectory.planned?.length) {
+            const candidates = missionTrajectory.planned.slice(0, 3);
+            for (const candidate of candidates) {
+              const heading = new THREE.Vector3(
+                candidate.position.x - currentPosKm.x,
+                candidate.position.y - currentPosKm.y,
+                candidate.position.z - currentPosKm.z
+              );
+              if (heading.lengthSq() > EPS) {
+                heading.normalize();
+                progradeDirectionRef.current.copy(heading);
+                progradeQuaternionRef.current.copy(buildProgradeQuaternion(progradeDirectionRef.current));
+                headingResolved = true;
+                break;
+              }
+            }
+          }
+
+          if (!headingResolved && missionTrajectory.past?.length) {
+            const lastPast = missionTrajectory.past[missionTrajectory.past.length - 1];
+            const heading = new THREE.Vector3(
+              currentPosKm.x - lastPast.position.x,
+              currentPosKm.y - lastPast.position.y,
+              currentPosKm.z - lastPast.position.z
+            );
+            if (heading.lengthSq() > EPS) {
+              heading.normalize();
+              progradeDirectionRef.current.copy(heading);
+              progradeQuaternionRef.current.copy(buildProgradeQuaternion(progradeDirectionRef.current));
+              headingResolved = true;
+            }
           }
         }
 
@@ -229,7 +314,7 @@ export function SpacecraftBody({
           const previousLocalPosition = previousLocalPositionRef.current;
 
           if (previousLocalPosition) {
-            const travelDirection = currentLocalPosition.clone().sub(previousLocalPosition);
+            const travelDirection = travelDirectionRef.current.copy(currentLocalPosition).sub(previousLocalPosition);
             if (travelDirection.lengthSq() > 1e-18) {
               progradeDirectionRef.current.copy(travelDirection).normalize();
               progradeQuaternionRef.current.copy(buildProgradeQuaternion(progradeDirectionRef.current));
@@ -249,7 +334,70 @@ export function SpacecraftBody({
     } else {
       previousLocalPositionRef.current = groupRef.current.position.clone();
     }
+
+    // 5. Auto-focus Logic
+    autoFocusFrameCounterRef.current += 1;
+    if (
+      autoFocusEvents &&
+      eventsWithTime.length > 0 &&
+      earthEphemeris &&
+      autoFocusFrameCounterRef.current >= AUTO_FOCUS_CHECK_INTERVAL_FRAMES
+    ) {
+      autoFocusFrameCounterRef.current = 0;
+      const majorPhases = [
+        MissionPhase.EARTH_DEPARTURE,
+        MissionPhase.LUNAR_FLYBY,
+        MissionPhase.REENTRY
+      ];
+
+      // 1 minute window for auto-focus trigger
+      const focusWindowMs = 60 * 1000;
+
+      for (const ev of eventsWithTime) {
+        if (!majorPhases.includes(ev.phase as MissionPhase)) continue;
+
+        const evTime = ev.timeMs;
+        if (!Number.isFinite(evTime)) continue;
+        const diff = Math.abs(simTimeMs - evTime);
+        const isWithinWindow = diff < focusWindowMs;
+
+        if (!isWithinWindow) {
+          armedAutoFocusEventsRef.current.delete(ev.id);
+          continue;
+        }
+
+        if (!armedAutoFocusEventsRef.current.has(ev.id)) {
+          // Trigger non-intrusive focus
+          const spacecraftWorldPos = {
+            x: normalizeKm(earthEphemeris.position.x + (groupRef.current.position.x / KM_TO_UNIT)),
+            y: normalizeKm(earthEphemeris.position.y + (groupRef.current.position.y / KM_TO_UNIT)),
+            z: normalizeKm(earthEphemeris.position.z + (groupRef.current.position.z / KM_TO_UNIT)),
+          };
+          
+          setTravelTarget(spacecraftWorldPos, SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS);
+          armedAutoFocusEventsRef.current.add(ev.id);
+          break;
+        }
+      }
+    }
   });
+
+  const handleInteraction = (type: 'click' | 'doubleClick') => {
+    onClick(vehicleId);
+    if (type === 'doubleClick' && onDoubleClick) {
+      onDoubleClick(vehicleId);
+    }
+
+    if (earthEphemeris && groupRef.current) {
+      const spacecraftWorldPos = {
+        x: normalizeKm(earthEphemeris.position.x + (groupRef.current.position.x / KM_TO_UNIT)),
+        y: normalizeKm(earthEphemeris.position.y + (groupRef.current.position.y / KM_TO_UNIT)),
+        z: normalizeKm(earthEphemeris.position.z + (groupRef.current.position.z / KM_TO_UNIT)),
+      };
+      const radius = type === 'click' ? SPACECRAFT_SELECTION_RADIUS_UNITS : SPACECRAFT_CLOSEUP_RADIUS_UNITS;
+      setTravelTarget(spacecraftWorldPos, radius);
+    }
+  };
 
   return (
     <group
@@ -257,11 +405,11 @@ export function SpacecraftBody({
       name={label}
       onClick={(e) => {
         e.stopPropagation();
-        onClick(vehicleId);
+        handleInteraction('click');
       }}
       onDoubleClick={(e) => {
         e.stopPropagation();
-        onDoubleClick?.(vehicleId);
+        handleInteraction('doubleClick');
       }}
     >
       {/* Marker Mode */}

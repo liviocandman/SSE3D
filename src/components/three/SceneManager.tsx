@@ -23,6 +23,7 @@ import {
   TextureTier,
 } from '@/lib/textureConfig';
 import { getRadius, scalePositionFromKm, KM_TO_UNIT } from '@/lib/scales';
+import { parseTimestampMs } from '@/lib/utils';
 import { CameraController } from '@/hooks/useCameraAnimation';
 import * as THREE from 'three';
 import { useSolarStore } from '@/store/solarStore';
@@ -121,11 +122,6 @@ const ALL_PLANET_IDS = [
 const TRAIL_GRACE_MS = 12 * 60 * 60 * 1000;
 
 
-function parseTimestampMs(timestamp: string): number {
-  const utcString = timestamp.includes('Z') ? timestamp : `${timestamp}Z`;
-  return new Date(utcString).getTime();
-}
-
 function normalizeKm(value: number): number {
   return Math.round(value * 1e9) / 1e9;
 }
@@ -214,7 +210,6 @@ export function SceneContent({
   );
 
   const {
-    currentTime,
     selectedPlanet,
     setSelectedPlanet,
     viewMode,
@@ -228,7 +223,6 @@ export function SceneContent({
     appendFullOrbits,
   } = useSolarStore(
     useShallow((state) => ({
-      currentTime: state.currentTime,
       selectedPlanet: state.selectedPlanet,
       setSelectedPlanet: state.setSelectedPlanet,
       viewMode: state.viewMode,
@@ -432,134 +426,7 @@ export function SceneContent({
     );
   }, [missionTrajectory]);
 
-  const spacecraftLocalPosition = useMemo<[number, number, number] | null>(() => {
-    if (!missionState?.sceneCoordinates && !missionTrajectorySegment) return null;
-
-    const sampledSceneCoordinates = (() => {
-      if (!missionTrajectorySegment) return missionState?.sceneCoordinates ?? null;
-      const sampled = sampleTrajectoryAtTime([missionTrajectorySegment], currentTime.getTime());
-      if (!sampled) return missionState?.sceneCoordinates ?? null;
-
-      return {
-        x: normalizeKm(sampled.position.x),
-        y: normalizeKm(sampled.position.y),
-        z: normalizeKm(sampled.position.z),
-      };
-    })();
-
-    if (!sampledSceneCoordinates) return null;
-
-    return scalePositionFromKm(
-      sampledSceneCoordinates.x,
-      sampledSceneCoordinates.y,
-      sampledSceneCoordinates.z
-    );
-  }, [missionState?.sceneCoordinates, missionTrajectorySegment, currentTime]);
-
-  const spacecraftFallbackHeading = useMemo<[number, number, number] | null>(() => {
-    if (!spacecraftLocalPosition) return null;
-
-    const current = new THREE.Vector3(
-      spacecraftLocalPosition[0] / KM_TO_UNIT,
-      spacecraftLocalPosition[1] / KM_TO_UNIT,
-      spacecraftLocalPosition[2] / KM_TO_UNIT
-    );
-    const EPS = 1e-12;
-
-    if (missionTrajectory?.planned?.length) {
-      const candidates = missionTrajectory.planned.slice(0, 3);
-      for (const candidate of candidates) {
-        const heading = new THREE.Vector3(
-          candidate.position.x - current.x,
-          candidate.position.y - current.y,
-          candidate.position.z - current.z
-        );
-        if (heading.lengthSq() > EPS) {
-          heading.normalize();
-          return [heading.x, heading.y, heading.z];
-        }
-      }
-    }
-
-    if (missionTrajectory?.past?.length) {
-      const lastPast = missionTrajectory.past[missionTrajectory.past.length - 1];
-      const heading = new THREE.Vector3(
-        current.x - lastPast.position.x,
-        current.y - lastPast.position.y,
-        current.z - lastPast.position.z
-      );
-      if (heading.lengthSq() > EPS) {
-        heading.normalize();
-        return [heading.x, heading.y, heading.z];
-      }
-    }
-
-    if (missionState?.velocity) {
-      const sceneVelocityHeading = new THREE.Vector3(
-        missionState.velocity.x,
-        missionState.velocity.z,
-        -missionState.velocity.y
-      );
-      if (sceneVelocityHeading.lengthSq() > EPS) {
-        sceneVelocityHeading.normalize();
-        return [sceneVelocityHeading.x, sceneVelocityHeading.y, sceneVelocityHeading.z];
-      }
-    }
-
-    return null;
-  }, [spacecraftLocalPosition, missionState?.velocity, missionTrajectory]);
-
-  const spacecraftWorldPosition = useMemo(() => {
-    if (!earthEphemeris || !spacecraftLocalPosition) return null;
-
-    return {
-      x: normalizeKm(earthEphemeris.position.x + (spacecraftLocalPosition[0] / KM_TO_UNIT)),
-      y: normalizeKm(earthEphemeris.position.y + (spacecraftLocalPosition[1] / KM_TO_UNIT)),
-      z: normalizeKm(earthEphemeris.position.z + (spacecraftLocalPosition[2] / KM_TO_UNIT)),
-    };
-  }, [earthEphemeris, spacecraftLocalPosition]);
-
   const cameraTargetId = selectedPlanet?.bodyId || (isEarthMissionContextActive ? 'Orion' : undefined);
-
-  // --- Guided Event Camera ---
-  const armedAutoFocusEventsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!autoFocusEvents || !missionEvents?.events || !spacecraftWorldPosition || !isEarthMissionContextActive) return;
-
-    const majorPhases = [
-      MissionPhase.EARTH_DEPARTURE,
-      MissionPhase.LUNAR_FLYBY,
-      MissionPhase.REENTRY
-    ];
-
-    const simTime = currentTime.getTime();
-    // 1 minute window for auto-focus trigger
-    const focusWindowMs = 60 * 1000;
-
-    for (const ev of missionEvents.events) {
-      if (!majorPhases.includes(ev.phase)) continue;
-
-      const evTime = new Date(ev.timestamp).getTime();
-      if (!Number.isFinite(evTime)) continue;
-      const diff = Math.abs(simTime - evTime);
-      const isWithinWindow = diff < focusWindowMs;
-
-      if (!isWithinWindow) {
-        armedAutoFocusEventsRef.current.delete(ev.id);
-        continue;
-      }
-
-      if (!armedAutoFocusEventsRef.current.has(ev.id)) {
-        // Trigger non-intrusive focus
-        // spacecraftWorldPosition is now Absolute KM
-        setTravelTarget(spacecraftWorldPosition, SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS);
-        armedAutoFocusEventsRef.current.add(ev.id);
-
-        console.info(`[Camera] Auto-focus triggered for mission event: ${ev.name}`);
-        break;
-      }
-    }
-  }, [missionEvents, currentTime, autoFocusEvents, spacecraftWorldPosition, isEarthMissionContextActive, setTravelTarget]);
 
   // --- Event Anchor Resolution ---
   const missionMilestones = useMemo(() => {
@@ -718,34 +585,26 @@ export function SceneContent({
                   radius={selectedPlanetData.radius}
                 />
               )}
-              {planet.bodyId === BODY_IDS.EARTH && missionState && spacecraftLocalPosition && isEarthMissionContextActive && (
+              {planet.bodyId === BODY_IDS.EARTH && missionState && isEarthMissionContextActive && (
                 <>
                   <SpacecraftBody
                     vehicleId={missionState.vehicleId}
                     label={missionState.vehicleId === 'orion' ? 'Orion' : missionState.vehicleId.toUpperCase()}
-                    position={spacecraftLocalPosition}
-                    fallbackHeading={spacecraftFallbackHeading}
                     isSelected={selectedMissionTargetId === missionState.vehicleId}
                     attitudeQuaternion={missionState.attitudeQuaternion}
+                    missionTrajectorySegment={missionTrajectorySegment}
+                    earthEphemeris={earthEphemeris}
                     onClick={(id) => {
                       if (earthSelectionContext) {
                         setSelectedPlanet(earthSelectionContext);
                       }
                       setSelectedMissionTargetId(id);
-
-                      if (spacecraftWorldPosition) {
-                        setTravelTarget(spacecraftWorldPosition, SPACECRAFT_SELECTION_RADIUS_UNITS);
-                      }
                     }}
                     onDoubleClick={(id) => {
                       if (earthSelectionContext) {
                         setSelectedPlanet(earthSelectionContext);
                       }
                       setSelectedMissionTargetId(id);
-
-                      if (spacecraftWorldPosition) {
-                        setTravelTarget(spacecraftWorldPosition, SPACECRAFT_CLOSEUP_RADIUS_UNITS);
-                      }
                     }}
                     useAttitude={
                       MISSION_CONFIG.ENABLE_ATTITUDE &&
@@ -759,12 +618,8 @@ export function SceneContent({
                   {missionTrajectory && (
                     <MissionTrajectoryLine
                       past={missionTrajectory.past}
-                      current={[
-                        spacecraftLocalPosition[0] / KM_TO_UNIT,
-                        spacecraftLocalPosition[1] / KM_TO_UNIT,
-                        spacecraftLocalPosition[2] / KM_TO_UNIT
-                      ]}
                       planned={missionTrajectory.planned}
+                      missionTrajectorySegment={missionTrajectorySegment}
                       smoothing={false}
                     />
                   )}
