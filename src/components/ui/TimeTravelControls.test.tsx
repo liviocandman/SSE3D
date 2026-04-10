@@ -19,16 +19,16 @@ const { solarState, missionState } = vi.hoisted(() => {
       currentTime: new Date('2026-03-26T00:00:00.000Z'),
       timeMultiplier: 60,
       isPlaying: false,
-      setIsPlaying: vi.fn(),
-      setCurrentDate: vi.fn(),
-      setCurrentTime: vi.fn(),
-      stepCurrentTimeByMs: vi.fn(),
-      setTimeAuthority: vi.fn(),
+      togglePlaybackIntent: vi.fn(),
+      stepByMsIntent: vi.fn(),
+      jumpToDateUtcIntent: vi.fn(),
+      goLiveIntent: vi.fn(),
+      resetToAnchorIntent: vi.fn(),
       setTimeMultiplier: vi.fn(),
     },
     missionState: {
       isLive: false,
-      liveTimestamp: '2026-04-04T12:00:00Z',
+      liveTimestamp: '2026-04-04T12:00:00Z' as string | null,
       setIsLive: vi.fn(),
     },
   };
@@ -68,10 +68,8 @@ describe('TimeTravelControls', () => {
     const liveButton = screen.getByText('Live');
     fireEvent.click(liveButton);
 
-    expect(solarState.setIsPlaying).toHaveBeenCalledWith(false);
-    expect(solarState.setTimeAuthority).toHaveBeenCalledWith('mission_live');
+    expect(solarState.goLiveIntent).toHaveBeenCalledWith('2026-04-04T12:00:00Z');
     expect(missionState.setIsLive).toHaveBeenCalledWith(true);
-    expect(solarState.setCurrentTime).toHaveBeenCalledWith(new Date('2026-04-04T12:00:00Z'));
   });
 
   it('steps time backward with Back button', () => {
@@ -79,9 +77,7 @@ describe('TimeTravelControls', () => {
     const backButton = screen.getByTitle('Back 15m');
     fireEvent.click(backButton);
 
-    expect(solarState.setTimeAuthority).toHaveBeenCalledWith('user');
-    expect(solarState.setIsPlaying).toHaveBeenCalledWith(false);
-    expect(solarState.stepCurrentTimeByMs).toHaveBeenCalledWith(-900000);
+    expect(solarState.stepByMsIntent).toHaveBeenCalledWith(-900000);
   });
 
   it('steps time forward with Forward button', () => {
@@ -89,9 +85,7 @@ describe('TimeTravelControls', () => {
     const forwardButton = screen.getByTitle('Forward 15m');
     fireEvent.click(forwardButton);
 
-    expect(solarState.setTimeAuthority).toHaveBeenCalledWith('user');
-    expect(solarState.setIsPlaying).toHaveBeenCalledWith(false);
-    expect(solarState.stepCurrentTimeByMs).toHaveBeenCalledWith(900000);
+    expect(solarState.stepByMsIntent).toHaveBeenCalledWith(900000);
   });
 
   it('exits live mode when manual time travel is triggered (Play)', () => {
@@ -103,7 +97,7 @@ describe('TimeTravelControls', () => {
     fireEvent.click(playButton);
 
     expect(missionState.setIsLive).toHaveBeenCalledWith(false);
-    expect(solarState.setIsPlaying).toHaveBeenCalled();
+    expect(solarState.togglePlaybackIntent).toHaveBeenCalled();
   });
 
   it('exits live mode when jumping to a date', () => {
@@ -115,7 +109,7 @@ describe('TimeTravelControls', () => {
     fireEvent.click(jumpButton);
 
     expect(missionState.setIsLive).toHaveBeenCalledWith(false);
-    expect(solarState.setCurrentDate).toHaveBeenCalled();
+    expect(solarState.jumpToDateUtcIntent).toHaveBeenCalledWith('2026-03-26');
   });
 
   it('updates playback speed from the selector', () => {
@@ -133,24 +127,19 @@ describe('TimeTravelControls', () => {
     const resetButton = screen.getByTitle('Reset to Today');
     fireEvent.click(resetButton);
 
-    expect(solarState.setIsPlaying).toHaveBeenCalledWith(false);
-    expect(solarState.setCurrentTime).toHaveBeenCalledWith(new Date('2026-04-04T12:00:00Z'));
+    expect(solarState.resetToAnchorIntent).toHaveBeenCalledWith('2026-04-04T12:00:00Z');
   });
 
   it('reset falls back to browser time when no live timestamp is available', () => {
     // Override liveTimestamp to null to exercise the browser-time fallback path.
     // This is an explicitly documented UX exception in the time-travel plan.
-    missionState.liveTimestamp = null as unknown as string;
+    missionState.liveTimestamp = null;
 
     render(<TimeTravelControls />);
 
     const resetButton = screen.getByTitle('Reset to Today');
     fireEvent.click(resetButton);
 
-    expect(solarState.setIsPlaying).toHaveBeenCalledWith(false);
-    expect(solarState.setCurrentTime).toHaveBeenCalled();
-    const calledWith = solarState.setCurrentTime.mock.calls[0][0] as Date;
-    expect(calledWith instanceof Date).toBe(true);
-    expect(Number.isFinite(calledWith.getTime())).toBe(true);
+    expect(solarState.resetToAnchorIntent).toHaveBeenCalledWith(undefined);
   });
 });

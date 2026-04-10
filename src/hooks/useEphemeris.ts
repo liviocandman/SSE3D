@@ -7,7 +7,8 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { EphemerisData, EphemerisResponse, DataSource } from "@/lib/types";
+import type { EphemerisData, EphemerisResponse, DataSource, OrbitLineProfile } from "@/lib/types";
+import { USE_BACKEND_ORBIT_READY } from "@/lib/types";
 import { toast } from "sonner";
 
 // --- Types ---
@@ -39,6 +40,9 @@ interface UseEphemerisOptions {
   spanDays?: number;
   autoFetch?: boolean;
   timeoutMs?: number;
+  orbitReady?: boolean;
+  orbitProfile?: OrbitLineProfile;
+  orbitLineOnly?: boolean;
 }
 
 interface FetchEphemerisParams {
@@ -47,6 +51,9 @@ interface FetchEphemerisParams {
   timeoutMs: number;
   force?: boolean;
   signal?: AbortSignal;
+  orbitReady?: boolean;
+  orbitProfile?: OrbitLineProfile;
+  orbitLineOnly?: boolean;
 }
 
 class EphemerisFetchError extends Error {
@@ -128,6 +135,9 @@ async function fetchEphemeris({
   timeoutMs,
   force = false,
   signal,
+  orbitReady,
+  orbitProfile,
+  orbitLineOnly,
 }: FetchEphemerisParams): Promise<EphemerisResponse> {
   const abortController = new AbortController();
   let didTimeout = false;
@@ -147,9 +157,17 @@ async function fetchEphemeris({
   }
 
   try {
-    const url = force
-      ? `/api/ephemeris?date=${date}&spanDays=${spanDays}&force=true`
-      : `/api/ephemeris?date=${date}&spanDays=${spanDays}`;
+    const params = new URLSearchParams({
+      date,
+      spanDays: spanDays.toString(),
+    });
+
+    if (force) params.append("force", "true");
+    if (orbitReady) params.append("orbitReady", "true");
+    if (orbitProfile && orbitProfile !== "auto") params.append("orbitProfile", orbitProfile);
+    if (orbitLineOnly) params.append("orbitLineOnly", "true");
+
+    const url = `/api/ephemeris?${params.toString()}`;
 
     const response = await fetch(url, {
       signal: abortController.signal,
@@ -242,6 +260,9 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
     spanDays = 30,
     autoFetch = true,
     timeoutMs = DEFAULT_TIMEOUT_MS,
+    orbitReady = USE_BACKEND_ORBIT_READY,
+    orbitProfile = "auto",
+    orbitLineOnly = false,
   } = options;
 
   const queryClient = useQueryClient();
@@ -256,9 +277,9 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
   const [isFallbackLoading, setIsFallbackLoading] = useState(false);
 
   const query = useQuery<EphemerisResponse, EphemerisFetchError>({
-    queryKey: ["ephemeris", date, spanDays],
+    queryKey: ["ephemeris", date, spanDays, orbitReady, orbitProfile, orbitLineOnly],
     queryFn: ({ signal }) =>
-      fetchEphemeris({ date, spanDays, timeoutMs, signal }),
+      fetchEphemeris({ date, spanDays, timeoutMs, orbitReady, orbitProfile, orbitLineOnly, signal }),
     enabled: autoFetch,
     retry: (failureCount, error) =>
       error.canRetry && failureCount < MAX_RETRIES,
@@ -338,9 +359,18 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
 
     try {
       await queryClient.fetchQuery({
-        queryKey: ["ephemeris", date, spanDays],
+        queryKey: ["ephemeris", date, spanDays, orbitReady, orbitProfile, orbitLineOnly],
         queryFn: ({ signal }) =>
-          fetchEphemeris({ date, spanDays, timeoutMs, force: true, signal }),
+          fetchEphemeris({
+            date,
+            spanDays,
+            timeoutMs,
+            force: true,
+            orbitReady,
+            orbitProfile,
+            orbitLineOnly,
+            signal,
+          }),
       });
     } catch (error) {
       if (error instanceof EphemerisFetchError && error.isAbort) return;

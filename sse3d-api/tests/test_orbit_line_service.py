@@ -103,3 +103,18 @@ def test_build_orbit_line_integration():
     assert orbit_line.input_point_count == 24
     assert orbit_line.output_point_count == 24
     assert "anti_spider_passed" in orbit_line.quality_flags
+
+def test_build_orbit_line_falls_back_when_target_outside_range():
+    # Simulates fullOrbit window where target_time may be far from trajectory timestamps.
+    trajectory = [
+        EphemerisTrajectory(
+            position=Position(x=math.cos(i / 4), y=0, z=math.sin(i / 4)),
+            timestamp=f"2026-01-01T{i:02d}:00:00Z"
+        )
+        for i in range(24)
+    ]
+
+    orbit_line = build_orbit_line("401", trajectory, "2026-04-08T00:00:00Z")
+    assert orbit_line is not None
+    assert orbit_line.input_point_count == 24
+    assert orbit_line.output_point_count > 0

@@ -1,39 +1,132 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as THREE from 'three';
+import { renderHook } from '@testing-library/react';
+import { useCameraAnimation } from './useCameraAnimation';
+import { useSolarStore } from '@/store/solarStore';
+import { useThree, useFrame } from '@react-three/fiber';
 
-// Mocking MathUtils.damp since it's used in the logic
-// (Actually three.js is available in tests, but we can verify convergance)
+// Mock dependencies
+vi.mock('@react-three/fiber', () => ({
+  useThree: vi.fn(),
+  useFrame: vi.fn(),
+}));
 
-describe('Camera Stability Logic', () => {
-  it('converges using damp correctly', () => {
-    let current = 100;
-    const target = 0;
-    const damping = 10;
-    const delta = 0.016; // 60fps
+vi.mock('@/store/solarStore', () => ({
+  useSolarStore: {
+    getState: vi.fn(),
+  },
+}));
 
-    // Simulate 1 second
-    for(let i=0; i<60; i++) {
-      current = THREE.MathUtils.damp(current, target, damping, delta);
-    }
+vi.mock('@/store/missionStore', () => ({
+  useMissionStore: {
+    getState: vi.fn(),
+  },
+}));
 
-    // After 1 second at damping 10, it should be very close to 0
-    expect(current).toBeLessThan(1);
+vi.mock('@/lib/time/clockRuntime', () => ({
+  clockRuntime: {
+    getTimeMs: vi.fn(),
+  },
+}));
+
+describe('useCameraAnimation (Origin-Only V2)', () => {
+  type MockFn = ReturnType<typeof vi.fn>;
+  type MockSolarState = {
+    renderOrigin: { x: number; y: number; z: number };
+    cameraNavMode: 'idle' | 'travel' | 'follow';
+    followTargetId: string | null;
+    setRenderOrigin: MockFn;
+    startOriginTravel: MockFn;
+    setFollowTarget: MockFn;
+    stopOriginNavigation: MockFn;
+    masterTrajectorySegments: Record<string, unknown>;
+  };
+  type MockThreeState = {
+    camera: {
+      position: THREE.Vector3;
+      setLength: MockFn;
+    };
+    controls: {
+      target: THREE.Vector3;
+      update: MockFn;
+    };
+  };
+
+  let mockThree: MockThreeState;
+  let mockSolarState: MockSolarState;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockThree = {
+      camera: {
+        position: new THREE.Vector3(),
+        setLength: vi.fn(),
+      },
+      controls: {
+        target: new THREE.Vector3(1, 1, 1),
+        update: vi.fn(),
+      },
+    };
+
+    vi.mocked(useThree).mockReturnValue(mockThree);
+
+    mockSolarState = {
+      renderOrigin: { x: 0, y: 0, z: 0 },
+      cameraNavMode: 'idle',
+      followTargetId: null,
+      setRenderOrigin: vi.fn(),
+      startOriginTravel: vi.fn(),
+      setFollowTarget: vi.fn(),
+      stopOriginNavigation: vi.fn(),
+      masterTrajectorySegments: {},
+    };
+
+    const mockedGetState = useSolarStore.getState as unknown as MockFn;
+    mockedGetState.mockReturnValue(mockSolarState);
   });
 
-  it('handles origin compensation without visual jump', () => {
-    // Initial local position relative to Origin A
-    const originA = new THREE.Vector3(0, 0, 0);
-    const localPos = new THREE.Vector3(10, 10, 10);
+  it('focusOn triggers startOriginTravel with calculated duration', () => {
+    const { result } = renderHook(() => useCameraAnimation());
     
-    // New origin B
-    const originB = new THREE.Vector3(5, 5, 5);
+    const targetPos = { x: 1000, y: 0, z: 0 };
+    result.current.focusOn(targetPos, 10, 'Earth');
+
+    expect(mockSolarState.startOriginTravel).toHaveBeenCalledWith(
+      targetPos,
+      expect.any(Number),
+      expect.any(Number),
+      'Earth'
+    );
+  });
+
+  it('stopTracking calls stopOriginNavigation', () => {
+    const { result } = renderHook(() => useCameraAnimation());
+    result.current.stopTracking();
+    expect(mockSolarState.stopOriginNavigation).toHaveBeenCalled();
+  });
+
+  it('resetCamera starts travel to (0,0,0)', () => {
+    const { result } = renderHook(() => useCameraAnimation());
+    result.current.resetCamera();
+    expect(mockSolarState.startOriginTravel).toHaveBeenCalledWith(
+      { x: 0, y: 0, z: 0 },
+      2000,
+      expect.any(Number)
+    );
+  });
+
+  it('enforces controls target at (0,0,0)', () => {
+    renderHook(() => useCameraAnimation());
     
-    // In world space, the point was (0+10, 0+10, 0+10) = (10, 10, 10)
-    // Relative to B, the point should be (10-5, 10-5, 10-5) = (5, 5, 5)
-    
-    const shift = new THREE.Vector3().subVectors(originA, originB);
-    const newLocalPos = localPos.clone().add(shift);
-    
-    expect(newLocalPos).toEqual(new THREE.Vector3(5, 5, 5));
+    // Get the frame callback
+    type FrameCallback = (state: unknown, delta: number) => void;
+    const frameCallback = vi.mocked(useFrame).mock.calls[0][0] as FrameCallback;
+    frameCallback({}, 0.016);
+
+    expect(mockThree.controls.target.x).toBe(0);
+    expect(mockThree.controls.target.y).toBe(0);
+    expect(mockThree.controls.target.z).toBe(0);
+    expect(mockThree.controls.update).toHaveBeenCalled();
   });
 });

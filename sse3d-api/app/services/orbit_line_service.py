@@ -92,6 +92,24 @@ def select_window(points: List[EphemerisTrajectory], profile: OrbitLineProfile, 
             
     return window_points
 
+def _is_target_outside_points_range(points: List[EphemerisTrajectory], target_time_str: str) -> bool:
+    if not points:
+        return False
+
+    target_dt = _parse_iso_datetime_utc(target_time_str)
+    if target_dt is None:
+        return False
+
+    first_dt = _parse_iso_datetime_utc(points[0].timestamp)
+    last_dt = _parse_iso_datetime_utc(points[-1].timestamp)
+    if first_dt is None or last_dt is None:
+        return False
+
+    if first_dt > last_dt:
+        first_dt, last_dt = last_dt, first_dt
+
+    return target_dt < first_dt or target_dt > last_dt
+
 def decide_closure(points: List[EphemerisTrajectory], profile: OrbitLineProfile) -> bool:
     """
     Decide if the orbit should be closed based on the distance between 
@@ -195,7 +213,16 @@ def build_orbit_line(
         
     window = select_window(sanitized, profile, target_time)
     if len(window) < MIN_POINTS_PER_PROFILE:
-        return None
+        # Common full-orbit scenario:
+        # target date may be a bucket date outside the generated trajectory time range.
+        # In this case, keep a deterministic non-empty orbit by using sanitized points.
+        if _is_target_outside_points_range(sanitized, target_time) and len(sanitized) >= MIN_POINTS_PER_PROFILE:
+            window = sanitized
+        elif len(sanitized) >= MIN_POINTS_PER_PROFILE:
+            # Safety fallback for sparse/offset windows while preserving a visible orbit line.
+            window = sanitized
+        else:
+            return None
         
     is_closed = decide_closure(window, profile)
     

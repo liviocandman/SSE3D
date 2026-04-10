@@ -30,7 +30,8 @@ def _cache_key(
     date: str, 
     center: str = "10",
     orbit_ready: bool = False,
-    orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO
+    orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO,
+    orbit_line_only: bool = False,
 ) -> str:
     parts = [f"ephemeris:{body_id}"]
     if center != "10":
@@ -41,6 +42,8 @@ def _cache_key(
         parts.append(f"orbit_ready_{ALGORITHM_VERSION}")
         if orbit_profile != OrbitLineProfile.AUTO:
             parts.append(f"profile_{orbit_profile.value}")
+        if orbit_line_only:
+            parts.append("orbit_line_only")
             
     return ":".join(parts)
 
@@ -49,7 +52,8 @@ async def get_bulk_cached(
     date: str, 
     center: str = "10",
     orbit_ready: bool = False,
-    orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO
+    orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO,
+    orbit_line_only: bool = False,
 ) -> tuple[list[EphemerisData], list[str]]:
     try:
         redis = AsyncRedis(
@@ -58,10 +62,33 @@ async def get_bulk_cached(
         )
         cached, missing = [], []
         for bid in body_ids:
-            key = _cache_key(bid, date, center=center, orbit_ready=orbit_ready, orbit_profile=orbit_profile)
+            key = _cache_key(
+                bid,
+                date,
+                center=center,
+                orbit_ready=orbit_ready,
+                orbit_profile=orbit_profile,
+                orbit_line_only=orbit_line_only,
+            )
             raw = await redis.get(key)
             if raw:
-                cached.append(EphemerisData.model_validate(json.loads(raw)))
+                payload = json.loads(raw)
+
+                # Orbit-ready contracts require a non-empty orbitLine. If cache entry
+                # predates the rollout (or is partial), treat it as a miss so the router
+                # recomputes authoritative moon geometry.
+                if orbit_ready:
+                    orbit_line_payload = payload.get("orbitLine")
+                    points_payload = (
+                        orbit_line_payload.get("points")
+                        if isinstance(orbit_line_payload, dict)
+                        else None
+                    )
+                    if not isinstance(points_payload, list) or len(points_payload) < 2:
+                        missing.append(bid)
+                        continue
+
+                cached.append(EphemerisData.model_validate(payload))
             else:
                 missing.append(bid)
         return cached, missing
@@ -74,7 +101,8 @@ async def set_bulk_cached(
     items: list[EphemerisData], 
     center: str = "10",
     orbit_ready: bool = False,
-    orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO
+    orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO,
+    orbit_line_only: bool = False,
 ) -> None:
     try:
         redis = AsyncRedis(
@@ -82,7 +110,14 @@ async def set_bulk_cached(
             token=settings.upstash_redis_rest_token,
         )
         for item in items:
-            key = _cache_key(item.body_id, date, center=center, orbit_ready=orbit_ready, orbit_profile=orbit_profile)
+            key = _cache_key(
+                item.body_id,
+                date,
+                center=center,
+                orbit_ready=orbit_ready,
+                orbit_profile=orbit_profile,
+                orbit_line_only=orbit_line_only,
+            )
             ttl = _get_ttl(item.body_id, date_str=date)
             await redis.set(key, item.model_dump_json(by_alias=True), ex=ttl)
     except Exception as e:

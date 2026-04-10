@@ -29,7 +29,7 @@ import { createTemporalLookupCache } from '@/lib/temporalLookup';
 import { SPHERE_MID, HITBOX_SPHERE } from '@/lib/geometryPool';
 import { clockRuntime } from '@/lib/time/clockRuntime';
 import type { EphemerisTrajectory } from '@/lib/types';
-import { isRapidMoonBody } from '@/lib/trajectoryPolicy';
+import { USE_BACKEND_ORBIT_READY } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -59,40 +59,15 @@ interface MoonMeshProps {
 // ---------------------------------------------------------------------------
 
 const AU_TO_KM = 149_597_870.7;
-const DAY_MS = 24 * 60 * 60 * 1000;
-const FALLBACK_SPAN_DAYS = 30;
-const MIN_CLOSED_ORBIT_COVERAGE = 0.9;
-const MIN_FAST_MOON_ORBIT_POINTS = 8;
-const MIN_SMOOTHING_POINTS = 6;
-const MIN_CURVE_SAMPLES = 128;
-const MAX_CURVE_SAMPLES = 256;
 const MOON_CLOSEUP_TRAVEL_RADIUS_MULTIPLIER = 2;
 const EMPTY_TRAJECTORY: EphemerisTrajectory[] = [];
 const EMPTY_SEGMENTS: TrajectorySegment[] = [];
+const ORBIT_FETCH_MAX_RETRIES = 5;
+const ORBIT_FETCH_BASE_DELAY_MS = 600;
+const MAX_LIGHT_FALLBACK_POINTS = 240;
 
 // Global singleton to prevent recreating workers and to avoid React Suspense
 // (Removed local globalKtx2Loader and getKtx2Loader, now using getSharedKTX2Loader)
-
-function parseUtcTimestampMs(timestamp: string): number {
-  if (!timestamp) return Number.NaN;
-  const hasOffset = /(Z|[+-]\d{2}:?\d{2})$/i.test(timestamp);
-  const utcString = hasOffset ? timestamp : `${timestamp}Z`;
-  return new Date(utcString).getTime();
-}
-
-function getTrajectorySpanDays(
-  trajectory: Array<{ timestamp: string }>,
-): number {
-  if (trajectory.length < 2) return 0;
-
-  const startMs = parseUtcTimestampMs(trajectory[0].timestamp);
-  const endMs = parseUtcTimestampMs(trajectory[trajectory.length - 1].timestamp);
-  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
-    return 0;
-  }
-
-  return (endMs - startMs) / DAY_MS;
-}
 
 function resolveSegmentAroundTime(segments: TrajectorySegment[], simTimeMs: number): TrajectorySegment | null {
   if (segments.length === 0) return null;
@@ -119,47 +94,29 @@ function resolveSegmentAroundTime(segments: TrajectorySegment[], simTimeMs: numb
   return nearest;
 }
 
-function buildOrbitWindow(
-  trajectory: EphemerisTrajectory[],
-  simTimeMs: number,
-  orbitalPeriodDays: number
-): EphemerisTrajectory[] {
-  if (trajectory.length < 2) return trajectory;
-
-  const periodMs = Math.max(orbitalPeriodDays * DAY_MS, 1);
-  const halfWindowMs = Math.max(periodMs * 0.6, 2 * 60 * 60 * 1000);
-  const windowed = trajectory.filter((point) => {
-    const t = parseUtcTimestampMs(point.timestamp);
-    if (!Number.isFinite(t)) return false;
-    return Math.abs(t - simTimeMs) <= halfWindowMs;
-  });
-
-  if (windowed.length >= MIN_FAST_MOON_ORBIT_POINTS) {
-    return windowed;
-  }
-
-  return trajectory;
-}
-
-function estimateMeanRadius(points: THREE.Vector3[]): number {
-  if (points.length === 0) return 0;
-
-  const center = new THREE.Vector3();
-  for (const point of points) {
-    center.add(point);
-  }
-  center.divideScalar(points.length);
-
-  let radiusSum = 0;
-  for (const point of points) {
-    radiusSum += point.distanceTo(center);
-  }
-  return radiusSum / points.length;
-}
-
 function resolveTextureTier(tier: string): TextureTier {
   if (tier === 'low' || tier === 'high') return tier;
   return 'mid';
+}
+
+function buildLightFallbackPoints(
+  trajectory: EphemerisTrajectory[],
+  scale: number,
+): THREE.Vector3[] {
+  if (trajectory.length < 2) return [];
+
+  const step = Math.max(1, Math.ceil(trajectory.length / MAX_LIGHT_FALLBACK_POINTS));
+  const points: THREE.Vector3[] = [];
+
+  for (let i = 0; i < trajectory.length; i += step) {
+    const pos = trajectory[i].position;
+    const point = new THREE.Vector3(pos.x * scale, pos.y * scale, pos.z * scale);
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y) || !Number.isFinite(point.z)) continue;
+    if (points.length > 0 && point.distanceToSquared(points[points.length - 1]) < 1e-10) continue;
+    points.push(point);
+  }
+
+  return points;
 }
 
 // ---------------------------------------------------------------------------
@@ -442,29 +399,51 @@ export function MoonSystem({
     if (!hasMoons) return;
 
     let cancelled = false;
-    const fetchFullMoonOrbits = async () => {
-      const currentMoonIds = PLANET_MOONS[parentId] ?? [];
-      const fullOrbits = useSolarStore.getState().fullOrbits;
-      const missingMoonIds = currentMoonIds.filter((moonId) => {
-        const orbit = fullOrbits[moonId];
-        return !orbit || orbit.length < 2;
+
+    const delay = (ms: number) =>
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, ms);
       });
 
-      if (missingMoonIds.length === 0) return;
-
-      try {
-        const response = await fetch(`/api/ephemeris?ids=${missingMoonIds.join(',')}&fullOrbit=true`);
-        if (!response.ok) return;
-        const payload = await response.json();
-        if (!cancelled && Array.isArray(payload?.data)) {
-          appendFullOrbits(payload.data);
+    const getMissingMoonIds = (): string[] => {
+      const currentMoonIds = PLANET_MOONS[parentId] ?? [];
+      const { fullOrbits, orbitLines } = useSolarStore.getState();
+      return currentMoonIds.filter((moonId) => {
+        const orbit = fullOrbits[moonId];
+        const orbitLine = orbitLines[moonId];
+        const hasOrbitLine = !USE_BACKEND_ORBIT_READY || (orbitLine && orbitLine.points.length >= 2);
+        if (USE_BACKEND_ORBIT_READY) {
+          return !hasOrbitLine;
         }
-      } catch {
-        // Orbit fallback remains on sliding trajectory data if full-orbit request fails.
+        return !orbit || orbit.length < 2;
+      });
+    };
+
+    const fetchFullMoonOrbits = async () => {
+      for (let attempt = 0; attempt < ORBIT_FETCH_MAX_RETRIES && !cancelled; attempt += 1) {
+        const missingMoonIds = getMissingMoonIds();
+        if (missingMoonIds.length === 0) return;
+
+        try {
+          const response = await fetch(`/api/ephemeris?ids=${missingMoonIds.join(',')}&fullOrbit=true&orbitReady=true&orbitLineOnly=true`);
+          if (response.ok) {
+            const payload = await response.json();
+            if (!cancelled && Array.isArray(payload?.data)) {
+              appendFullOrbits(payload.data);
+            }
+          }
+        } catch {
+          // Retry path handles transient wake/network errors.
+        }
+
+        if (getMissingMoonIds().length === 0 || cancelled) return;
+        if (attempt < ORBIT_FETCH_MAX_RETRIES - 1) {
+          await delay(ORBIT_FETCH_BASE_DELAY_MS * (attempt + 1));
+        }
       }
     };
 
-    fetchFullMoonOrbits();
+    void fetchFullMoonOrbits();
     return () => {
       cancelled = true;
     };
@@ -509,106 +488,57 @@ function MoonOrbitLine({ moonId, parentId, parentClass, viewMode }: { moonId: st
   const moonTrajectory = useSolarStore(useShallow((s) => s.masterTrajectory[moonId]));
   const moonSegments = useSolarStore(useShallow((s) => s.masterTrajectorySegments[moonId]));
   const fullOrbit = useSolarStore((state) => state.fullOrbits[moonId]);
+  const orbitLine = useSolarStore((state) => state.orbitLines[moonId]);
   const config = getPlanetConfig(moonId);
 
   // No trajectory data yet: skip rendering until data arrives.
   if (!config) return null;
 
+  const orbitScale = getMoonOrbitScale(parentId, parentClass, config.meanDistanceAU * AU_TO_KM, viewMode);
+  const SCALE = KM_TO_UNIT * orbitScale;
+
+  // Priority 1: backend-authoritative orbit line.
+  if (USE_BACKEND_ORBIT_READY && orbitLine && orbitLine.points.length >= 2) {
+    const finalPoints = orbitLine.points.map(p => new THREE.Vector3(p.x * SCALE, p.y * SCALE, p.z * SCALE));
+    
+    // Explicitly close the loop if backend says so
+    if (orbitLine.isClosed && finalPoints.length >= 2) {
+      const first = finalPoints[0];
+      const last = finalPoints[finalPoints.length - 1];
+      if (first.distanceToSquared(last) > 1e-12) {
+        finalPoints.push(first.clone());
+      }
+    }
+
+    return (
+      <TrailLine
+        points={finalPoints}
+        color="#88aaff"
+        fadeMode="ring"
+        opacity={0.4}
+      />
+    );
+  }
+
+  // Priority 2: lightweight raw/sanitized fallback.
   const simTimeMs = clockRuntime.getTimeMs();
-  const orbitalPeriodDays = Math.max(config.orbitalPeriod || FALLBACK_SPAN_DAYS, 1e-6);
   const stableSegments = moonSegments ?? EMPTY_SEGMENTS;
   const activeSegment = resolveSegmentAroundTime(stableSegments, simTimeMs);
-  const baseTrajectory = (fullOrbit && fullOrbit.length >= 2)
+  const fallbackTrajectory = (fullOrbit && fullOrbit.length >= 2)
     ? fullOrbit
     : (activeSegment?.points && activeSegment.points.length >= 2)
       ? activeSegment.points
       : moonTrajectory ?? EMPTY_TRAJECTORY;
-  if (baseTrajectory.length < 2) return null;
-  const trajectoryWindow = isRapidMoonBody(moonId)
-    ? buildOrbitWindow(baseTrajectory, simTimeMs, orbitalPeriodDays)
-    : baseTrajectory;
-  if (trajectoryWindow.length < 2) return null;
 
-  const orbitScale = getMoonOrbitScale(parentId, parentClass, config.meanDistanceAU * AU_TO_KM, viewMode);
-  const SCALE = KM_TO_UNIT * orbitScale;
-
-  // Compute orbit coverage from real timestamps instead of assuming a fixed 30-day window.
-  const observedSpanDays = getTrajectorySpanDays(trajectoryWindow);
-  const spanDays = observedSpanDays > 0 ? observedSpanDays : FALLBACK_SPAN_DAYS;
-  const orbitsInSpan = spanDays / orbitalPeriodDays;
-
-  let pointsToTake = trajectoryWindow.length;
-  let isClosed = false;
-
-  if (orbitsInSpan >= MIN_CLOSED_ORBIT_COVERAGE) {
-    // For full/near-full coverage, draw a closed loop.
-    isClosed = true;
-
-    // Keep approximately one revolution, but never below a minimum point budget.
-    const desiredPointsPerOrbit = Math.ceil(trajectoryWindow.length / Math.max(orbitsInSpan, 1));
-    const minOrbitPoints = Math.min(trajectoryWindow.length, MIN_FAST_MOON_ORBIT_POINTS);
-    pointsToTake = Math.min(
-      trajectoryWindow.length,
-      Math.max(desiredPointsPerOrbit, minOrbitPoints),
-    );
-  } else {
-    // Slow moons with partial coverage remain open arcs.
-    isClosed = false;
-  }
-
-  const rawPoints: THREE.Vector3[] = [];
-  for (let i = 0; i < pointsToTake; i++) {
-    const t = trajectoryWindow[i];
-    const p = new THREE.Vector3(t.position.x * SCALE, t.position.y * SCALE, t.position.z * SCALE);
-
-    // Coordinate safety filter for GPU stability.
-    if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) continue;
-    if (rawPoints.length > 0 && p.distanceToSquared(rawPoints[rawPoints.length - 1]) < 1e-10) continue;
-
-    rawPoints.push(p);
-  }
-
-  // If closure gap is too large relative to orbit radius, keep it open to avoid "spider web" artifacts.
-  if (isClosed && rawPoints.length >= 3) {
-    const first = rawPoints[0];
-    const last = rawPoints[rawPoints.length - 1];
-    const closureGap = first.distanceTo(last);
-    const meanRadius = estimateMeanRadius(rawPoints);
-    if (meanRadius > 0 && closureGap > meanRadius * 0.75) {
-      isClosed = false;
-    }
-  }
-
-  // Smooth orbit lines when enough points exist.
-  let finalPoints = rawPoints;
-  if (rawPoints.length >= MIN_SMOOTHING_POINTS) {
-    try {
-      const curve = new THREE.CatmullRomCurve3(rawPoints, isClosed);
-      const sampleCount = Math.min(
-        MAX_CURVE_SAMPLES,
-        Math.max(MIN_CURVE_SAMPLES, rawPoints.length * 24),
-      );
-      finalPoints = curve.getPoints(sampleCount);
-    } catch {
-      console.warn(`[MoonOrbitLine] Curve generation failed for ${moonId}, using raw points.`);
-    }
-  }
-
-  // Ensure closed loops are explicitly closed when Catmull-Rom is not used.
-  if (isClosed && finalPoints.length >= 2) {
-    const first = finalPoints[0];
-    const last = finalPoints[finalPoints.length - 1];
-    if (first.distanceToSquared(last) > 1e-12) {
-      finalPoints = [...finalPoints, first.clone()];
-    }
-  }
+  const fallbackPoints = buildLightFallbackPoints(fallbackTrajectory, SCALE);
+  if (fallbackPoints.length < 2) return null;
 
   return (
     <TrailLine
-      points={finalPoints}
+      points={fallbackPoints}
       color="#88aaff"
       fadeMode="ring"
-      opacity={0.4}
+      opacity={0.28}
     />
   );
 }

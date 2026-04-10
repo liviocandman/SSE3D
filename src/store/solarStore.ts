@@ -1,23 +1,12 @@
 import { create } from 'zustand';
-import type { SelectedPlanet, EphemerisData, EphemerisTrajectory } from '@/lib/types';
+import type { SelectedPlanet, EphemerisData, EphemerisTrajectory, OrbitLineData } from '@/lib/types';
 import type { ViewMode } from '@/lib/scales';
 import {
   type TrajectorySegment,
   flattenTrajectorySegments,
   upsertTrajectorySegments,
 } from '@/lib/trajectoryEngine';
-import { 
-  ClockState, 
-  DEFAULT_CLOCK_RANGE, 
-  TimeAuthority as ClockAuthority 
-} from '@/lib/time/clockTypes';
-import { 
-  setClockTime, 
-  applyMultiplier, 
-  setPlaying, 
-  setAuthority,
-  stepClock
-} from '@/lib/time/clockEngine';
+import { TimeAuthority as ClockAuthority } from '@/lib/time/clockTypes';
 import { temporalMetrics } from '@/lib/time/metrics';
 import { clockRuntime } from '@/lib/time/clockRuntime';
 
@@ -34,10 +23,7 @@ export type RenderOriginMode = 'global' | 'selected_body' | 'mission_vehicle' | 
 export type CameraNavMode = 'idle' | 'travel' | 'follow';
 
 interface SolarState {
-  // Clock Domain (New)
-  clock: ClockState;
-
-  // Derived/Legacy Time State (Maintained for compatibility)
+  // Time snapshot/UI state. Authoritative simulation time lives in clockRuntime.
   currentDate: string; // YYYY-MM-DD
   trajectoryBaseDate: string; // Date used by initial ephemeris query window
   currentTime: Date;
@@ -70,15 +56,24 @@ interface SolarState {
   
   // Full Cycle Buffer: Maps bodyId -> 100% of orbital period
   fullOrbits: Record<string, EphemerisTrajectory[]>;
+  orbitLines: Record<string, OrbitLineData>;
   
   // Actions
   setTimeAuthority: (auth: TimeAuthority) => void;
   setCurrentDate: (date: string) => void;
   setCurrentTime: (time: Date) => void;
   stepCurrentTimeByMs: (deltaMs: number) => void;
+  togglePlaybackIntent: () => void;
+  stepByMsIntent: (deltaMs: number) => void;
+  jumpToDateUtcIntent: (date: string) => void;
+  goLiveIntent: (liveTimestamp: string) => void;
+  resetToAnchorIntent: (liveTimestamp?: string) => void;
   syncTimeFromRuntime: (runtimeTimeMs: number) => void;
+  ensureRuntimeInitialized: () => void;
+  tickSimulation: (deltaSeconds: number) => number;
   setTimeMultiplier: (multiplier: number) => void;
   setIsPlaying: (playing: boolean) => void;
+  // Compatibility action for tests/legacy callers; delegates to tickSimulation.
   advanceTime: (deltaSeconds: number) => void;
   setSelectedPlanet: (planet: SelectedPlanet | null) => void;
   setHoveredPlanetId: (id: string | null) => void;
@@ -124,37 +119,27 @@ const BACKWARD_REBASE_DAYS = 5;
 const MAX_SEGMENTS_PER_BODY = 3;
 
 /**
- * Core temporal logic bridge.
- * Maps the ClockState engine output to the SolarStore public state.
+ * Syncs store snapshot fields from the authoritative runtime timestamp.
  */
-function syncClockToStore(state: Pick<SolarState, 'clock' | 'trajectoryBaseDate'>, nextClock: ClockState) {
-  const nextTime = new Date(nextClock.currentTimeMs);
+function syncTimeSnapshot(
+  state: Pick<SolarState, 'trajectoryBaseDate'>,
+  runtimeTimeMs: number,
+) {
+  const nextTime = new Date(runtimeTimeMs);
   const nextDate = toUTCDateString(nextTime);
   
   const currentBaseTime = parseUTCDate(state.trajectoryBaseDate).getTime();
-  const diffDays = (nextClock.currentTimeMs - currentBaseTime) / DAY_MS;
+  const diffDays = (runtimeTimeMs - currentBaseTime) / DAY_MS;
   const shouldRebase = diffDays < -BACKWARD_REBASE_DAYS || diffDays > FORWARD_REBASE_DAYS;
 
   return {
-    clock: nextClock,
     currentTime: nextTime,
     currentDate: nextDate,
     trajectoryBaseDate: shouldRebase ? nextDate : state.trajectoryBaseDate,
-    timeAuthority: nextClock.authority,
-    timeMultiplier: nextClock.multiplier,
-    isPlaying: nextClock.isPlaying,
   };
 }
 
-export const useSolarStore = create<SolarState>((set) => ({
-  clock: {
-    currentTimeMs: Date.now(),
-    multiplier: 60,
-    isPlaying: false,
-    authority: 'user',
-    range: DEFAULT_CLOCK_RANGE,
-    lastTickMs: Date.now(),
-  },
+export const useSolarStore = create<SolarState>((set, get) => ({
   currentDate: getTodayString(),
   trajectoryBaseDate: getTodayString(),
   currentTime: new Date(),
@@ -180,64 +165,126 @@ export const useSolarStore = create<SolarState>((set) => ({
   masterTrajectory: {},
   masterTrajectorySegments: {},
   fullOrbits: {},
+  orbitLines: {},
 
-  setTimeAuthority: (auth) => set((state) => 
-    syncClockToStore(state, setAuthority(state.clock, auth))
-  ),
+  setTimeAuthority: (auth) => set(() => ({ timeAuthority: auth })),
 
   setCurrentDate: (date) => set((state) => {
-    const newTimeMs = parseUTCDate(date, state.clock.currentTimeMs).getTime();
+    const newTimeMs = parseUTCDate(date, state.currentTime.getTime()).getTime();
     clockRuntime.setTimeMs(newTimeMs);
-    return syncClockToStore(state, setClockTime(state.clock, newTimeMs));
+    return syncTimeSnapshot(state, newTimeMs);
   }),
 
   setCurrentTime: (time) => set((state) => {
     const nextTimeMs = time.getTime();
     clockRuntime.setTimeMs(nextTimeMs);
-    return syncClockToStore(state, setClockTime(state.clock, nextTimeMs));
+    return syncTimeSnapshot(state, nextTimeMs);
   }),
 
   stepCurrentTimeByMs: (deltaMs) => set((state) => {
-    const nextClock = stepClock(state.clock, { magnitude: deltaMs, unit: 'ms' });
-    clockRuntime.setTimeMs(nextClock.currentTimeMs);
-    return syncClockToStore(state, nextClock);
+    const nextRuntimeMs = clockRuntime.getTimeMs() + deltaMs;
+    clockRuntime.setTimeMs(nextRuntimeMs);
+    return syncTimeSnapshot(state, nextRuntimeMs);
   }),
+
+  togglePlaybackIntent: () =>
+    set((state) => ({
+      timeAuthority: 'user',
+      isPlaying: !state.isPlaying,
+    })),
+
+  stepByMsIntent: (deltaMs) =>
+    set((state) => {
+      const nextRuntimeMs = clockRuntime.getTimeMs() + deltaMs;
+      clockRuntime.setTimeMs(nextRuntimeMs);
+      return {
+        ...syncTimeSnapshot(state, nextRuntimeMs),
+        timeAuthority: 'user',
+        isPlaying: false,
+      };
+    }),
+
+  jumpToDateUtcIntent: (date) =>
+    set((state) => {
+      const nextTimeMs = parseUTCDate(date, state.currentTime.getTime()).getTime();
+      clockRuntime.setTimeMs(nextTimeMs);
+      return {
+        ...syncTimeSnapshot(state, nextTimeMs),
+        timeAuthority: 'user',
+      };
+    }),
+
+  goLiveIntent: (liveTimestamp) =>
+    set((state) => {
+      const liveTime = new Date(liveTimestamp);
+      const liveTimeMs = liveTime.getTime();
+      if (!Number.isFinite(liveTimeMs)) return state;
+      clockRuntime.setTimeMs(liveTimeMs);
+      return {
+        ...syncTimeSnapshot(state, liveTimeMs),
+        timeAuthority: 'mission_live',
+        isPlaying: false,
+      };
+    }),
+
+  resetToAnchorIntent: (liveTimestamp) =>
+    set((state) => {
+      const anchor = liveTimestamp ? new Date(liveTimestamp) : new Date();
+      const anchorMs = anchor.getTime();
+      if (!Number.isFinite(anchorMs)) return state;
+      clockRuntime.setTimeMs(anchorMs);
+      return {
+        ...syncTimeSnapshot(state, anchorMs),
+        timeAuthority: 'user',
+        isPlaying: false,
+      };
+    }),
 
   syncTimeFromRuntime: (runtimeTimeMs) => set((state) => {
     if (!Number.isFinite(runtimeTimeMs)) {
       return state;
     }
 
-    if (Math.abs(runtimeTimeMs - state.clock.currentTimeMs) <= 1) {
+    if (Math.abs(runtimeTimeMs - state.currentTime.getTime()) <= 1) {
       return state;
     }
 
-    return syncClockToStore(state, setClockTime(state.clock, runtimeTimeMs));
+    return syncTimeSnapshot(state, runtimeTimeMs);
   }),
 
-  setTimeMultiplier: (multiplier) => set((state) => 
-    syncClockToStore(state, applyMultiplier(state.clock, multiplier))
-  ),
+  ensureRuntimeInitialized: () => {
+    if (clockRuntime.isInitialized()) return;
+    const state = get();
+    clockRuntime.initialize(state.currentTime.getTime());
+  },
+
+  tickSimulation: (deltaSeconds) => {
+    const state = get();
+    if (!state.isPlaying || state.timeAuthority !== 'user') {
+      return clockRuntime.getTimeMs();
+    }
+    return clockRuntime.tick(deltaSeconds, state.timeMultiplier);
+  },
+
+  setTimeMultiplier: (multiplier) => set(() => ({ timeMultiplier: multiplier })),
   
-  setIsPlaying: (playing) => set((state) => 
-    syncClockToStore(state, setPlaying(state.clock, playing))
-  ),
+  setIsPlaying: (playing) => set(() => ({ isPlaying: playing })),
 
   advanceTime: (deltaSeconds) => set((state) => {
     if (!state.isPlaying || state.timeAuthority !== 'user') {
       return state;
     }
 
-    const previousMs = state.clock.currentTimeMs;
-    const nextRuntimeMs = clockRuntime.tick(deltaSeconds, state.timeMultiplier);
+    const previousMs = clockRuntime.getTimeMs();
+    const nextRuntimeMs = get().tickSimulation(deltaSeconds);
     if (!Number.isFinite(nextRuntimeMs) || Math.abs(nextRuntimeMs - previousMs) <= 1) {
       return state;
     }
 
-    const expectedDeltaMs = deltaSeconds * state.clock.multiplier * 1000;
+    const expectedDeltaMs = deltaSeconds * state.timeMultiplier * 1000;
     const actualDeltaMs = nextRuntimeMs - previousMs;
     temporalMetrics.recordDrift(actualDeltaMs - expectedDeltaMs);
-    return syncClockToStore(state, setClockTime(state.clock, nextRuntimeMs));
+    return syncTimeSnapshot(state, nextRuntimeMs);
   }),
 
   appendTrajectoryData: (data) =>
@@ -268,13 +315,21 @@ export const useSolarStore = create<SolarState>((set) => ({
 
   appendFullOrbits: (data) =>
     set((state) => {
-      const merged = { ...state.fullOrbits };
+      const mergedOrbits = { ...state.fullOrbits };
+      const mergedLines = { ...state.orbitLines };
+      
       data.forEach((body) => {
         if (body.trajectory) {
-          merged[body.bodyId] = body.trajectory;
+          mergedOrbits[body.bodyId] = body.trajectory;
+        }
+        if (body.orbitLine) {
+          mergedLines[body.bodyId] = body.orbitLine;
         }
       });
-      return { fullOrbits: merged };
+      return { 
+        fullOrbits: mergedOrbits,
+        orbitLines: mergedLines 
+      };
     }),
 
   setSelectedPlanet: (planet) => set(() => ({ selectedPlanet: planet })),

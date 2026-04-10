@@ -47,21 +47,21 @@ export function TimeTravelControls() {
     currentDate,
     isPlaying, 
     timeMultiplier,
-    setIsPlaying, 
-    setCurrentDate,
-    setCurrentTime,
-    stepCurrentTimeByMs,
-    setTimeAuthority,
+    togglePlaybackIntent,
+    stepByMsIntent,
+    jumpToDateUtcIntent,
+    goLiveIntent,
+    resetToAnchorIntent,
     setTimeMultiplier,
   } = useSolarStore(useShallow(s => ({
     currentDate: s.currentDate,
     isPlaying: s.isPlaying,
     timeMultiplier: s.timeMultiplier,
-    setIsPlaying: s.setIsPlaying,
-    setCurrentDate: s.setCurrentDate,
-    setCurrentTime: s.setCurrentTime,
-    stepCurrentTimeByMs: s.stepCurrentTimeByMs,
-    setTimeAuthority: s.setTimeAuthority,
+    togglePlaybackIntent: s.togglePlaybackIntent,
+    stepByMsIntent: s.stepByMsIntent,
+    jumpToDateUtcIntent: s.jumpToDateUtcIntent,
+    goLiveIntent: s.goLiveIntent,
+    resetToAnchorIntent: s.resetToAnchorIntent,
     setTimeMultiplier: s.setTimeMultiplier,
   })));
 
@@ -77,53 +77,41 @@ export function TimeTravelControls() {
     setLocalDate(currentDate);
   }, [currentDate]);
 
-  const exitLive = () => {
-    setTimeAuthority('user');
+  const togglePlay = () => {
     if (isLive) {
       setIsLive(false);
     }
-  };
-
-  const togglePlay = () => {
-    exitLive();
-    setIsPlaying(!isPlaying);
+    togglePlaybackIntent();
   };
 
   const stepTime = (minutes: number) => {
-    exitLive();
-    setIsPlaying(false);
-    stepCurrentTimeByMs(minutes * 60000);
-  };
-
-  const resolveResetTime = () => {
-    if (liveTimestamp) {
-      return new Date(liveTimestamp);
+    if (isLive) {
+      setIsLive(false);
     }
-
-    // Browser time is used only as a last-resort UX fallback when no
-    // backend-provided live timestamp is currently available.
-    // This exception is intentional and documented in the time-travel plan.
-    return new Date();
+    stepByMsIntent(minutes * 60000);
   };
 
   const handleDateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    exitLive();
-    setCurrentDate(localDate);
+    if (isLive) {
+      setIsLive(false);
+    }
+    jumpToDateUtcIntent(localDate);
   };
 
   const resetTime = () => {
-    exitLive();
-    setIsPlaying(false);
-    setCurrentTime(resolveResetTime());
+    if (isLive) {
+      setIsLive(false);
+    }
+    resetToAnchorIntent(liveTimestamp ?? undefined);
   };
 
   const handleGoLive = () => {
     if (liveTimestamp) {
-      setIsPlaying(false);
-      setTimeAuthority('mission_live');
-      setIsLive(true);
-      setCurrentTime(new Date(liveTimestamp));
+      goLiveIntent(liveTimestamp);
+      if (!isLive) {
+        setIsLive(true);
+      }
     }
   };
 

@@ -1,9 +1,30 @@
-export const CAMERA_MODEL_V2_ORIGIN_ONLY = true;
+export const USE_BACKEND_ORBIT_READY = true;
 
 /**
  * Ephemeris Types
  * Shared type definitions for ephemeris data
  */
+
+export type OrbitLineProfile = 'rapid' | 'regular' | 'auto';
+
+export interface OrbitLinePoint {
+  x: number;
+  y: number;
+  z: number;
+  timestamp: string;
+}
+
+export interface OrbitLineData {
+  points: OrbitLinePoint[];
+  isClosed: boolean;
+  profile: OrbitLineProfile;
+  algorithmVersion: string;
+  sourceWindowStart: string;
+  sourceWindowEnd: string;
+  inputPointCount: number;
+  outputPointCount: number;
+  qualityFlags: string[];
+}
 
 export interface EphemerisPosition {
   x: number;
@@ -25,6 +46,7 @@ export interface EphemerisData {
   timestamp: string;
   parentId?: string;
   trajectory?: EphemerisTrajectory[];
+  orbitLine?: OrbitLineData;
 }
 
 export interface SelectedPlanet {

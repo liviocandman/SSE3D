@@ -117,6 +117,7 @@ def compute_ephemeris(
     full_orbit: bool = False,
     orbit_ready: bool = False,
     orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO,
+    orbit_line_only: bool = False,
 ) -> Optional[EphemerisData]:
     assert_spice_ready()
 
@@ -128,7 +129,7 @@ def compute_ephemeris(
                 "position": {"x": 0, "y": 0, "z": 0},
                 "velocity": {"x": 0, "y": 0, "z": 0},
                 "timestamp": target_date,
-                "trajectory": [
+                "trajectory": [] if orbit_line_only else [
                     {
                         "position": {"x": 0, "y": 0, "z": 0},
                         "velocity": {"x": 0, "y": 0, "z": 0},
@@ -178,7 +179,7 @@ def compute_ephemeris(
             "velocity": current_vel,
             "timestamp": target_date,
             "parentId": parent_id,
-            "trajectory": trajectory,
+            "trajectory": None if orbit_line_only else trajectory,
             "orbitLine": orbit_line,
         }
     )
@@ -192,6 +193,7 @@ async def fetch_all_spice(
     full_orbit: bool = False,
     orbit_ready: bool = False,
     orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO,
+    orbit_line_only: bool = False,
 ) -> list[EphemerisData]:
     data: list[EphemerisData] = []
     for body_id in body_ids:
@@ -204,6 +206,7 @@ async def fetch_all_spice(
                 full_orbit=full_orbit,
                 orbit_ready=orbit_ready,
                 orbit_profile=orbit_profile,
+                orbit_line_only=orbit_line_only,
             )
             if item:
                 data.append(item)

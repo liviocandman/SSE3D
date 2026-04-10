@@ -38,7 +38,7 @@ import {
 import { MissionTrajectoryLine } from './MissionTrajectoryLine';
 import { MissionMilestoneMarker } from './MissionMilestoneMarker';
 import { MissionPhase } from '@/lib/missionTypes';
-import { BODY_IDS, MISSION_CONFIG, CAMERA_MODEL_V2_ORIGIN_ONLY } from '@/lib/types';
+import { BODY_IDS, MISSION_CONFIG } from '@/lib/types';
 
 // --- Types ---
 
@@ -87,9 +87,11 @@ function GlobalTimeController() {
   useFrame((state, delta) => {
     const solarStore = useSolarStore.getState();
     const syncSnapshot = solarStore.syncTimeFromRuntime;
+    const ensureRuntimeInitialized = solarStore.ensureRuntimeInitialized;
+    const tickSimulation = solarStore.tickSimulation;
 
     if (!clockRuntime.isInitialized()) {
-      clockRuntime.initialize(solarStore.currentTime.getTime());
+      ensureRuntimeInitialized();
       return;
     }
 
@@ -97,7 +99,7 @@ function GlobalTimeController() {
     const auth = solarStore.timeAuthority;
     const canAdvance = isPlaying && auth === 'user';
     if (canAdvance) {
-      clockRuntime.tick(delta, solarStore.timeMultiplier);
+      tickSimulation(delta);
     }
 
     const runtimeTimeMs = clockRuntime.getTimeMs();
@@ -611,7 +613,7 @@ export function SceneContent({
         dampingFactor={0.05}
         minDistance={0.00001}
         maxDistance={50000}
-        enablePan={!CAMERA_MODEL_V2_ORIGIN_ONLY}
+        enablePan={false}
         panSpeed={1}
         rotateSpeed={1}
         zoomSpeed={3}

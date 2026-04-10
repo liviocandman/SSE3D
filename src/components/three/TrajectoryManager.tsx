@@ -7,6 +7,7 @@ import { useShallow } from "zustand/react/shallow";
 import { computeBufferPlan, hasCoverageNearTime } from "@/lib/trajectoryEngine";
 import { useTrajectoryWorker } from "@/hooks/useTrajectoryWorker";
 import { clockRuntime } from "@/lib/time/clockRuntime";
+import { PLANET_MOONS } from "@/lib/textureConfig";
 import {
   buildContextualFetchBodyIds,
   buildTrajectoryRequestKey,
@@ -21,6 +22,9 @@ const TARGET_CHANGE_DEBOUNCE_MS = 250;
 const BACKGROUND_PAGINATION_EVERY_FRAMES = 300;
 const FETCH_LOCK_TTL_MS = 5000;
 const FETCH_COOLDOWN_MS = 15_000;
+const MOON_ORBIT_PREFETCH_DEBOUNCE_MS = 250;
+const MOON_ORBIT_PREFETCH_COOLDOWN_MS = 30_000;
+const MIN_ORBIT_LINE_POINTS = 2;
 
 function toDateStringUTC(ms: number): string {
   return new Date(ms).toISOString().split("T")[0];
@@ -32,6 +36,38 @@ export function buildFetchBodyIds(activeIds: (string | null | undefined)[]): str
     selectedBodyId: selectedBodyId ?? undefined,
     hoveredBodyId: hoveredBodyId ?? undefined,
   });
+}
+
+function resolveMoonParentId(bodyId: string | null | undefined): string | null {
+  if (!bodyId) return null;
+  if (PLANET_MOONS[bodyId]?.length) return bodyId;
+
+  for (const [parentId, moonIds] of Object.entries(PLANET_MOONS)) {
+    if (moonIds.includes(bodyId)) {
+      return parentId;
+    }
+  }
+
+  return null;
+}
+
+export function buildMoonOrbitPrefetchParentIds(
+  selectedBodyId: string | null | undefined,
+  selectedParentId: string | null | undefined,
+  hoveredBodyId: string | null | undefined,
+): string[] {
+  const parentIds = new Set<string>();
+
+  const selectedParent = resolveMoonParentId(selectedBodyId);
+  if (selectedParent) parentIds.add(selectedParent);
+
+  const hoveredParent = resolveMoonParentId(hoveredBodyId);
+  if (hoveredParent) parentIds.add(hoveredParent);
+
+  const explicitSelectedParent = resolveMoonParentId(selectedParentId);
+  if (explicitSelectedParent) parentIds.add(explicitSelectedParent);
+
+  return Array.from(parentIds);
 }
 
 function debugTrajectoryLog(message: string): void {
@@ -48,6 +84,7 @@ export function TrajectoryManager() {
     selectedPlanet,
     hoveredPlanetId,
     appendTrajectoryData,
+    appendFullOrbits,
   } = useSolarStore(
     useShallow((s) => ({
       currentDate: s.currentDate,
@@ -55,6 +92,7 @@ export function TrajectoryManager() {
       selectedPlanet: s.selectedPlanet,
       hoveredPlanetId: s.hoveredPlanetId,
       appendTrajectoryData: s.appendTrajectoryData,
+      appendFullOrbits: s.appendFullOrbits,
     })),
   );
 
@@ -65,18 +103,21 @@ export function TrajectoryManager() {
   const frameCountRef = useRef(0);
   const lastFetchRef = useRef<string | null>(null);
   const jumpAbortControllerRef = useRef<AbortController | null>(null);
+  const moonOrbitPrefetchAtRef = useRef<Map<string, number>>(new Map());
 
   // Cleanup on unmount or major jumps
   useEffect(() => {
     const timeouts = activeTimeouts.current;
     const loading = loadingRef.current;
     const lastFetchAt = lastFetchAtRef.current;
+    const moonOrbitPrefetchAt = moonOrbitPrefetchAtRef.current;
     return () => {
       // Clear all pending lock removals
       timeouts.forEach(clearTimeout);
       timeouts.clear();
       loading.clear();
       lastFetchAt.clear();
+      moonOrbitPrefetchAt.clear();
       
       if (jumpAbortControllerRef.current) {
         jumpAbortControllerRef.current.abort();
@@ -220,6 +261,63 @@ export function TrajectoryManager() {
 
     return () => clearTimeout(debounceTimeout);
   }, [currentDate, fetchBlock, groupByFetchSpan, hoveredPlanetId, selectedPlanet?.bodyId, timeMultiplier]);
+
+  // 1C. Prefetch orbit lines for moon systems from hovered/selected planet context.
+  useEffect(() => {
+    const controller = new AbortController();
+    const debounceTimeout = setTimeout(() => {
+      const parentIds = buildMoonOrbitPrefetchParentIds(
+        selectedPlanet?.bodyId,
+        selectedPlanet?.parentId ?? null,
+        hoveredPlanetId,
+      );
+      if (parentIds.length === 0) return;
+
+      const state = useSolarStore.getState();
+      const now = Date.now();
+
+      for (const parentId of parentIds) {
+        const moonIds = PLANET_MOONS[parentId] ?? [];
+        if (moonIds.length === 0) continue;
+
+        const missingMoonIds = moonIds.filter((moonId) => {
+          const orbitLine = state.orbitLines[moonId];
+          return !orbitLine || orbitLine.points.length < MIN_ORBIT_LINE_POINTS;
+        });
+        if (missingMoonIds.length === 0) continue;
+
+        const prefetchKey = `${parentId}:${missingMoonIds.slice().sort().join(",")}`;
+        const lastPrefetchAt = moonOrbitPrefetchAtRef.current.get(prefetchKey);
+        if (lastPrefetchAt !== undefined && now - lastPrefetchAt < MOON_ORBIT_PREFETCH_COOLDOWN_MS) {
+          continue;
+        }
+
+        moonOrbitPrefetchAtRef.current.set(prefetchKey, now);
+
+        void (async () => {
+          try {
+            const response = await fetch(
+              `/api/ephemeris?ids=${missingMoonIds.join(",")}&fullOrbit=true&orbitReady=true&orbitLineOnly=true`,
+              { signal: controller.signal }
+            );
+            if (!response.ok) return;
+            const payload = await response.json();
+            if (Array.isArray(payload?.data)) {
+              appendFullOrbits(payload.data);
+            }
+          } catch (error) {
+            if ((error as Error).name === "AbortError") return;
+            debugTrajectoryLog(`[TrajectoryManager] Moon orbit prefetch failed for parent ${parentId}.`);
+          }
+        })();
+      }
+    }, MOON_ORBIT_PREFETCH_DEBOUNCE_MS);
+
+    return () => {
+      controller.abort();
+      clearTimeout(debounceTimeout);
+    };
+  }, [appendFullOrbits, hoveredPlanetId, selectedPlanet?.bodyId, selectedPlanet?.parentId]);
 
   // 2. Background pagination driven by segment coverage
   useFrame(() => {

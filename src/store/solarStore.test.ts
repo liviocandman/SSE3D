@@ -29,23 +29,11 @@ function bodyPayload(bodyId: string, trajectory: EphemerisTrajectory[]): Ephemer
 }
 
 /**
- * Helper to set store state while keeping the new clock domain in sync.
+ * Helper to set store state while keeping runtime snapshot in sync.
  */
 function setTestState(overrides: Partial<ReturnType<typeof useSolarStore.getState>>) {
   const currentState = useSolarStore.getState();
   const nextState = { ...currentState, ...overrides };
-  
-  // If we set legacy props, ensure clock is updated too
-  if (overrides.currentTime || overrides.isPlaying !== undefined || overrides.timeAuthority || overrides.timeMultiplier !== undefined) {
-    nextState.clock = {
-      ...currentState.clock,
-      currentTimeMs: (overrides.currentTime || currentState.currentTime).getTime(),
-      isPlaying: overrides.isPlaying !== undefined ? overrides.isPlaying : currentState.isPlaying,
-      authority: overrides.timeAuthority || currentState.timeAuthority,
-      multiplier: overrides.timeMultiplier !== undefined ? overrides.timeMultiplier : currentState.timeMultiplier,
-    };
-  }
-  
   useSolarStore.setState(nextState);
   clockRuntime.setTimeMs(nextState.currentTime.getTime());
 }

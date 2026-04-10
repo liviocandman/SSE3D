@@ -50,6 +50,7 @@ async def test_ephemeris_with_center_body(client):
         full_orbit=False,
         orbit_ready=False,
         orbit_profile=OrbitLineProfile.AUTO,
+        orbit_line_only=False,
     )
 
 

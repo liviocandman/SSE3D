@@ -24,6 +24,7 @@ async def get_ephemeris(
     full_orbit: bool = Query(default=False, alias="fullOrbit"),
     orbit_ready: bool = Query(default=False, alias="orbitReady"),
     orbit_profile: OrbitLineProfile = Query(default=OrbitLineProfile.AUTO, alias="orbitProfile"),
+    orbit_line_only: bool = Query(default=False, alias="orbitLineOnly"),
     force: bool = Query(default=False),
 ):
     del force  # kept for API compatibility
@@ -47,6 +48,7 @@ async def get_ephemeris(
             center=center_body,
             orbit_ready=orbit_ready_effective,
             orbit_profile=orbit_profile,
+            orbit_line_only=orbit_line_only,
         )
 
         fetched_spice: list[EphemerisData] = []
@@ -59,6 +61,7 @@ async def get_ephemeris(
                 full_orbit=full_orbit,
                 orbit_ready=orbit_ready_effective,
                 orbit_profile=orbit_profile,
+                orbit_line_only=orbit_line_only,
             )
             if fetched_spice:
                 await set_bulk_cached(
@@ -67,6 +70,7 @@ async def get_ephemeris(
                     center=center_body,
                     orbit_ready=orbit_ready_effective,
                     orbit_profile=orbit_profile,
+                    orbit_line_only=orbit_line_only,
                 )
 
         spice_by_id = {item.body_id: item for item in cached_data}
@@ -85,6 +89,21 @@ async def get_ephemeris(
                 fallback_data.append(fallback_item)
 
         response_data = spice_data + fallback_data
+        resolved_ids = {item.body_id for item in response_data}
+        unresolved_ids = [body_id for body_id in body_ids if body_id not in resolved_ids]
+
+        if orbit_ready_effective and unresolved_ids:
+            logger.warning(
+                "[Ephemeris Router] Orbit-ready request unresolved for IDs: {} (date={}, fullOrbit={})",
+                ",".join(unresolved_ids),
+                date_str,
+                full_orbit,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail=f"Orbit-ready data unavailable for IDs: {', '.join(unresolved_ids)}",
+            )
+
         if not response_data:
             status = get_spice_runtime_status()
             detail = "No ephemeris data available."
