@@ -69,7 +69,7 @@ describe('MissionTrajectoryLine', () => {
 
   it('renders past and planned lines when data is provided', () => {
     const { getAllByTestId } = render(
-      <MissionTrajectoryLine past={mockPast} planned={mockPlanned} missionTrajectorySegment={null} />
+      <MissionTrajectoryLine past={mockPast} planned={mockPlanned} />
     );
     
     const lines = getAllByTestId('line');
@@ -86,7 +86,7 @@ describe('MissionTrajectoryLine', () => {
     ] satisfies MissionTrajectoryPoint[];
 
     render(
-      <MissionTrajectoryLine past={longPast} planned={[]} missionTrajectorySegment={null} smoothing={true} />
+      <MissionTrajectoryLine past={longPast} planned={[]} smoothing={true} />
     );
     
     expect(densifyWithCatmullRom).toHaveBeenCalled();
@@ -102,7 +102,7 @@ describe('MissionTrajectoryLine', () => {
     ] satisfies MissionTrajectoryPoint[];
 
     render(
-      <MissionTrajectoryLine past={longPast} planned={[]} missionTrajectorySegment={null} smoothing={false} />
+      <MissionTrajectoryLine past={longPast} planned={[]} smoothing={false} />
     );
 
     expect(densifyWithCatmullRom).not.toHaveBeenCalled();

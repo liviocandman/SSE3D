@@ -10,15 +10,12 @@ import { useRef, useEffect } from "react";
 import { useThree, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { useSolarStore } from "@/store/solarStore";
-import { useMissionStore } from "@/store/missionStore";
 import { KM_TO_UNIT } from "@/lib/scales";
 import { isRenderOriginNearTarget } from "@/lib/renderFrame";
 import { CAMERA_CONFIG } from "@/lib/cameraConfig";
 import { createTemporalLookupCache, type TemporalLookupCache } from "@/lib/temporalLookup";
-import { sampleTrajectoryAtTime } from "@/lib/trajectoryEngine";
-import { PLANET_MOONS } from "@/lib/textureConfig";
 import { clockRuntime } from "@/lib/time/clockRuntime";
-import { BODY_IDS } from "@/lib/types";
+import { resolveGeneralTargetFrame } from "@/lib/simulation/frameResolvers";
 
 // --- Types ---
 
@@ -38,16 +35,6 @@ interface UseCameraAnimationReturn {
 // --- Smooth Easing ---
 const smootherstep = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
 
-const MOON_PARENT_BY_ID: Record<string, string> = Object.entries(PLANET_MOONS).reduce(
-  (acc, [parentId, moonIds]) => {
-    moonIds.forEach((moonId) => {
-      acc[moonId] = parentId;
-    });
-    return acc;
-  },
-  {} as Record<string, string>
-);
-
 interface OrbitControlsLike {
   target: THREE.Vector3;
   update: () => void;
@@ -56,75 +43,6 @@ interface OrbitControlsLike {
 }
 
 // --- Internal Helpers ---
-
-function resolveFollowTargetAbsoluteKm(
-  followTargetId: string,
-  lookupCache: TemporalLookupCache,
-  parentLookupCache: TemporalLookupCache
-): { x: number; y: number; z: number } | null {
-  const state = useSolarStore.getState();
-  const simTimeMs = clockRuntime.getTimeMs();
-
-  // 1) Planet/moon source from trajectory segments at current sim time.
-  const masterSegments = state.masterTrajectorySegments[followTargetId] ?? [];
-  if (masterSegments.length > 0) {
-    const sampled = sampleTrajectoryAtTime(masterSegments, simTimeMs, lookupCache);
-    if (sampled) {
-      const parentId = MOON_PARENT_BY_ID[followTargetId];
-      if (parentId) {
-        const parentSegments = state.masterTrajectorySegments[parentId] ?? [];
-        const sampledParent = parentSegments.length > 0
-          ? sampleTrajectoryAtTime(parentSegments, simTimeMs, parentLookupCache)
-          : null;
-
-        if (sampledParent) {
-          return {
-            x: sampledParent.position.x + sampled.position.x,
-            y: sampledParent.position.y + sampled.position.y,
-            z: sampledParent.position.z + sampled.position.z,
-          };
-        } else if (state.selectedPlanet?.bodyId === followTargetId) {
-          return state.selectedPlanet.position;
-        }
-      } else {
-        return sampled.position;
-      }
-    }
-  }
-
-  // 2) Orion authoritative source: mission state sceneCoordinates (Earth-relative KM).
-  if (followTargetId === 'Orion' || followTargetId === 'orion') {
-    const missionState = useMissionStore.getState().missionState;
-    const sceneCoordinates = missionState?.sceneCoordinates;
-    if (
-      sceneCoordinates &&
-      Number.isFinite(sceneCoordinates.x) &&
-      Number.isFinite(sceneCoordinates.y) &&
-      Number.isFinite(sceneCoordinates.z)
-    ) {
-      const earthSegments = state.masterTrajectorySegments[BODY_IDS.EARTH] ?? [];
-      const sampledEarth = earthSegments.length > 0
-        ? sampleTrajectoryAtTime(earthSegments, simTimeMs, parentLookupCache)
-        : null;
-
-      if (sampledEarth?.position) {
-        return {
-          x: sampledEarth.position.x + sceneCoordinates.x,
-          y: sampledEarth.position.y + sceneCoordinates.y,
-          z: sampledEarth.position.z + sceneCoordinates.z,
-        };
-      } else if (state.selectedPlanet?.bodyId === BODY_IDS.EARTH) {
-        return {
-          x: state.selectedPlanet.position.x + sceneCoordinates.x,
-          y: state.selectedPlanet.position.y + sceneCoordinates.y,
-          z: state.selectedPlanet.position.z + sceneCoordinates.z,
-        };
-      }
-    }
-  }
-
-  return null;
-}
 
 function runTravelStep(
   v1: THREE.Vector3,
@@ -158,12 +76,22 @@ function runTravelStep(
 
 function runFollowStep(
   followTargetId: string,
+  outAbsPos: THREE.Vector3,
   lookupCache: TemporalLookupCache,
   parentLookupCache: TemporalLookupCache
 ) {
-  const authoritativePosKm = resolveFollowTargetAbsoluteKm(followTargetId, lookupCache, parentLookupCache);
-  if (authoritativePosKm) {
+  const simTimeMs = clockRuntime.getTimeMs();
+  const success = resolveGeneralTargetFrame(
+    followTargetId,
+    simTimeMs,
+    outAbsPos,
+    lookupCache,
+    parentLookupCache
+  );
+
+  if (success) {
     const solarStore = useSolarStore.getState();
+    const authoritativePosKm = { x: outAbsPos.x, y: outAbsPos.y, z: outAbsPos.z };
     if (!isRenderOriginNearTarget(solarStore.renderOrigin, authoritativePosKm, 0.000001)) {
       solarStore.setRenderOrigin(authoritativePosKm, 'selected_body');
     }
@@ -186,6 +114,7 @@ export function useCameraAnimation(): UseCameraAnimationReturn {
     v1: new THREE.Vector3(),
     v2: new THREE.Vector3(),
     v3: new THREE.Vector3(),
+    absPos: new THREE.Vector3(),
   });
   const followLookupCacheRef = useRef(createTemporalLookupCache());
   const followParentLookupCacheRef = useRef(createTemporalLookupCache());
@@ -193,14 +122,14 @@ export function useCameraAnimation(): UseCameraAnimationReturn {
   // Animation frame loop
   useFrame(() => {
     const solarStore = useSolarStore.getState();
-    const { v1, v2, v3 } = pool.current;
+    const { v1, v2, v3, absPos } = pool.current;
     const { cameraNavMode, followTargetId } = solarStore;
 
     if (cameraNavMode === 'travel') {
       runTravelStep(v1, v2, v3);
     } 
     else if (cameraNavMode === 'follow' && followTargetId) {
-      runFollowStep(followTargetId, followLookupCacheRef.current, followParentLookupCacheRef.current);
+      runFollowStep(followTargetId, absPos, followLookupCacheRef.current, followParentLookupCacheRef.current);
     }
 
     enforceControlsTarget(controls);

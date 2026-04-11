@@ -24,12 +24,13 @@ import {
 } from '@/lib/scales';
 import { useSolarStore } from '@/store/solarStore';
 import { useShallow } from 'zustand/react/shallow';
-import { sampleTrajectoryAtTime, type TrajectorySegment } from '@/lib/trajectoryEngine';
+import { type TrajectorySegment } from '@/lib/trajectoryEngine';
 import { createTemporalLookupCache } from '@/lib/temporalLookup';
 import { SPHERE_MID, HITBOX_SPHERE } from '@/lib/geometryPool';
 import { clockRuntime } from '@/lib/time/clockRuntime';
 import type { EphemerisTrajectory } from '@/lib/types';
 import { USE_BACKEND_ORBIT_READY } from '@/lib/types';
+import { resolveMoonFrame } from '@/lib/simulation/frameResolvers';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -140,6 +141,8 @@ function MoonMesh({
   const parentLookupCacheRef = useRef(createTemporalLookupCache());
   const [isHovered, setIsHovered] = useState(false);
   const tempVec = useRef(new THREE.Vector3());
+  const absPositionKmRef = useRef(new THREE.Vector3());
+  const localPositionKmRef = useRef(new THREE.Vector3());
 
   const { setSelectedPlanet, setViewMode, setTravelTarget } = useSolarStore(
     useShallow((s) => ({
@@ -200,23 +203,29 @@ function MoonMesh({
     const isPlaying = solarState.isPlaying;
     const timeMultiplier = solarState.timeMultiplier;
 
-    if (groupRef.current && masterSegments.length > 0) {
+    // Resolve moon positions using simulation layer
+    const status = resolveMoonFrame(
+      bodyId,
+      parentId,
+      simTime,
+      absPositionKmRef.current,
+      localPositionKmRef.current,
+      lookupCacheRef.current,
+      parentLookupCacheRef.current
+    );
+
+    if (groupRef.current && status !== 'no-data') {
       const SCALE = KM_TO_UNIT * orbitScale;
-      const sampled = sampleTrajectoryAtTime(masterSegments, simTime, lookupCacheRef.current);
+      // Moon trajectories from the backend are parent-relative KM.
+      // Simulation resolveMoonFrame provides localPositionKm in this parent-relative KM.
+      const { x, y, z } = localPositionKmRef.current;
+      const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);
 
-      if (sampled) {
-        // Moon trajectories from the backend are already parent-relative KM.
-        // Since MoonSystem is a child of the parent CelestialBody, 
-        // we just need to scale them to render units.
-        const { x, y, z } = sampled.position;
-        const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);
-
-        if (!isInitializedRef.current) {
-          groupRef.current.position.copy(targetPos);
-          isInitializedRef.current = true;
-        } else {
-          groupRef.current.position.lerp(targetPos, 1 - Math.exp(-10 * delta));
-        }
+      if (!isInitializedRef.current) {
+        groupRef.current.position.copy(targetPos);
+        isInitializedRef.current = true;
+      } else {
+        groupRef.current.position.lerp(targetPos, 1 - Math.exp(-10 * delta));
       }
     }
 
@@ -230,49 +239,14 @@ function MoonMesh({
 
   const name = config.englishName;
 
-  const resolveCurrentMoonPosition = () => {
-    const simTimeMs = clockRuntime.getTimeMs();
-    const sampled = masterSegments.length > 0
-      ? sampleTrajectoryAtTime(masterSegments, simTimeMs, lookupCacheRef.current)
-      : null;
-
-    return sampled?.position ?? moonTrajectory[0]?.position ?? { x: 0, y: 0, z: 0 };
-  };
-
-  const resolveParentAbsolutePositionKm = () => {
-    const parentFromProps = worldParentPositionKm;
-    const parentMagnitudeKm = Math.sqrt(
-      parentFromProps.x ** 2 +
-      parentFromProps.y ** 2 +
-      parentFromProps.z ** 2
-    );
-
-    // Defensive fallback: if parent absolute position is unresolved, sample it from master trajectory.
-    if (parentId !== '10' && parentMagnitudeKm < 1000) {
-      const state = useSolarStore.getState();
-      const parentSegments = state.masterTrajectorySegments[parentId] ?? [];
-      if (parentSegments.length > 0) {
-        const sampledParent = sampleTrajectoryAtTime(
-          parentSegments,
-          clockRuntime.getTimeMs(),
-          parentLookupCacheRef.current
-        );
-        if (sampledParent?.position) {
-          return sampledParent.position;
-        }
-      }
-    }
-
-    return parentFromProps;
-  };
-
   const handleClick = () => {
-    const currentPos = resolveCurrentMoonPosition();
-    const parentAbsolutePos = resolveParentAbsolutePositionKm();
+    const currentPos = localPositionKmRef.current;
+    const absolutePosKm = absPositionKmRef.current;
+    
     const absolutePos = {
-      x: parentAbsolutePos.x + currentPos.x,
-      y: parentAbsolutePos.y + currentPos.y,
-      z: parentAbsolutePos.z + currentPos.z,
+      x: absolutePosKm.x,
+      y: absolutePosKm.y,
+      z: absolutePosKm.z,
     };
     const distanceToParentKm = Math.sqrt(currentPos.x ** 2 + currentPos.y ** 2 + currentPos.z ** 2);
 
@@ -292,12 +266,11 @@ function MoonMesh({
   };
 
   const handleDoubleClick = () => {
-    const currentPos = resolveCurrentMoonPosition();
-    const parentAbsolutePos = resolveParentAbsolutePositionKm();
+    const absolutePosKm = absPositionKmRef.current;
     const absolutePos = {
-      x: parentAbsolutePos.x + currentPos.x,
-      y: parentAbsolutePos.y + currentPos.y,
-      z: parentAbsolutePos.z + currentPos.z,
+      x: absolutePosKm.x,
+      y: absolutePosKm.y,
+      z: absolutePosKm.z,
     };
 
     handleClick(); // Set selected state

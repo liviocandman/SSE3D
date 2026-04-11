@@ -9,9 +9,9 @@ import { MissionPhase } from '@/lib/missionTypes';
 import { ORION_MESH_TO_BODY_QUATERNION } from '@/lib/missionAttitudeCalibration';
 import { useSolarStore } from '@/store/solarStore';
 import { useMissionStore } from '@/store/missionStore';
-import { sampleTrajectoryAtTime, type TrajectorySegment } from '@/lib/trajectoryEngine';
 import type { EphemerisData } from '@/lib/types';
 import { clockRuntime } from '@/lib/time/clockRuntime';
+import { resolveMissionFrame } from '@/lib/simulation/frameResolvers';
 
 export interface SpacecraftBodyProps {
   vehicleId: string;
@@ -21,7 +21,6 @@ export interface SpacecraftBodyProps {
   onDoubleClick?: (id: string) => void;
   attitudeQuaternion?: MissionQuaternion;
   useAttitude?: boolean; // Story 8.3: Feature flag
-  missionTrajectorySegment: TrajectorySegment | null;
   earthEphemeris: EphemerisData | null;
 }
 
@@ -69,22 +68,6 @@ function createCircleTexture(color: string) {
   return new THREE.CanvasTexture(canvas);
 }
 
-function buildProgradeQuaternion(direction: THREE.Vector3) {
-  const xAxis = direction.clone().normalize();
-  const upHint = new THREE.Vector3(0, 1, 0);
-
-  let yAxis = new THREE.Vector3().crossVectors(upHint, xAxis);
-  if (yAxis.lengthSq() <= 1e-12) {
-    yAxis = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 0, 1), xAxis);
-  }
-  yAxis.normalize();
-
-  const zAxis = new THREE.Vector3().crossVectors(xAxis, yAxis).normalize();
-  const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
-
-  return new THREE.Quaternion().setFromRotationMatrix(basis);
-}
-
 function normalizeKm(value: number): number {
   return Math.round(value * 1e9) / 1e9;
 }
@@ -97,7 +80,6 @@ export function SpacecraftBody({
   onDoubleClick,
   attitudeQuaternion,
   useAttitude = false,
-  missionTrajectorySegment,
   earthEphemeris,
 }: SpacecraftBodyProps) {
   const groupRef = useRef<THREE.Group>(null);
@@ -106,11 +88,10 @@ export function SpacecraftBody({
   const proxyRef = useRef<THREE.Group>(null);
   const detailedRef = useRef<THREE.Group>(null);
   const worldPositionRef = useRef(new THREE.Vector3());
-  const travelDirectionRef = useRef(new THREE.Vector3());
-  const previousLocalPositionRef = useRef<THREE.Vector3 | null>(null);
-  const progradeQuaternionRef = useRef(new THREE.Quaternion());
-  const progradeDirectionRef = useRef(new THREE.Vector3(1, 0, 0));
-  const localPositionRef = useRef(new THREE.Vector3());
+  const previousEarthRelativePositionKmRef = useRef<THREE.Vector3 | null>(null);
+  const absPositionKmRef = useRef(new THREE.Vector3());
+  const earthRelativePositionKmRef = useRef(new THREE.Vector3());
+  const headingQuaternionRef = useRef(new THREE.Quaternion());
   const targetLocalPositionRef = useRef(new THREE.Vector3(0, 0, 0));
   const positionInitializedRef = useRef(false);
   const targetAttitudeQuaternionRef = useRef(new THREE.Quaternion());
@@ -130,10 +111,8 @@ export function SpacecraftBody({
   const autoFocusFrameCounterRef = useRef(0);
   const lastDistanceRef = useRef(Number.POSITIVE_INFINITY);
   const setTravelTarget = useSolarStore(state => state.setTravelTarget);
-  const missionState = useMissionStore(state => state.missionState);
   const missionEvents = useMissionStore(state => state.missionEvents);
   const autoFocusEvents = useMissionStore(state => state.autoFocusEvents);
-  const missionTrajectory = useMissionStore(state => state.missionTrajectory);
 
   // Pre-calculate event timestamps to avoid new Date() in useFrame
   const eventsWithTime = useMemo(() => {
@@ -150,31 +129,15 @@ export function SpacecraftBody({
   }, []);
 
   const resolveSpacecraftWorldPositionKm = useCallback(() => {
-    const sceneCoordinates = missionState?.sceneCoordinates;
-    if (
-      earthEphemeris &&
-      sceneCoordinates &&
-      Number.isFinite(sceneCoordinates.x) &&
-      Number.isFinite(sceneCoordinates.y) &&
-      Number.isFinite(sceneCoordinates.z)
-    ) {
+    if (positionInitializedRef.current) {
       return {
-        x: normalizeKm(earthEphemeris.position.x + sceneCoordinates.x),
-        y: normalizeKm(earthEphemeris.position.y + sceneCoordinates.y),
-        z: normalizeKm(earthEphemeris.position.z + sceneCoordinates.z),
+        x: absPositionKmRef.current.x,
+        y: absPositionKmRef.current.y,
+        z: absPositionKmRef.current.z,
       };
     }
-
-    if (earthEphemeris && groupRef.current) {
-      return {
-        x: normalizeKm(earthEphemeris.position.x + (groupRef.current.position.x / KM_TO_UNIT)),
-        y: normalizeKm(earthEphemeris.position.y + (groupRef.current.position.y / KM_TO_UNIT)),
-        z: normalizeKm(earthEphemeris.position.z + (groupRef.current.position.z / KM_TO_UNIT)),
-      };
-    }
-
     return null;
-  }, [earthEphemeris, missionState?.sceneCoordinates]);
+  }, []);
 
   useEffect(() => {
     if (isSelected && !detailedLoadRequestedRef.current) {
@@ -190,39 +153,34 @@ export function SpacecraftBody({
 
     const simTimeMs = clockRuntime.getTimeMs();
 
-    // 1. Resolve spacecraft local position (Earth-relative KM)
-    let sampledPosition: [number, number, number] | null = null;
-    const sceneCoordinates = missionState?.sceneCoordinates;
-    if (
-      sceneCoordinates &&
-      Number.isFinite(sceneCoordinates.x) &&
-      Number.isFinite(sceneCoordinates.y) &&
-      Number.isFinite(sceneCoordinates.z)
-    ) {
-      sampledPosition = scalePositionFromKm(
-        normalizeKm(sceneCoordinates.x),
-        normalizeKm(sceneCoordinates.y),
-        normalizeKm(sceneCoordinates.z)
-      );
-    } else if (missionTrajectorySegment) {
-      const sampled = sampleTrajectoryAtTime([missionTrajectorySegment], simTimeMs);
-      if (sampled) {
-        const scaled = scalePositionFromKm(
-          normalizeKm(sampled.position.x),
-          normalizeKm(sampled.position.y),
-          normalizeKm(sampled.position.z)
-        );
-        sampledPosition = scaled;
-      }
-    }
+    // 1. Resolve spacecraft state using simulation layer
+    const source = resolveMissionFrame(
+      simTimeMs,
+      absPositionKmRef.current,
+      earthRelativePositionKmRef.current,
+      headingQuaternionRef.current,
+      previousEarthRelativePositionKmRef.current
+    );
 
-    if (sampledPosition) {
-      targetLocalPositionRef.current.set(sampledPosition[0], sampledPosition[1], sampledPosition[2]);
+    if (source !== 'none') {
+      const scaled = scalePositionFromKm(
+        normalizeKm(earthRelativePositionKmRef.current.x),
+        normalizeKm(earthRelativePositionKmRef.current.y),
+        normalizeKm(earthRelativePositionKmRef.current.z)
+      );
+      targetLocalPositionRef.current.set(scaled[0], scaled[1], scaled[2]);
+
       if (!positionInitializedRef.current) {
         groupRef.current.position.copy(targetLocalPositionRef.current);
         positionInitializedRef.current = true;
       }
     }
+
+    // Update previous position for next frame's heading calculation
+    if (!previousEarthRelativePositionKmRef.current) {
+      previousEarthRelativePositionKmRef.current = new THREE.Vector3();
+    }
+    previousEarthRelativePositionKmRef.current.copy(earthRelativePositionKmRef.current);
 
     // 2. Position Damping
     const positionLerpFactor = 1 - Math.exp(-SPACECRAFT_POSITION_DAMPING * delta);
@@ -290,7 +248,7 @@ export function SpacecraftBody({
     );
     markerRef.current.scale.set(markerScale, markerScale, 1);
 
-    // 4. Attitude and Heading
+    // 4. Attitude and Orientation
     if (visualRootRef.current) {
       if (useAttitude && attitudeQuaternion) {
         targetAttitudeQuaternionRef.current
@@ -303,75 +261,12 @@ export function SpacecraftBody({
           .normalize()
           .multiply(meshToBodyAlignmentQuat);
       } else {
-        let headingResolved = false;
-
-        // Try to derive heading from trajectory
-        if (missionTrajectory) {
-          const currentPosKm = {
-            x: groupRef.current.position.x / KM_TO_UNIT,
-            y: groupRef.current.position.y / KM_TO_UNIT,
-            z: groupRef.current.position.z / KM_TO_UNIT,
-          };
-          const EPS = 1e-12;
-
-          if (missionTrajectory.planned?.length) {
-            const candidates = missionTrajectory.planned.slice(0, 3);
-            for (const candidate of candidates) {
-              const heading = new THREE.Vector3(
-                candidate.position.x - currentPosKm.x,
-                candidate.position.y - currentPosKm.y,
-                candidate.position.z - currentPosKm.z
-              );
-              if (heading.lengthSq() > EPS) {
-                heading.normalize();
-                progradeDirectionRef.current.copy(heading);
-                progradeQuaternionRef.current.copy(buildProgradeQuaternion(progradeDirectionRef.current));
-                headingResolved = true;
-                break;
-              }
-            }
-          }
-
-          if (!headingResolved && missionTrajectory.past?.length) {
-            const lastPast = missionTrajectory.past[missionTrajectory.past.length - 1];
-            const heading = new THREE.Vector3(
-              currentPosKm.x - lastPast.position.x,
-              currentPosKm.y - lastPast.position.y,
-              currentPosKm.z - lastPast.position.z
-            );
-            if (heading.lengthSq() > EPS) {
-              heading.normalize();
-              progradeDirectionRef.current.copy(heading);
-              progradeQuaternionRef.current.copy(buildProgradeQuaternion(progradeDirectionRef.current));
-              headingResolved = true;
-            }
-          }
-        }
-
-        if (!headingResolved) {
-          const currentLocalPosition = localPositionRef.current.copy(groupRef.current.position);
-          const previousLocalPosition = previousLocalPositionRef.current;
-
-          if (previousLocalPosition) {
-            const travelDirection = travelDirectionRef.current.copy(currentLocalPosition).sub(previousLocalPosition);
-            if (travelDirection.lengthSq() > 1e-18) {
-              progradeDirectionRef.current.copy(travelDirection).normalize();
-              progradeQuaternionRef.current.copy(buildProgradeQuaternion(progradeDirectionRef.current));
-            }
-          }
-        }
-
-        targetAttitudeQuaternionRef.current.copy(progradeQuaternionRef.current).multiply(meshToBodyAlignmentQuat);
+        // Use resolved prograde heading from simulation layer
+        targetAttitudeQuaternionRef.current.copy(headingQuaternionRef.current).multiply(meshToBodyAlignmentQuat);
       }
 
       const attitudeLerpFactor = 1 - Math.exp(-SPACECRAFT_ATTITUDE_DAMPING * delta);
       visualRootRef.current.quaternion.slerp(targetAttitudeQuaternionRef.current, attitudeLerpFactor);
-    }
-
-    if (previousLocalPositionRef.current) {
-      previousLocalPositionRef.current.copy(groupRef.current.position);
-    } else {
-      previousLocalPositionRef.current = groupRef.current.position.clone();
     }
 
     // 5. Auto-focus Logic

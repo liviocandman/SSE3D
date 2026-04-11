@@ -6,13 +6,12 @@ import { scalePositionFromKm } from '@/lib/scales';
 import { MissionTrajectoryPoint } from '@/lib/missionTypes';
 import { densifyWithCatmullRom } from '@/lib/catmullRom';
 import { EphemerisTrajectory } from '@/lib/types';
-import { sampleTrajectoryAtTime, type TrajectorySegment } from '@/lib/trajectoryEngine';
 import { clockRuntime } from '@/lib/time/clockRuntime';
+import { resolveMissionFrame } from '@/lib/simulation/frameResolvers';
 
 interface MissionTrajectoryLineProps {
   past: MissionTrajectoryPoint[];
   planned: MissionTrajectoryPoint[];
-  missionTrajectorySegment: TrajectorySegment | null;
   smoothing?: boolean;
   velocityThreshold?: number;
 }
@@ -46,7 +45,6 @@ function isLineSegmentsGeometry(geometry: THREE.BufferGeometry): geometry is Lin
 export const MissionTrajectoryLine: React.FC<MissionTrajectoryLineProps> = ({
   past,
   planned,
-  missionTrajectorySegment,
   smoothing = false,
   velocityThreshold = 5,
 }) => {
@@ -82,6 +80,9 @@ export const MissionTrajectoryLine: React.FC<MissionTrajectoryLineProps> = ({
   // Pre-allocate buffers
   const pastPosBuffer = useRef(new Float32Array((basePastPoints.length + 1) * 3));
   const plannedPosBuffer = useRef(new Float32Array((basePlannedPoints.length + 1) * 3));
+  const absPositionKmRef = useRef(new THREE.Vector3());
+  const earthRelativePositionKmRef = useRef(new THREE.Vector3());
+  const headingQuaternionRef = useRef(new THREE.Quaternion());
 
   useEffect(() => {
     pastPosBuffer.current = new Float32Array((basePastPoints.length + 1) * 3);
@@ -94,13 +95,21 @@ export const MissionTrajectoryLine: React.FC<MissionTrajectoryLineProps> = ({
   useFrame(() => {
     const simTimeMs = clockRuntime.getTimeMs();
 
-    // Sample current position in Earth-relative KM
+    // Sample current position in Earth-relative KM using simulation layer
+    const source = resolveMissionFrame(
+      simTimeMs,
+      absPositionKmRef.current,
+      earthRelativePositionKmRef.current,
+      headingQuaternionRef.current
+    );
+
     let currentPosLocalUnits: [number, number, number] | null = null;
-    if (missionTrajectorySegment) {
-      const sampled = sampleTrajectoryAtTime([missionTrajectorySegment], simTimeMs);
-      if (sampled) {
-        currentPosLocalUnits = scalePositionFromKm(sampled.position.x, sampled.position.y, sampled.position.z);
-      }
+    if (source !== 'none') {
+      currentPosLocalUnits = scalePositionFromKm(
+        earthRelativePositionKmRef.current.x, 
+        earthRelativePositionKmRef.current.y, 
+        earthRelativePositionKmRef.current.z
+      );
     }
 
     // Update Past Line

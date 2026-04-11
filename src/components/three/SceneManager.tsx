@@ -12,7 +12,6 @@ import { MoonSystem } from './MoonSystem';
 import {
   type TrajectorySegment,
   flattenTrajectorySegments,
-  buildTrajectorySegment,
 } from '@/lib/trajectoryEngine';
 import type { EphemerisData, SelectedPlanet } from '@/lib/types';
 import {
@@ -234,30 +233,6 @@ function EarthMissionLayer({
     }))
   );
 
-  const missionTrajectorySegment = useMemo<TrajectorySegment | null>(() => {
-    if (!missionTrajectory) return null;
-    const combinedPoints = [...missionTrajectory.past, ...missionTrajectory.planned];
-    if (combinedPoints.length < 2) return null;
-
-    return buildTrajectorySegment(
-      combinedPoints.map((point) => ({
-        timestamp: point.timestamp,
-        position: {
-          x: point.position.x,
-          y: point.position.y,
-          z: point.position.z,
-        },
-        velocity: point.velocity
-          ? {
-              x: point.velocity.x,
-              y: point.velocity.y,
-              z: point.velocity.z,
-            }
-          : undefined,
-      }))
-    );
-  }, [missionTrajectory]);
-
   const missionMilestones = useMemo(() => {
     if (!missionEvents?.events || !missionTrajectory) return [];
 
@@ -315,7 +290,6 @@ function EarthMissionLayer({
         label={missionState.vehicleId === 'orion' ? 'Orion' : missionState.vehicleId.toUpperCase()}
         isSelected={selectedMissionTargetId === missionState.vehicleId}
         attitudeQuaternion={missionState.attitudeQuaternion}
-        missionTrajectorySegment={missionTrajectorySegment}
         earthEphemeris={earthEphemeris}
         onClick={(id) => {
           if (earthSelectionContext) {
@@ -340,7 +314,6 @@ function EarthMissionLayer({
         <MissionTrajectoryLine
           past={missionTrajectory.past}
           planned={missionTrajectory.planned}
-          missionTrajectorySegment={missionTrajectorySegment}
           smoothing={false}
         />
       )}

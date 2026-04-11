@@ -8,13 +8,13 @@ import * as THREE from "three";
 import "../../app/globals.css";
 import { type ViewMode, KM_TO_UNIT } from "@/lib/scales";
 import { useSolarStore } from "@/store/solarStore";
-import { useShallow } from "zustand/react/shallow";
 import { toRelativeRenderUnitsInto } from "@/lib/renderFrame";
 import type { EphemerisTrajectory } from "@/lib/types";
-import { buildTrajectorySegment, sampleTrajectoryAtTime } from "@/lib/trajectoryEngine";
+import { buildTrajectorySegment } from "@/lib/trajectoryEngine";
 import { createTemporalLookupCache } from "@/lib/temporalLookup";
 import { calculateAbsoluteRotation } from "@/lib/rotationUtils";
 import { clockRuntime } from "@/lib/time/clockRuntime";
+import { resolvePlanetFrame } from "@/lib/simulation/frameResolvers";
 
 // --- Types ---
 
@@ -82,15 +82,13 @@ export function CelestialBody({
   const { camera } = useThree();
 
   const tempVec = useRef(new THREE.Vector3());
+  const absPositionKmRef = useRef(new THREE.Vector3());
   const lookupCacheRef = useRef(createTemporalLookupCache());
   const isInitializedRef = useRef(false);
   const frameCountRef = useRef(0);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const setHoveredPlanetId = useSolarStore(state => state.setHoveredPlanetId);
-
-  // Selective subscription to this specific planet's segments
-  const masterSegments = useSolarStore(useShallow(state => state.masterTrajectorySegments[bodyId] || []));
 
   const fallbackSegments = useMemo(() => {
     if (!trajectory || trajectory.length === 0) return [];
@@ -124,19 +122,23 @@ export function CelestialBody({
     const solarState = useSolarStore.getState();
     const simTime = clockRuntime.getTimeMs();
 
-    // Use current segments from store, fallback to initial props
-    const currentSegments = masterSegments.length > 0 ? masterSegments : fallbackSegments;
+    // 1. Resolve position using the simulation layer
+    const status = resolvePlanetFrame(
+      bodyId,
+      simTime,
+      absPositionKmRef.current,
+      lookupCacheRef.current,
+      fallbackSegments
+    );
 
-    // 1. Interpolate position from trajectory if available
-    if (currentSegments.length > 0 && groupRef.current) {
-      const sampled = sampleTrajectoryAtTime(currentSegments, simTime, lookupCacheRef.current);
-      if (sampled) {
-        const renderOrigin = solarState.renderOrigin;
-        
+    if (groupRef.current) {
+      const renderOrigin = solarState.renderOrigin;
+
+      if (status !== 'no-data') {
         // Convert absolute KM to relative render units (Zero allocation)
         const targetPos = toRelativeRenderUnitsInto(
           tempVec.current,
-          sampled.position,
+          absPositionKmRef.current,
           renderOrigin,
           KM_TO_UNIT
         );
@@ -150,30 +152,25 @@ export function CelestialBody({
           const lerpFactor = 1 - Math.exp(-6 * delta);
           groupRef.current.position.lerp(targetPos, lerpFactor);
         }
-      }
-    } else if (groupRef.current) {
-      const renderOrigin = solarState.renderOrigin;
+      } else {
+        // Fallback bodies without trajectory: keep coherent with camera-relative origin
+        const invScale = 1 / KM_TO_UNIT;
+        const absKm = {
+          x: initialPosition[0] * invScale,
+          y: initialPosition[1] * invScale,
+          z: initialPosition[2] * invScale
+        };
 
-      // Keep fallback bodies coherent with camera-relative origin changes.
-      // initialPosition is in render units [x, y, z] from store or props
-      // We convert it back to absolute KM, then to relative units.
-      // Assumption: initialPosition was computed as absoluteKm * KM_TO_UNIT.
-      const invScale = 1 / KM_TO_UNIT;
-      const absKm = {
-        x: initialPosition[0] * invScale,
-        y: initialPosition[1] * invScale,
-        z: initialPosition[2] * invScale
-      };
+        toRelativeRenderUnitsInto(
+          groupRef.current.position,
+          absKm,
+          renderOrigin,
+          KM_TO_UNIT
+        );
 
-      toRelativeRenderUnitsInto(
-        groupRef.current.position,
-        absKm,
-        renderOrigin,
-        KM_TO_UNIT
-      );
-
-      if (!isInitializedRef.current) {
-        isInitializedRef.current = true;
+        if (!isInitializedRef.current) {
+          isInitializedRef.current = true;
+        }
       }
     }
 
