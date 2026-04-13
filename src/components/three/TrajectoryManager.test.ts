@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFetchBodyIds, buildMoonOrbitPrefetchParentIds } from './TrajectoryManager';
+import { buildFetchBodyIds, buildMoonOrbitPrefetchParentIds } from '@/lib/trajectoryAvailabilityPolicy';
 
 describe('TrajectoryManager helpers', () => {
   it('should include core planets by default', () => {

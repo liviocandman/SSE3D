@@ -63,8 +63,6 @@ const AU_TO_KM = 149_597_870.7;
 const MOON_CLOSEUP_TRAVEL_RADIUS_MULTIPLIER = 2;
 const EMPTY_TRAJECTORY: EphemerisTrajectory[] = [];
 const EMPTY_SEGMENTS: TrajectorySegment[] = [];
-const ORBIT_FETCH_MAX_RETRIES = 5;
-const ORBIT_FETCH_BASE_DELAY_MS = 600;
 const MAX_LIGHT_FALLBACK_POINTS = 240;
 
 // Global singleton to prevent recreating workers and to avoid React Suspense
@@ -361,66 +359,10 @@ export function MoonSystem({
   viewMode,
   tier,
 }: MoonSystemProps) {
-  const appendFullOrbits = useSolarStore((state) => state.appendFullOrbits);
   const moonIds = PLANET_MOONS[parentId] ?? [];
   const hasMoons = moonIds.length > 0;
 
   const parentConfig = getPlanetConfig(parentId);
-  const moonIdsKey = moonIds.join(',');
-
-  useEffect(() => {
-    if (!hasMoons) return;
-
-    let cancelled = false;
-
-    const delay = (ms: number) =>
-      new Promise<void>((resolve) => {
-        setTimeout(resolve, ms);
-      });
-
-    const getMissingMoonIds = (): string[] => {
-      const currentMoonIds = PLANET_MOONS[parentId] ?? [];
-      const { fullOrbits, orbitLines } = useSolarStore.getState();
-      return currentMoonIds.filter((moonId) => {
-        const orbit = fullOrbits[moonId];
-        const orbitLine = orbitLines[moonId];
-        const hasOrbitLine = !USE_BACKEND_ORBIT_READY || (orbitLine && orbitLine.points.length >= 2);
-        if (USE_BACKEND_ORBIT_READY) {
-          return !hasOrbitLine;
-        }
-        return !orbit || orbit.length < 2;
-      });
-    };
-
-    const fetchFullMoonOrbits = async () => {
-      for (let attempt = 0; attempt < ORBIT_FETCH_MAX_RETRIES && !cancelled; attempt += 1) {
-        const missingMoonIds = getMissingMoonIds();
-        if (missingMoonIds.length === 0) return;
-
-        try {
-          const response = await fetch(`/api/ephemeris?ids=${missingMoonIds.join(',')}&fullOrbit=true&orbitReady=true&orbitLineOnly=true`);
-          if (response.ok) {
-            const payload = await response.json();
-            if (!cancelled && Array.isArray(payload?.data)) {
-              appendFullOrbits(payload.data);
-            }
-          }
-        } catch {
-          // Retry path handles transient wake/network errors.
-        }
-
-        if (getMissingMoonIds().length === 0 || cancelled) return;
-        if (attempt < ORBIT_FETCH_MAX_RETRIES - 1) {
-          await delay(ORBIT_FETCH_BASE_DELAY_MS * (attempt + 1));
-        }
-      }
-    };
-
-    void fetchFullMoonOrbits();
-    return () => {
-      cancelled = true;
-    };
-  }, [appendFullOrbits, hasMoons, moonIdsKey, parentId]);
 
   if (!hasMoons) return null;
 

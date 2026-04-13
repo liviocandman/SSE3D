@@ -1,29 +1,17 @@
 import { useEffect, useRef, useCallback } from "react";
 import type { EphemerisData } from "../lib/types";
-import { buildTrajectoryRequestKey } from "@/lib/trajectoryPolicy";
 
 interface WorkerRequest {
   resolve: (data: EphemerisData[]) => void;
   reject: (reason: unknown) => void;
 }
 
-interface ResponseCacheEntry {
-  expiresAt: number;
-  data: EphemerisData[];
-}
-
-const RESPONSE_CACHE_TTL_MS = 5000;
-
 export function useTrajectoryWorker() {
   const workerRef = useRef<Worker | null>(null);
   const pendingRequests = useRef<Map<string, WorkerRequest>>(new Map());
-  const inFlightByKeyRef = useRef<Map<string, Promise<EphemerisData[]>>>(new Map());
-  const responseCacheRef = useRef<Map<string, ResponseCacheEntry>>(new Map());
 
   useEffect(() => {
     const pending = pendingRequests.current;
-    const inFlight = inFlightByKeyRef.current;
-    const responseCache = responseCacheRef.current;
 
     // Initialize worker with standard Next.js / Webpack / Vite compatible syntax
     const worker = new Worker(
@@ -51,23 +39,12 @@ export function useTrajectoryWorker() {
     return () => {
       pending.forEach((request) => request.reject(new Error("AbortError")));
       pending.clear();
-      inFlight.clear();
-      responseCache.clear();
       worker.terminate();
       workerRef.current = null;
     };
   }, []);
 
-  const clearExpiredCacheEntries = useCallback(() => {
-    const now = Date.now();
-    for (const [key, value] of responseCacheRef.current) {
-      if (value.expiresAt <= now) {
-        responseCacheRef.current.delete(key);
-      }
-    }
-  }, []);
-
-  const fetchTrajectory = useCallback(
+  const fetchTrajectoryRaw = useCallback(
     async (
       date: string,
       spanDays: number,
@@ -79,54 +56,9 @@ export function useTrajectoryWorker() {
         throw new Error("Worker not initialized");
       }
 
-      const requestKey = buildTrajectoryRequestKey(date, spanDays, ids, tier);
-      clearExpiredCacheEntries();
-
-      const cached = responseCacheRef.current.get(requestKey);
-      if (cached && cached.expiresAt > Date.now()) {
-        return cached.data;
-      }
-
-      const inFlight = inFlightByKeyRef.current.get(requestKey);
-      if (inFlight) {
-        if (!signal) {
-          return inFlight;
-        }
-
-        return new Promise<EphemerisData[]>((resolve, reject) => {
-          if (signal.aborted) {
-            reject(new Error("AbortError"));
-            return;
-          }
-
-          let cancelled = false;
-          const onAbort = () => {
-            cancelled = true;
-            signal.removeEventListener("abort", onAbort);
-            reject(new Error("AbortError"));
-          };
-
-          signal.addEventListener("abort", onAbort, { once: true });
-
-          inFlight
-            .then((data) => {
-              signal.removeEventListener("abort", onAbort);
-              if (!cancelled) {
-                resolve(data);
-              }
-            })
-            .catch((err) => {
-              signal.removeEventListener("abort", onAbort);
-              if (!cancelled) {
-                reject(err);
-              }
-            });
-        });
-      }
-
       const jobId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-      const requestPromise = new Promise<EphemerisData[]>((resolve, reject) => {
+      return new Promise<EphemerisData[]>((resolve, reject) => {
         let completed = false;
 
         const cleanup = () => {
@@ -177,24 +109,9 @@ export function useTrajectoryWorker() {
           },
         });
       });
-
-      const dedupedPromise = requestPromise
-        .then((data) => {
-          responseCacheRef.current.set(requestKey, {
-            expiresAt: Date.now() + RESPONSE_CACHE_TTL_MS,
-            data,
-          });
-          return data;
-        })
-        .finally(() => {
-          inFlightByKeyRef.current.delete(requestKey);
-        });
-
-      inFlightByKeyRef.current.set(requestKey, dedupedPromise);
-      return dedupedPromise;
     },
-    [clearExpiredCacheEntries],
+    [],
   );
 
-  return { fetchTrajectory };
+  return { fetchTrajectoryRaw };
 }
