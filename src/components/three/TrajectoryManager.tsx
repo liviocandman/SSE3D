@@ -19,6 +19,8 @@ const JUMP_DEBOUNCE_MS = 450;
 const TARGET_CHANGE_DEBOUNCE_MS = 250;
 const BACKGROUND_PAGINATION_EVERY_FRAMES = 300;
 const MOON_ORBIT_PREFETCH_DEBOUNCE_MS = 250;
+const MOON_ORBIT_PREFETCH_MAX_RETRIES = 3;
+const MOON_ORBIT_PREFETCH_RETRY_BASE_MS = 750;
 const MIN_ORBIT_LINE_POINTS = 2;
 
 function toDateStringUTC(ms: number): string {
@@ -29,6 +31,12 @@ function debugTrajectoryLog(message: string): void {
   if (process.env.NODE_ENV !== "production") {
     console.info(message);
   }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 export function TrajectoryManager() {
@@ -179,16 +187,27 @@ export function TrajectoryManager() {
 
       for (const demand of demands) {
         void (async () => {
-          try {
-            const data = await requestOrbitLines(demand.ids, controller.signal);
-            if (data.length > 0) {
-              appendFullOrbits(data);
+          for (let attempt = 0; attempt < MOON_ORBIT_PREFETCH_MAX_RETRIES; attempt += 1) {
+            try {
+              const data = await requestOrbitLines(demand.ids, controller.signal);
+              if (data.length > 0) {
+                appendFullOrbits(data);
+              }
+              return;
+            } catch (error) {
+              if ((error as Error).message === "AbortError" || controller.signal.aborted) {
+                return;
+              }
+
+              if (attempt < MOON_ORBIT_PREFETCH_MAX_RETRIES - 1) {
+                await delay(MOON_ORBIT_PREFETCH_RETRY_BASE_MS * (attempt + 1));
+                continue;
+              }
+
+              debugTrajectoryLog(
+                `[TrajectoryManager] Moon orbit prefetch failed for parent ${demand.parentId}.`,
+              );
             }
-          } catch (error) {
-            if ((error as Error).message === "AbortError") return;
-            debugTrajectoryLog(
-              `[TrajectoryManager] Moon orbit prefetch failed for parent ${demand.parentId}.`,
-            );
           }
         })();
       }

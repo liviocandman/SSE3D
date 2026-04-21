@@ -42,7 +42,7 @@ async def test_get_bulk_cached_with_center_key():
 
         cached, missing = await get_bulk_cached(["501"], "2024-01-01", center="599")
 
-        mock_redis.get.assert_awaited_once_with("ephemeris:501:center_599:2024-01-01")
+        mock_redis.get.assert_awaited_once_with("ephemeris:501:center_599:2024-01-01:span_30")
         assert cached == []
         assert missing == ["501"]
 
@@ -85,5 +85,25 @@ async def test_get_bulk_cached_orbit_line_only_uses_specific_cache_key():
         )
 
         mock_redis.get.assert_awaited_once_with(
-            "ephemeris:401:2024-01-01:orbit_ready_orbit-ready-v1:profile_rapid:orbit_line_only"
+            "ephemeris:401:2024-01-01:span_30:orbit_ready_orbit-ready-v1:profile_rapid:orbit_line_only"
+        )
+
+@pytest.mark.asyncio
+async def test_get_bulk_cached_full_orbit_uses_distinct_cache_key():
+    from app.services.cache_service import get_bulk_cached
+
+    with patch("app.services.cache_service.AsyncRedis") as mock_class:
+        mock_redis = AsyncMock()
+        mock_class.return_value = mock_redis
+        mock_redis.get.return_value = None
+
+        await get_bulk_cached(
+            ["301"],
+            "2024-01-01",
+            span_days=30,
+            full_orbit=True,
+        )
+
+        mock_redis.get.assert_awaited_once_with(
+            "ephemeris:301:2024-01-01:span_30:full_orbit"
         )

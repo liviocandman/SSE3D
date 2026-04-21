@@ -29,6 +29,8 @@ def _cache_key(
     body_id: str, 
     date: str, 
     center: str = "10",
+    span_days: int = 30,
+    full_orbit: bool = False,
     orbit_ready: bool = False,
     orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO,
     orbit_line_only: bool = False,
@@ -37,6 +39,10 @@ def _cache_key(
     if center != "10":
         parts.append(f"center_{center}")
     parts.append(date)
+    parts.append(f"span_{span_days}")
+
+    if full_orbit:
+        parts.append("full_orbit")
     
     if orbit_ready:
         parts.append(f"orbit_ready_{ALGORITHM_VERSION}")
@@ -51,6 +57,8 @@ async def get_bulk_cached(
     body_ids: list[str], 
     date: str, 
     center: str = "10",
+    span_days: int = 30,
+    full_orbit: bool = False,
     orbit_ready: bool = False,
     orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO,
     orbit_line_only: bool = False,
@@ -66,6 +74,8 @@ async def get_bulk_cached(
                 bid,
                 date,
                 center=center,
+                span_days=span_days,
+                full_orbit=full_orbit,
                 orbit_ready=orbit_ready,
                 orbit_profile=orbit_profile,
                 orbit_line_only=orbit_line_only,
@@ -100,6 +110,8 @@ async def set_bulk_cached(
     date: str, 
     items: list[EphemerisData], 
     center: str = "10",
+    span_days: int = 30,
+    full_orbit: bool = False,
     orbit_ready: bool = False,
     orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO,
     orbit_line_only: bool = False,
@@ -114,6 +126,8 @@ async def set_bulk_cached(
                 item.body_id,
                 date,
                 center=center,
+                span_days=span_days,
+                full_orbit=full_orbit,
                 orbit_ready=orbit_ready,
                 orbit_profile=orbit_profile,
                 orbit_line_only=orbit_line_only,

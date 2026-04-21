@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { sampleTrajectoryAtTime, type TrajectorySegment } from '../trajectoryEngine';
-import type { MissionState, MissionTrajectory } from '@/lib/missionTypes';
+import { MissionMode, type MissionState, type MissionTrajectory } from '@/lib/missionTypes';
 import type { MissionSampleSource } from './types';
 import { samplePlanet } from './planetarySampler';
 
@@ -14,6 +14,7 @@ const upHint = new THREE.Vector3(0, 1, 0);
 const zHint = new THREE.Vector3(0, 0, 1);
 const basisMatrix = new THREE.Matrix4();
 const missionSegmentBuffer: TrajectorySegment[] = [];
+const TELEMETRY_REPLAY_TOLERANCE_MS = 1_000;
 
 /**
  * Builds a prograde quaternion based on travel direction.
@@ -32,6 +33,23 @@ function buildProgradeQuaternion(direction: THREE.Vector3, out: THREE.Quaternion
   basisMatrix.makeBasis(xAxis, yAxis, zAxis);
 
   return out.setFromRotationMatrix(basisMatrix);
+}
+
+function canUseTelemetryState(missionState: MissionState | null, timeMs: number): boolean {
+  if (!missionState?.sceneCoordinates) {
+    return false;
+  }
+
+  if (missionState.mode === MissionMode.LIVE) {
+    return true;
+  }
+
+  const sourceTimestampMs = Number.isFinite(Date.parse(missionState.sourceTimestamp))
+    ? Date.parse(missionState.sourceTimestamp)
+    : Number.NaN;
+
+  return Number.isFinite(sourceTimestampMs)
+    && Math.abs(sourceTimestampMs - timeMs) <= TELEMETRY_REPLAY_TOLERANCE_MS;
 }
 
 /**
@@ -57,6 +75,7 @@ export function sampleMission(
 
   // 2. Resolve Earth-relative position
   if (
+    canUseTelemetryState(missionState, timeMs) &&
     sceneCoordinates &&
     Number.isFinite(sceneCoordinates.x) &&
     Number.isFinite(sceneCoordinates.y) &&
