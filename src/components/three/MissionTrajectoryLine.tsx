@@ -2,7 +2,7 @@ import React, { useMemo, useRef, useEffect } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Line } from '@react-three/drei';
-import { scalePositionFromKm } from '@/lib/scales';
+import { KM_TO_UNIT } from '@/lib/scales';
 import { MissionTrajectoryPoint } from '@/lib/missionTypes';
 import { densifyWithCatmullRom } from '@/lib/catmullRom';
 import { EphemerisTrajectory } from '@/lib/types';
@@ -19,8 +19,12 @@ interface MissionTrajectoryLineProps {
 const isValidPoint = (p: [number, number, number]) => 
   Number.isFinite(p[0]) && Number.isFinite(p[1]) && Number.isFinite(p[2]);
 
-function scaleMissionPoint(point: MissionTrajectoryPoint): [number, number, number] {
-  return scalePositionFromKm(point.position.x, point.position.y, point.position.z);
+function scaleMissionPointInEarthFrame(point: MissionTrajectoryPoint): [number, number, number] {
+  return [
+    point.position.x * KM_TO_UNIT,
+    point.position.y * KM_TO_UNIT,
+    point.position.z * KM_TO_UNIT,
+  ];
 }
 
 // Fixed geometry type to avoid 'any'
@@ -52,7 +56,8 @@ export const MissionTrajectoryLine: React.FC<MissionTrajectoryLineProps> = ({
   const plannedLineRef = useRef<DreiLineRef>(null);
 
   // 1. Process Past & Planned base points (Low frequency)
-  // Points are Earth-relative KM scaled to render units.
+  // Mission trajectory points are Earth-relative scene KM. This component is
+  // mounted under Earth's CelestialBody group, which already applies renderOrigin.
   const basePastPoints = useMemo(() => {
     let sourcePoints = [...past];
     if (smoothing && sourcePoints.length >= 3) {
@@ -62,7 +67,7 @@ export const MissionTrajectoryLine: React.FC<MissionTrajectoryLineProps> = ({
         { velocityThreshold }
       ) as unknown as MissionTrajectoryPoint[];
     }
-    return sourcePoints.map(scaleMissionPoint).filter(isValidPoint);
+    return sourcePoints.map(scaleMissionPointInEarthFrame).filter(isValidPoint);
   }, [past, smoothing, velocityThreshold]);
 
   const basePlannedPoints = useMemo(() => {
@@ -74,7 +79,7 @@ export const MissionTrajectoryLine: React.FC<MissionTrajectoryLineProps> = ({
         { velocityThreshold }
       ) as unknown as MissionTrajectoryPoint[];
     }
-    return sourcePoints.map(scaleMissionPoint).filter(isValidPoint);
+    return sourcePoints.map(scaleMissionPointInEarthFrame).filter(isValidPoint);
   }, [planned, smoothing, velocityThreshold]);
 
   // Pre-allocate buffers
@@ -95,7 +100,8 @@ export const MissionTrajectoryLine: React.FC<MissionTrajectoryLineProps> = ({
   useFrame(() => {
     const simTimeMs = clockRuntime.getTimeMs();
 
-    // Sample current position in Earth-relative KM using simulation layer
+    // Sample current position in Earth-relative KM using simulation layer.
+    // The Earth parent group carries the render-origin subtraction.
     const source = resolveMissionFrame(
       simTimeMs,
       absPositionKmRef.current,
@@ -105,11 +111,11 @@ export const MissionTrajectoryLine: React.FC<MissionTrajectoryLineProps> = ({
 
     let currentPosLocalUnits: [number, number, number] | null = null;
     if (source !== 'none') {
-      currentPosLocalUnits = scalePositionFromKm(
-        earthRelativePositionKmRef.current.x, 
-        earthRelativePositionKmRef.current.y, 
-        earthRelativePositionKmRef.current.z
-      );
+      currentPosLocalUnits = [
+        earthRelativePositionKmRef.current.x * KM_TO_UNIT,
+        earthRelativePositionKmRef.current.y * KM_TO_UNIT,
+        earthRelativePositionKmRef.current.z * KM_TO_UNIT,
+      ];
     }
 
     // Update Past Line

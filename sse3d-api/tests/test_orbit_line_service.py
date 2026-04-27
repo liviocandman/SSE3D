@@ -1,4 +1,3 @@
-import pytest
 import math
 from app.models.schemas import OrbitLineProfile, EphemerisTrajectory, Position
 from app.services.orbit_line_service import (

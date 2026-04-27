@@ -28,6 +28,8 @@ export const MissionMilestoneMarker: React.FC<MissionMilestoneMarkerProps> = ({
   const opacityRef = useRef(0);
   const targetOpacityRef = useRef(0);
 
+  // Milestones are derived from mission trajectory points: Earth-relative scene
+  // KM mounted under Earth's CelestialBody group, which applies renderOrigin.
   const scaledPosition = useMemo(() => ({
     x: position[0] * KM_TO_UNIT,
     y: position[1] * KM_TO_UNIT,
@@ -75,7 +77,7 @@ export const MissionMilestoneMarker: React.FC<MissionMilestoneMarkerProps> = ({
   });
 
   return (
-    <group ref={groupRef} position={position} visible={false}>
+    <group ref={groupRef} position={[scaledPosition.x, scaledPosition.y, scaledPosition.z]} visible={false}>
       {/* Vertical pointer line */}
       <Line
         ref={(value) => {

@@ -129,8 +129,12 @@ function MoonMesh({
   parentClass,
   viewMode,
   tier,
-  worldParentPositionKm
+  worldParentPositionKm,
 }: MoonMeshProps) {
+  // MoonMesh lives inside the parent CelestialBody group. The parent group has
+  // already subtracted renderOrigin, so local moon placement stays parent-relative.
+  // Keep the absolute parent KM prop available for future root-level moon rendering.
+  void worldParentPositionKm;
   const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
   const gl = useThree((state) => state.gl);

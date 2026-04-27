@@ -2,7 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
-import { KM_TO_UNIT, scalePositionFromKm } from '@/lib/scales';
+import { KM_TO_UNIT } from '@/lib/scales';
 import { OrionProxyModel } from './OrionProxyModel';
 import type { MissionQuaternion } from '@/lib/missionTypes';
 import { MissionPhase } from '@/lib/missionTypes';
@@ -163,12 +163,13 @@ export function SpacecraftBody({
     );
 
     if (source !== 'none') {
-      const scaled = scalePositionFromKm(
-        normalizeKm(earthRelativePositionKmRef.current.x),
-        normalizeKm(earthRelativePositionKmRef.current.y),
-        normalizeKm(earthRelativePositionKmRef.current.z)
+      // EarthMissionLayer is mounted under Earth's CelestialBody group. That
+      // parent already applies renderOrigin, so Orion remains Earth-local here.
+      targetLocalPositionRef.current.set(
+        normalizeKm(earthRelativePositionKmRef.current.x) * KM_TO_UNIT,
+        normalizeKm(earthRelativePositionKmRef.current.y) * KM_TO_UNIT,
+        normalizeKm(earthRelativePositionKmRef.current.z) * KM_TO_UNIT
       );
-      targetLocalPositionRef.current.set(scaled[0], scaled[1], scaled[2]);
 
       if (!positionInitializedRef.current) {
         groupRef.current.position.copy(targetLocalPositionRef.current);

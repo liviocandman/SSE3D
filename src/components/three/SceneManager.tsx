@@ -627,6 +627,8 @@ export function SceneContent({
               {PLANET_MOONS[planet.bodyId] &&
                 (selectedPlanet?.bodyId === planet.bodyId ||
                   selectedPlanet?.parentId === planet.bodyId) && (
+                  // MoonSystem is a child of CelestialBody, so [0,0,0] is the
+                  // parent body's render-relative origin for local moon placement.
                   <MoonSystem
                     parentId={planet.bodyId}
                     parentClass={planet.bodyClass}
@@ -647,6 +649,8 @@ export function SceneContent({
                 />
               )}
               {planet.bodyId === BODY_IDS.EARTH && (
+                // Mission visuals are Earth-local children; Earth's CelestialBody
+                // transform applies renderOrigin for Orion, trajectory, and markers.
                 <EarthMissionLayer
                   earthSelectionContext={earthSelectionContext}
                   earthEphemeris={earthEphemeris}
