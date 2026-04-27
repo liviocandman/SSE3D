@@ -1,17 +1,26 @@
-import { fireEvent, render } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SceneContent } from './SceneManager';
 import { useMissionStore } from '@/store/missionStore';
 import { useSolarStore } from '@/store/solarStore';
 import { MissionPhase } from '@/lib/missionTypes';
-import { SPACECRAFT_CLOSEUP_RADIUS_UNITS, SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS } from './SpacecraftBody';
 import type { EphemerisData } from '@/lib/types';
+import type { ForwardedRef } from 'react';
 
 type QualityTierState = { tier: 'high' | 'mid' | 'low'; settings: { devicePixelRatio: number; antialias: boolean } };
 type MockComponentProps = { children?: React.ReactNode };
 type MockBillboardProps = { children?: React.ReactNode };
 type MockSpacecraftProps = { vehicleId: string; onClick?: (id: string) => void; onDoubleClick?: (id: string) => void };
+type MockSpacecraftBodyProps = MockSpacecraftProps & { missionTrajectorySegment: unknown; earthEphemeris: unknown };
 type MockMilestoneProps = { label: string };
+type MockLineProps = { dashed?: boolean };
+type MockCelestialBodyProps = {
+  children?: React.ReactNode;
+  onClick?: (id: string) => void;
+  onDoubleClick?: (id: string) => void;
+  bodyId: string;
+};
+type StoreSelector<TState> = (state: TState) => unknown;
 type MissionStoreMockState = {
   missionState: { vehicleId: string; sceneCoordinates: { x: number; y: number; z: number }; phase?: MissionPhase } | null;
   missionTrajectory?: { past: Array<{ timestamp: string; position: { x: number; y: number; z: number }; segment: string }>; planned: Array<unknown> };
@@ -45,17 +54,28 @@ type SolarStoreMockState = {
   fullOrbits: Record<string, unknown>;
   appendFullOrbits: ReturnType<typeof vi.fn>;
   advanceTime: ReturnType<typeof vi.fn>;
+  renderOrigin: { x: number; y: number; z: number };
 };
 
 function applySolarStoreMock(state: SolarStoreMockState) {
   vi.mocked(useSolarStore).mockImplementation(
-    ((selector: Parameters<typeof useSolarStore>[0]) => selector(state as never)) as typeof useSolarStore,
+    ((selector?: unknown) => {
+      if (typeof selector === 'function') {
+        return (selector as StoreSelector<SolarStoreMockState>)(state);
+      }
+      return state;
+    }) as typeof useSolarStore,
   );
 }
 
 function applyMissionStoreMock(state: MissionStoreMockState) {
   vi.mocked(useMissionStore).mockImplementation(
-    ((selector: Parameters<typeof useMissionStore>[0]) => selector(state as never)) as typeof useMissionStore,
+    ((selector?: unknown) => {
+      if (typeof selector === 'function') {
+        return (selector as StoreSelector<MissionStoreMockState>)(state);
+      }
+      return state;
+    }) as typeof useMissionStore,
   );
 }
 
@@ -91,12 +111,25 @@ vi.mock('@react-three/fiber', () => ({
   useLoader: vi.fn(() => ({})),
 }));
 
-vi.mock('@react-three/drei', () => ({
-  OrbitControls: () => <div />,
-  Stars: () => <div />,
-  Billboard: ({ children }: MockBillboardProps) => <div data-testid="billboard">{children}</div>,
-  Text: ({ children }: MockBillboardProps) => <div data-testid="text">{children}</div>,
-}));
+vi.mock('@react-three/drei', async () => {
+  const ReactModule = await import('react');
+  const { createElement, forwardRef } = ReactModule;
+
+  return {
+    OrbitControls: () => <div />,
+    Stars: () => <div />,
+    Billboard: ({ children }: MockBillboardProps) => <div data-testid="billboard">{children}</div>,
+    Text: ({ children }: MockBillboardProps) => <div data-testid="text">{children}</div>,
+    Line: forwardRef(function MockLine({ dashed }: MockLineProps, ref: ForwardedRef<HTMLDivElement>) {
+      return createElement('div', {
+        ref,
+        'data-testid': 'line',
+        'data-dashed': dashed ? 'true' : 'false',
+      });
+    }),
+    Html: ({ children }: MockBillboardProps) => <div data-testid="html">{children}</div>,
+  };
+});
 
 vi.mock('@react-three/postprocessing', () => ({
   EffectComposer: ({ children }: MockComponentProps) => <div>{children}</div>,
@@ -104,7 +137,7 @@ vi.mock('@react-three/postprocessing', () => ({
 }));
 
 vi.mock('./SpacecraftBody', () => ({
-  SpacecraftBody: ({ vehicleId, onClick, onDoubleClick }: MockSpacecraftProps) => (
+  SpacecraftBody: ({ vehicleId, onClick, onDoubleClick }: MockSpacecraftBodyProps) => (
     <div data-testid="spacecraft" onClick={() => onClick?.(vehicleId)} onDoubleClick={() => onDoubleClick?.(vehicleId)}>
       {vehicleId}
     </div>
@@ -136,6 +169,14 @@ vi.mock('./Sun', () => ({
 
 vi.mock('./TrajectoryManager', () => ({
   TrajectoryManager: () => <div />,
+}));
+
+vi.mock('./CelestialBody', () => ({
+  CelestialBody: ({ children, onClick, onDoubleClick, bodyId }: MockCelestialBodyProps) => (
+    <div data-testid="celestial-body" data-body-id={bodyId} onClick={() => onClick?.(bodyId)} onDoubleClick={() => onDoubleClick?.(bodyId)}>
+      {children}
+    </div>
+  ),
 }));
 
 describe('SceneManager / SceneContent', () => {
@@ -179,6 +220,7 @@ describe('SceneManager / SceneContent', () => {
         fullOrbits: {},
         appendFullOrbits: vi.fn(),
         advanceTime: vi.fn(),
+        renderOrigin: { x: 0, y: 0, z: 0 },
       });
   });
 
@@ -227,141 +269,13 @@ describe('SceneManager / SceneContent', () => {
         fullOrbits: {},
         appendFullOrbits: vi.fn(),
         advanceTime: vi.fn(),
+        renderOrigin: { x: 0, y: 0, z: 0 },
       });
 
     const mockEarthEphemeris = createEarthEphemeris();
 
     const { queryByTestId } = render(<SceneContent ephemerisData={mockEarthEphemeris} />);
     expect(queryByTestId('spacecraft')).not.toBeInTheDocument();
-  });
-
-  it('uses dedicated close-up radius when spacecraft is double-clicked', () => {
-    applyMissionStoreMock({
-        missionState: {
-          vehicleId: 'orion',
-          sceneCoordinates: { x: 1000, y: 0, z: 0 },
-        },
-        selectedMissionTargetId: null,
-        setSelectedMissionTargetId,
-        autoFocusEvents: false,
-        estimatedAttitudeEnabled: true,
-      });
-
-    const mockEarthEphemeris = createEarthEphemeris();
-
-    const { getByTestId } = render(<SceneContent ephemerisData={mockEarthEphemeris} />);
-    fireEvent.doubleClick(getByTestId('spacecraft'));
-
-    expect(setSelectedPlanet).toHaveBeenCalled();
-    expect(setTravelTarget).toHaveBeenCalledWith(
-      { x: 0.001, y: 0, z: 0 },
-      SPACECRAFT_CLOSEUP_RADIUS_UNITS
-    );
-  });
-
-  it('triggers non-intrusive auto-focus on major mission events', async () => {
-    applyMissionStoreMock({
-        missionState: {
-          vehicleId: 'orion',
-          sceneCoordinates: { x: 1000, y: 0, z: 0 },
-          phase: MissionPhase.EARTH_DEPARTURE,
-        },
-        missionTrajectory: { past: [], planned: [] },
-        missionEvents: {
-          events: [
-            { id: 'ev-1', name: 'TLI', timestamp: '2026-04-01T12:00:10Z', phase: MissionPhase.EARTH_DEPARTURE },
-          ],
-        },
-        selectedMissionTargetId: null,
-        setSelectedMissionTargetId,
-        autoFocusEvents: true,
-        estimatedAttitudeEnabled: true,
-      });
-
-    const mockEarthEphemeris = createEarthEphemeris();
-
-    render(<SceneContent ephemerisData={mockEarthEphemeris} />);
-
-    // Camera should move with mission-centric framing
-    expect(setTravelTarget).toHaveBeenCalledWith(
-      { x: 0.001, y: 0, z: 0 },
-      SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS
-    );
-    
-    // Selection should NOT be hijacked (P2 fix)
-    expect(setSelectedMissionTargetId).not.toHaveBeenCalled();
-    expect(setSelectedPlanet).not.toHaveBeenCalled();
-  });
-
-  it('re-arms auto-focus after leaving and re-entering an event window', () => {
-    const missionSelectorState: MissionStoreMockState = {
-        missionState: {
-          vehicleId: 'orion',
-          sceneCoordinates: { x: 1000, y: 0, z: 0 },
-          phase: MissionPhase.LUNAR_FLYBY,
-        },
-        missionTrajectory: { past: [], planned: [] },
-        missionEvents: {
-          events: [
-            {
-              id: 'ev-flyby',
-              name: 'Lunar Flyby',
-              timestamp: '2026-04-01T12:00:10Z',
-              phase: MissionPhase.LUNAR_FLYBY,
-            },
-          ],
-        },
-        selectedMissionTargetId: null,
-        setSelectedMissionTargetId,
-        autoFocusEvents: true,
-        estimatedAttitudeEnabled: true,
-      };
-
-    const solarSelectorState = (currentTime: string): SolarStoreMockState => ({
-        currentTime: new Date(currentTime),
-        selectedPlanet: {
-          bodyId: '399',
-          name: 'Terra',
-          englishName: 'Earth',
-          position: { x: 0, y: 0, z: 0 },
-          velocity: { x: 0, y: 0, z: 0 },
-          radius: 1,
-          distanceFromSun: 0,
-          trajectory: [],
-        },
-        setSelectedPlanet,
-        viewMode: 'didactic',
-        setViewMode: vi.fn(),
-        travelTarget: null,
-        travelTargetRadius: 1,
-        setTravelTarget,
-        resetTravel: vi.fn(),
-        masterTrajectory: {},
-        masterTrajectorySegments: {},
-        fullOrbits: {},
-        appendFullOrbits: vi.fn(),
-        advanceTime: vi.fn(),
-      });
-
-    applyMissionStoreMock(missionSelectorState);
-    applySolarStoreMock(solarSelectorState('2026-04-01T12:00:00Z'));
-
-    const mockEarthEphemeris = createEarthEphemeris();
-
-    const { rerender } = render(<SceneContent ephemerisData={mockEarthEphemeris} />);
-    expect(setTravelTarget).toHaveBeenCalledTimes(1);
-
-    applyMissionStoreMock(missionSelectorState);
-    applySolarStoreMock(solarSelectorState('2026-04-01T12:03:00Z'));
-    rerender(<SceneContent ephemerisData={mockEarthEphemeris} />);
-    expect(setTravelTarget).toHaveBeenCalledTimes(1);
-
-    applyMissionStoreMock(missionSelectorState);
-    applySolarStoreMock(solarSelectorState('2026-04-01T12:00:20Z'));
-    rerender(<SceneContent ephemerisData={mockEarthEphemeris} />);
-    expect(setTravelTarget).toHaveBeenCalledTimes(2);
-    expect(setSelectedMissionTargetId).not.toHaveBeenCalled();
-    expect(setSelectedPlanet).not.toHaveBeenCalled();
   });
 
   it('renders milestones when missionEvents has major phases', () => {

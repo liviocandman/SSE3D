@@ -1,4 +1,6 @@
-'use client';
+/**
+ * Coordinate-stabilized MoonSystem component.
+ */
 
 import { useRef, useState, useEffect, Suspense, useMemo } from 'react';
 import { useFrame, useThree, useLoader } from '@react-three/fiber';
@@ -22,8 +24,13 @@ import {
 } from '@/lib/scales';
 import { useSolarStore } from '@/store/solarStore';
 import { useShallow } from 'zustand/react/shallow';
-import { sampleTrajectoryAtTime } from '@/lib/trajectoryEngine';
+import { type TrajectorySegment } from '@/lib/trajectoryEngine';
+import { createTemporalLookupCache } from '@/lib/temporalLookup';
 import { SPHERE_MID, HITBOX_SPHERE } from '@/lib/geometryPool';
+import { clockRuntime } from '@/lib/time/clockRuntime';
+import type { EphemerisTrajectory } from '@/lib/types';
+import { USE_BACKEND_ORBIT_READY } from '@/lib/types';
+import { resolveMoonFrame } from '@/lib/simulation/frameResolvers';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,8 +39,8 @@ import { SPHERE_MID, HITBOX_SPHERE } from '@/lib/geometryPool';
 interface MoonSystemProps {
   parentId: string;
   parentClass: BodyClass;
-  parentPosition: [number, number, number];
-  worldParentPosition?: [number, number, number];
+  parentPosition: [number, number, number]; // Render units (local to planet group)
+  worldParentPositionKm: { x: number; y: number; z: number }; // Absolute KM of parent
   viewMode: ViewMode;
   tier: string;
 }
@@ -45,7 +52,7 @@ interface MoonMeshProps {
   parentClass: BodyClass;
   viewMode: ViewMode;
   tier: string;
-  parentPosition: [number, number, number];
+  worldParentPositionKm: { x: number; y: number; z: number };
 }
 
 // ---------------------------------------------------------------------------
@@ -53,56 +60,62 @@ interface MoonMeshProps {
 // ---------------------------------------------------------------------------
 
 const AU_TO_KM = 149_597_870.7;
-const DAY_MS = 24 * 60 * 60 * 1000;
-const FALLBACK_SPAN_DAYS = 30;
-const MIN_CLOSED_ORBIT_COVERAGE = 0.9;
-const MIN_FAST_MOON_ORBIT_POINTS = 8;
-const MIN_SMOOTHING_POINTS = 6;
-const MIN_CURVE_SAMPLES = 128;
-const MAX_CURVE_SAMPLES = 256;
+const MOON_CLOSEUP_TRAVEL_RADIUS_MULTIPLIER = 2;
+const EMPTY_TRAJECTORY: EphemerisTrajectory[] = [];
+const EMPTY_SEGMENTS: TrajectorySegment[] = [];
+const MAX_LIGHT_FALLBACK_POINTS = 240;
 
 // Global singleton to prevent recreating workers and to avoid React Suspense
 // (Removed local globalKtx2Loader and getKtx2Loader, now using getSharedKTX2Loader)
 
-function parseUtcTimestampMs(timestamp: string): number {
-  if (!timestamp) return Number.NaN;
-  const utcString = timestamp.includes('Z') ? timestamp : `${timestamp}Z`;
-  return new Date(utcString).getTime();
-}
+function resolveSegmentAroundTime(segments: TrajectorySegment[], simTimeMs: number): TrajectorySegment | null {
+  if (segments.length === 0) return null;
 
-function getTrajectorySpanDays(
-  trajectory: Array<{ timestamp: string }>,
-): number {
-  if (trajectory.length < 2) return 0;
+  const containing = segments.find(
+    (segment) => simTimeMs >= segment.startTimeMs && simTimeMs <= segment.endTimeMs
+  );
+  if (containing) return containing;
 
-  const startMs = parseUtcTimestampMs(trajectory[0].timestamp);
-  const endMs = parseUtcTimestampMs(trajectory[trajectory.length - 1].timestamp);
-  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
-    return 0;
+  let nearest = segments[0];
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (const segment of segments) {
+    const distance =
+      simTimeMs < segment.startTimeMs
+        ? segment.startTimeMs - simTimeMs
+        : simTimeMs > segment.endTimeMs
+          ? simTimeMs - segment.endTimeMs
+          : 0;
+    if (distance < nearestDistance) {
+      nearest = segment;
+      nearestDistance = distance;
+    }
   }
-
-  return (endMs - startMs) / DAY_MS;
-}
-
-function estimateMeanRadius(points: THREE.Vector3[]): number {
-  if (points.length === 0) return 0;
-
-  const center = new THREE.Vector3();
-  for (const point of points) {
-    center.add(point);
-  }
-  center.divideScalar(points.length);
-
-  let radiusSum = 0;
-  for (const point of points) {
-    radiusSum += point.distanceTo(center);
-  }
-  return radiusSum / points.length;
+  return nearest;
 }
 
 function resolveTextureTier(tier: string): TextureTier {
   if (tier === 'low' || tier === 'high') return tier;
   return 'mid';
+}
+
+function buildLightFallbackPoints(
+  trajectory: EphemerisTrajectory[],
+  scale: number,
+): THREE.Vector3[] {
+  if (trajectory.length < 2) return [];
+
+  const step = Math.max(1, Math.ceil(trajectory.length / MAX_LIGHT_FALLBACK_POINTS));
+  const points: THREE.Vector3[] = [];
+
+  for (let i = 0; i < trajectory.length; i += step) {
+    const pos = trajectory[i].position;
+    const point = new THREE.Vector3(pos.x * scale, pos.y * scale, pos.z * scale);
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y) || !Number.isFinite(point.z)) continue;
+    if (points.length > 0 && point.distanceToSquared(points[points.length - 1]) < 1e-10) continue;
+    points.push(point);
+  }
+
+  return points;
 }
 
 // ---------------------------------------------------------------------------
@@ -116,14 +129,22 @@ function MoonMesh({
   parentClass,
   viewMode,
   tier,
-  parentPosition
+  worldParentPositionKm,
 }: MoonMeshProps) {
+  // MoonMesh lives inside the parent CelestialBody group. The parent group has
+  // already subtracted renderOrigin, so local moon placement stays parent-relative.
+  // Keep the absolute parent KM prop available for future root-level moon rendering.
+  void worldParentPositionKm;
   const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
   const gl = useThree((state) => state.gl);
   const isInitializedRef = useRef(false);
+  const lookupCacheRef = useRef(createTemporalLookupCache());
+  const parentLookupCacheRef = useRef(createTemporalLookupCache());
   const [isHovered, setIsHovered] = useState(false);
   const tempVec = useRef(new THREE.Vector3());
+  const absPositionKmRef = useRef(new THREE.Vector3());
+  const localPositionKmRef = useRef(new THREE.Vector3());
 
   const { setSelectedPlanet, setViewMode, setTravelTarget } = useSolarStore(
     useShallow((s) => ({
@@ -134,27 +155,25 @@ function MoonMesh({
   );
 
   const config = useMemo(() => getPlanetConfig(bodyId), [bodyId]);
-  
+
   // Reactive subscription: This component only re-renders if this specific moon's data changes.
-  const moonTrajectory = useSolarStore(
-    useShallow((s) => s.masterTrajectory[bodyId] || [])
-  );
-  const masterSegments = useSolarStore(
-    useShallow((s) => s.masterTrajectorySegments[bodyId] || [])
-  );
+  const selectedMoonTrajectory = useSolarStore(useShallow((s) => s.masterTrajectory[bodyId]));
+  const selectedMasterSegments = useSolarStore(useShallow((s) => s.masterTrajectorySegments[bodyId]));
+  const moonTrajectory = selectedMoonTrajectory ?? EMPTY_TRAJECTORY;
+  const masterSegments = selectedMasterSegments ?? EMPTY_SEGMENTS;
 
   // Pre-calculate properties for hooks safely
   const radius = getRadius(bodyId, 'MOON', viewMode);
   const textureTier = resolveTextureTier(tier);
   const textureUrl = config ? getTexturePath(bodyId, textureTier) : '';
-  
+
   const orbitScale = config
     ? getMoonOrbitScale(
-        parentId,
-        parentClass,
-        config.meanDistanceAU * AU_TO_KM,
-        viewMode
-      )
+      parentId,
+      parentClass,
+      config.meanDistanceAU * AU_TO_KM,
+      viewMode
+    )
     : 1;
 
   const texture = useLoader(SingletonKTX2Loader as unknown as typeof THREE.Loader, textureUrl || '/textures/generic_moon_mid.ktx2', () => {
@@ -182,24 +201,33 @@ function MoonMesh({
   useFrame((_, delta) => {
     if (!config) return;
     const solarState = useSolarStore.getState();
-    const simTime = solarState.currentTime.getTime();
+    const simTime = clockRuntime.getTimeMs();
     const isPlaying = solarState.isPlaying;
     const timeMultiplier = solarState.timeMultiplier;
 
-    if (groupRef.current && masterSegments.length > 0) {
-      const SCALE = (1 / 1_000_000) * orbitScale;
-      const sampled = sampleTrajectoryAtTime(masterSegments, simTime);
+    // Resolve moon positions using simulation layer
+    const status = resolveMoonFrame(
+      bodyId,
+      parentId,
+      simTime,
+      absPositionKmRef.current,
+      localPositionKmRef.current,
+      lookupCacheRef.current,
+      parentLookupCacheRef.current
+    );
 
-      if (sampled) {
-        const { x, y, z } = sampled.position;
-        const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);
+    if (groupRef.current && status !== 'no-data') {
+      const SCALE = KM_TO_UNIT * orbitScale;
+      // Moon trajectories from the backend are parent-relative KM.
+      // Simulation resolveMoonFrame provides localPositionKm in this parent-relative KM.
+      const { x, y, z } = localPositionKmRef.current;
+      const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);
 
-        if (!isInitializedRef.current) {
-          groupRef.current.position.copy(targetPos);
-          isInitializedRef.current = true;
-        } else {
-          groupRef.current.position.lerp(targetPos, 1 - Math.exp(-10 * delta));
-        }
+      if (!isInitializedRef.current) {
+        groupRef.current.position.copy(targetPos);
+        isInitializedRef.current = true;
+      } else {
+        groupRef.current.position.lerp(targetPos, 1 - Math.exp(-10 * delta));
       }
     }
 
@@ -214,15 +242,22 @@ function MoonMesh({
   const name = config.englishName;
 
   const handleClick = () => {
-    const currentPos = moonTrajectory.length > 0 ? moonTrajectory[0].position : { x: 0, y: 0, z: 0 };
-    const distanceToParentKm = Math.sqrt(currentPos.x ** 2 + currentPos.y ** 2 + currentPos.z ** 2);
+    const currentPos = localPositionKmRef.current;
+    const absolutePosKm = absPositionKmRef.current;
     
+    const absolutePos = {
+      x: absolutePosKm.x,
+      y: absolutePosKm.y,
+      z: absolutePosKm.z,
+    };
+    const distanceToParentKm = Math.sqrt(currentPos.x ** 2 + currentPos.y ** 2 + currentPos.z ** 2);
+
     setSelectedPlanet({
       bodyId,
       name: config.name,
       englishName: config.englishName,
-      position: currentPos,
-      velocity: moonTrajectory.length > 0 ? moonTrajectory[0].velocity : { x: 0, y: 0, z: 0 },
+      position: absolutePos,
+      velocity: moonTrajectory[0]?.velocity ?? { x: 0, y: 0, z: 0 },
       trajectory: moonTrajectory,
       radius: radius,
       distanceFromSun: 0,
@@ -233,19 +268,17 @@ function MoonMesh({
   };
 
   const handleDoubleClick = () => {
-    const currentPos = moonTrajectory.length > 0 ? moonTrajectory[0].position : { x: 0, y: 0, z: 0 };
-    
-    // Calculate realistic world position for camera travel
-    const realisticWorldPos = {
-      x: (parentPosition?.[0] ?? 0) + (currentPos.x * KM_TO_UNIT),
-      y: (parentPosition?.[1] ?? 0) + (currentPos.y * KM_TO_UNIT),
-      z: (parentPosition?.[2] ?? 0) + (currentPos.z * KM_TO_UNIT),
+    const absolutePosKm = absPositionKmRef.current;
+    const absolutePos = {
+      x: absolutePosKm.x,
+      y: absolutePosKm.y,
+      z: absolutePosKm.z,
     };
 
     handleClick(); // Set selected state
     setViewMode('realistic');
     const realisticRadius = getRadius(bodyId, 'MOON', 'realistic');
-    setTravelTarget(realisticWorldPos, realisticRadius * 8);
+    setTravelTarget(absolutePos, realisticRadius * MOON_CLOSEUP_TRAVEL_RADIUS_MULTIPLIER);
   };
 
   const events = {
@@ -271,7 +304,7 @@ function MoonMesh({
   const labelAnchorY = isHovered ? 'bottom' : 'top';
 
   return (
-    <group name={name} ref={groupRef}>
+    <group name={bodyId} ref={groupRef}>
       <mesh {...events} geometry={HITBOX_SPHERE} scale={isDataLoading ? 0 : hitboxRadius} renderOrder={-1} dispose={null}>
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
@@ -326,6 +359,7 @@ export function MoonSystem({
   parentId,
   parentClass,
   parentPosition,
+  worldParentPositionKm,
   viewMode,
   tier,
 }: MoonSystemProps) {
@@ -358,7 +392,7 @@ export function MoonSystem({
               parentId={parentId}
               parentName={parentConfig?.englishName ?? parentId}
               parentClass={parentClass}
-              parentPosition={parentPosition}
+              worldParentPositionKm={worldParentPositionKm}
               viewMode={viewMode}
               tier={tier}
             />
@@ -371,92 +405,59 @@ export function MoonSystem({
 
 function MoonOrbitLine({ moonId, parentId, parentClass, viewMode }: { moonId: string, parentId: string, parentClass: BodyClass, viewMode: ViewMode }) {
   const moonTrajectory = useSolarStore(useShallow((s) => s.masterTrajectory[moonId]));
+  const moonSegments = useSolarStore(useShallow((s) => s.masterTrajectorySegments[moonId]));
+  const fullOrbit = useSolarStore((state) => state.fullOrbits[moonId]);
+  const orbitLine = useSolarStore((state) => state.orbitLines[moonId]);
   const config = getPlanetConfig(moonId);
 
   // No trajectory data yet: skip rendering until data arrives.
-  if (!config || !moonTrajectory || moonTrajectory.length < 2) return null;
+  if (!config) return null;
 
   const orbitScale = getMoonOrbitScale(parentId, parentClass, config.meanDistanceAU * AU_TO_KM, viewMode);
-  const SCALE = (1 / 1_000_000) * orbitScale;
+  const SCALE = KM_TO_UNIT * orbitScale;
 
-  // Compute orbit coverage from real timestamps instead of assuming a fixed 30-day window.
-  const observedSpanDays = getTrajectorySpanDays(moonTrajectory);
-  const orbitalPeriodDays = Math.max(config.orbitalPeriod || FALLBACK_SPAN_DAYS, 1e-6);
-  const spanDays = observedSpanDays > 0 ? observedSpanDays : FALLBACK_SPAN_DAYS;
-  const orbitsInSpan = spanDays / orbitalPeriodDays;
+  // Priority 1: backend-authoritative orbit line.
+  if (USE_BACKEND_ORBIT_READY && orbitLine && orbitLine.points.length >= 2) {
+    const finalPoints = orbitLine.points.map(p => new THREE.Vector3(p.x * SCALE, p.y * SCALE, p.z * SCALE));
+    
+    // Explicitly close the loop if backend says so
+    if (orbitLine.isClosed && finalPoints.length >= 2) {
+      const first = finalPoints[0];
+      const last = finalPoints[finalPoints.length - 1];
+      if (first.distanceToSquared(last) > 1e-12) {
+        finalPoints.push(first.clone());
+      }
+    }
 
-  let pointsToTake = moonTrajectory.length;
-  let isClosed = false;
-
-  if (orbitsInSpan >= MIN_CLOSED_ORBIT_COVERAGE) {
-    // For full/near-full coverage, draw a closed loop.
-    isClosed = true;
-
-    // Keep approximately one revolution, but never below a minimum point budget.
-    const desiredPointsPerOrbit = Math.ceil(moonTrajectory.length / Math.max(orbitsInSpan, 1));
-    const minOrbitPoints = Math.min(moonTrajectory.length, MIN_FAST_MOON_ORBIT_POINTS);
-    pointsToTake = Math.min(
-      moonTrajectory.length,
-      Math.max(desiredPointsPerOrbit, minOrbitPoints),
+    return (
+      <TrailLine
+        points={finalPoints}
+        color="#88aaff"
+        fadeMode="ring"
+        opacity={0.4}
+      />
     );
-  } else {
-    // Slow moons with partial coverage remain open arcs.
-    isClosed = false;
   }
 
-  const rawPoints: THREE.Vector3[] = [];
-  for (let i = 0; i < pointsToTake; i++) {
-    const t = moonTrajectory[i];
-    const p = new THREE.Vector3(t.position.x * SCALE, t.position.y * SCALE, t.position.z * SCALE);
+  // Priority 2: lightweight raw/sanitized fallback.
+  const simTimeMs = clockRuntime.getTimeMs();
+  const stableSegments = moonSegments ?? EMPTY_SEGMENTS;
+  const activeSegment = resolveSegmentAroundTime(stableSegments, simTimeMs);
+  const fallbackTrajectory = (fullOrbit && fullOrbit.length >= 2)
+    ? fullOrbit
+    : (activeSegment?.points && activeSegment.points.length >= 2)
+      ? activeSegment.points
+      : moonTrajectory ?? EMPTY_TRAJECTORY;
 
-    // Coordinate safety filter for GPU stability.
-    if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) continue;
-    if (rawPoints.length > 0 && p.distanceToSquared(rawPoints[rawPoints.length - 1]) < 1e-10) continue;
-
-    rawPoints.push(p);
-  }
-
-  // If closure gap is too large relative to orbit radius, keep it open to avoid "spider web" artifacts.
-  if (isClosed && rawPoints.length >= 3) {
-    const first = rawPoints[0];
-    const last = rawPoints[rawPoints.length - 1];
-    const closureGap = first.distanceTo(last);
-    const meanRadius = estimateMeanRadius(rawPoints);
-    if (meanRadius > 0 && closureGap > meanRadius * 0.75) {
-      isClosed = false;
-    }
-  }
-
-  // Smooth orbit lines when enough points exist.
-  let finalPoints = rawPoints;
-  if (rawPoints.length >= MIN_SMOOTHING_POINTS) {
-    try {
-      const curve = new THREE.CatmullRomCurve3(rawPoints, isClosed);
-      const sampleCount = Math.min(
-        MAX_CURVE_SAMPLES,
-        Math.max(MIN_CURVE_SAMPLES, rawPoints.length * 24),
-      );
-      finalPoints = curve.getPoints(sampleCount);
-    } catch {
-      console.warn(`[MoonOrbitLine] Curve generation failed for ${moonId}, using raw points.`);
-    }
-  }
-
-  // Ensure closed loops are explicitly closed when Catmull-Rom is not used.
-  if (isClosed && finalPoints.length >= 2) {
-    const first = finalPoints[0];
-    const last = finalPoints[finalPoints.length - 1];
-    if (first.distanceToSquared(last) > 1e-12) {
-      finalPoints = [...finalPoints, first.clone()];
-    }
-  }
+  const fallbackPoints = buildLightFallbackPoints(fallbackTrajectory, SCALE);
+  if (fallbackPoints.length < 2) return null;
 
   return (
     <TrailLine
-      points={finalPoints}
+      points={fallbackPoints}
       color="#88aaff"
       fadeMode="ring"
-      opacity={0.4}
+      opacity={0.28}
     />
   );
 }

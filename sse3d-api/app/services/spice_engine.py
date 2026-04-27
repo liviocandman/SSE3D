@@ -7,7 +7,7 @@ import numpy as np
 import spiceypy as spice
 from loguru import logger 
 
-from app.models.schemas import EphemerisData, EphemerisTrajectory
+from app.models.schemas import EphemerisData, EphemerisTrajectory, OrbitLineProfile
 from app.services.body_catalog import BODY_NAMES, MOON_PARENTS, ORBITAL_PERIODS_DAYS
 from app.services.spice_kernel_manager import assert_spice_ready
 
@@ -115,6 +115,9 @@ def compute_ephemeris(
     center_body: str = "10",
     span_days: int = 30,
     full_orbit: bool = False,
+    orbit_ready: bool = False,
+    orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO,
+    orbit_line_only: bool = False,
 ) -> Optional[EphemerisData]:
     assert_spice_ready()
 
@@ -126,7 +129,7 @@ def compute_ephemeris(
                 "position": {"x": 0, "y": 0, "z": 0},
                 "velocity": {"x": 0, "y": 0, "z": 0},
                 "timestamp": target_date,
-                "trajectory": [
+                "trajectory": [] if orbit_line_only else [
                     {
                         "position": {"x": 0, "y": 0, "z": 0},
                         "velocity": {"x": 0, "y": 0, "z": 0},
@@ -162,6 +165,12 @@ def compute_ephemeris(
     if not trajectory:
         return None
 
+    # Process orbit ready line if requested and body is a moon
+    orbit_line = None
+    if orbit_ready and body_id in MOON_PARENTS:
+        from app.services.orbit_line_service import build_orbit_line
+        orbit_line = build_orbit_line(body_id, trajectory, target_date, orbit_profile)
+
     return EphemerisData.model_validate(
         {
             "bodyId": body_id,
@@ -170,7 +179,8 @@ def compute_ephemeris(
             "velocity": current_vel,
             "timestamp": target_date,
             "parentId": parent_id,
-            "trajectory": trajectory,
+            "trajectory": None if orbit_line_only else trajectory,
+            "orbitLine": orbit_line,
         }
     )
 
@@ -181,6 +191,9 @@ async def fetch_all_spice(
     center_body: str = "10",
     span_days: int = 30,
     full_orbit: bool = False,
+    orbit_ready: bool = False,
+    orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO,
+    orbit_line_only: bool = False,
 ) -> list[EphemerisData]:
     data: list[EphemerisData] = []
     for body_id in body_ids:
@@ -191,6 +204,9 @@ async def fetch_all_spice(
                 center_body=center_body,
                 span_days=span_days,
                 full_orbit=full_orbit,
+                orbit_ready=orbit_ready,
+                orbit_profile=orbit_profile,
+                orbit_line_only=orbit_line_only,
             )
             if item:
                 data.append(item)

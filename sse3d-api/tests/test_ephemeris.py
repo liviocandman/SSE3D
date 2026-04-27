@@ -2,7 +2,7 @@ import pytest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from app.models.schemas import EphemerisData, Position
+from app.models.schemas import EphemerisData, Position, OrbitLineProfile
 
 
 def _mock_planet(body_id: str) -> EphemerisData:
@@ -48,6 +48,9 @@ async def test_ephemeris_with_center_body(client):
         center_body="599",
         span_days=30,
         full_orbit=False,
+        orbit_ready=False,
+        orbit_profile=OrbitLineProfile.AUTO,
+        orbit_line_only=False,
     )
 
 

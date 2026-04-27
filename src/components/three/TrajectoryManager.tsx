@@ -4,82 +4,69 @@ import { useCallback, useEffect, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useSolarStore } from "@/store/solarStore";
 import { useShallow } from "zustand/react/shallow";
-import { PLANET_MOONS } from "@/lib/textureConfig";
-import { computeBufferPlan, hasCoverageNearTime } from "@/lib/trajectoryEngine";
-import { useTrajectoryWorker } from "@/hooks/useTrajectoryWorker";
-
+import { clockRuntime } from "@/lib/time/clockRuntime";
+import { useTrajectoryClient } from "@/hooks/useTrajectoryClient";
 import { useQualityTier } from "@/contexts/QualityTierContext";
+import {
+  buildBackgroundPaginationDemands,
+  buildCoverageDemands,
+  buildFetchBodyIds,
+  buildMoonOrbitPrefetchDemands,
+  buildMoonOrbitPrefetchParentIds,
+} from "@/lib/trajectoryAvailabilityPolicy";
 
-const COVERAGE_TOLERANCE_MS = 48 * 60 * 60 * 1000; // Increased to 48h to avoid flickering at segment boundaries
+const JUMP_DEBOUNCE_MS = 450;
+const TARGET_CHANGE_DEBOUNCE_MS = 250;
+const BACKGROUND_PAGINATION_EVERY_FRAMES = 300;
+const MOON_ORBIT_PREFETCH_DEBOUNCE_MS = 250;
+const MOON_ORBIT_PREFETCH_MAX_RETRIES = 3;
+const MOON_ORBIT_PREFETCH_RETRY_BASE_MS = 750;
+const MIN_ORBIT_LINE_POINTS = 2;
 
-// Eager load Jupiter (599) and Saturn (699) since they are the most visited and have many moons
-const CORE_PLANET_IDS = [
-  "199", "299", "399", "499", "599", "699", "799", "899"
-];
-
-export function getDynamicBufferParams() {
-  // 30 days of data with a 15-day prefetch threshold.
-  return { fetchSpanDays: 30, thresholdDays: 15 };
+function toDateStringUTC(ms: number): string {
+  return new Date(ms).toISOString().split("T")[0];
 }
 
-export function buildFetchBodyIds(activeIds: (string | null | undefined)[]): string[] {
-  const ids = new Set(CORE_PLANET_IDS); // Set ensures uniqueness
+function debugTrajectoryLog(message: string): void {
+  if (process.env.NODE_ENV !== "production") {
+    console.info(message);
+  }
+}
 
-  // Always eager load moons for Jupiter and Saturn
-  if (PLANET_MOONS["599"]) PLANET_MOONS["599"].forEach(id => ids.add(id));
-  if (PLANET_MOONS["699"]) PLANET_MOONS["699"].forEach(id => ids.add(id));
-
-  activeIds.forEach(bodyId => {
-    if (!bodyId) return;
-    ids.add(bodyId);
-    if (PLANET_MOONS[bodyId]) {
-      PLANET_MOONS[bodyId].forEach((moonId) => ids.add(moonId));
-    }
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
   });
-
-  return Array.from(ids);
 }
 
 export function TrajectoryManager() {
   const { tier } = useQualityTier();
   const {
-    currentTime,
     currentDate,
     timeMultiplier,
     selectedPlanet,
     hoveredPlanetId,
-    masterTrajectorySegments,
     appendTrajectoryData,
+    appendFullOrbits,
   } = useSolarStore(
     useShallow((s) => ({
-      currentTime: s.currentTime,
       currentDate: s.currentDate,
       timeMultiplier: s.timeMultiplier,
       selectedPlanet: s.selectedPlanet,
       hoveredPlanetId: s.hoveredPlanetId,
-      masterTrajectorySegments: s.masterTrajectorySegments,
       appendTrajectoryData: s.appendTrajectoryData,
-      clearTrajectoryBuffer: s.clearTrajectoryBuffer,
+      appendFullOrbits: s.appendFullOrbits,
     })),
   );
 
-  const { fetchTrajectory } = useTrajectoryWorker();
-  const loadingRef = useRef<Set<string>>(new Set());
-  const activeTimeouts = useRef<Set<NodeJS.Timeout>>(new Set());
+  const { requestTrajectoryBlock, requestOrbitLines } = useTrajectoryClient();
   const frameCountRef = useRef(0);
   const lastFetchRef = useRef<string | null>(null);
   const jumpAbortControllerRef = useRef<AbortController | null>(null);
 
   // Cleanup on unmount or major jumps
   useEffect(() => {
-    const timeouts = activeTimeouts.current;
-    const loading = loadingRef.current;
     return () => {
-      // Clear all pending lock removals
-      timeouts.forEach(clearTimeout);
-      timeouts.clear();
-      loading.clear();
-      
       if (jumpAbortControllerRef.current) {
         jumpAbortControllerRef.current.abort();
       }
@@ -87,153 +74,170 @@ export function TrajectoryManager() {
   }, []);
 
   const fetchBlock = useCallback(
-    async (date: string, spanDays: number, specificIds?: string[], signal?: AbortSignal) => {
+    async (
+      date: string,
+      spanDays: number,
+      specificIds?: string[],
+      signal?: AbortSignal
+    ): Promise<void> => {
       const state = useSolarStore.getState();
       const ids =
         specificIds && specificIds.length > 0
           ? specificIds
           : buildFetchBodyIds([state.selectedPlanet?.bodyId, state.hoveredPlanetId]);
 
-      const blockCacheKey = `block_${date}_${spanDays}_${ids.join(",")}`;
-      if (loadingRef.current.has(blockCacheKey)) {
-        return;
-      }
-
-      loadingRef.current.add(blockCacheKey);
-      console.log(
-        `[TrajectoryManager] Worker-powered Loading block starting at ${date} (span: ${spanDays}d) for ${ids.length} bodies...`,
+      debugTrajectoryLog(
+        `[TrajectoryManager] Loading block at ${date} (span: ${spanDays}d) for ${ids.length} bodies.`,
       );
 
       try {
-        const data = await fetchTrajectory(date, spanDays, ids, tier, signal);
-        appendTrajectoryData(data);
-        console.log(
-          `[TrajectoryManager] Block starting at ${date} processed by worker and appended successfully.`,
-        );
+        const data = await requestTrajectoryBlock({ date, spanDays, ids, tier, signal });
+        if (data.length > 0) {
+          appendTrajectoryData(data);
+          debugTrajectoryLog(`[TrajectoryManager] Block at ${date} appended.`);
+        }
       } catch (err: unknown) {
         const error = err as Error;
         if (error.message === 'AbortError') {
-          console.log(`[TrajectoryManager] Fetch aborted for ${date}`);
+          debugTrajectoryLog(`[TrajectoryManager] Fetch aborted for ${date}`);
         } else {
-          console.error(
-            `[TrajectoryManager] Failed to fetch block at ${date}:`,
-            err,
-          );
+          console.error(`[TrajectoryManager] Failed to fetch block at ${date}:`, err);
         }
-      } finally {
-        const timerId = setTimeout(() => {
-          loadingRef.current.delete(blockCacheKey);
-          activeTimeouts.current.delete(timerId);
-        }, 5000);
-        activeTimeouts.current.add(timerId);
       }
     },
-    [appendTrajectoryData, fetchTrajectory, tier],
+    [appendTrajectoryData, requestTrajectoryBlock, tier],
   );
 
   // 1A. Time Travel Fetch (DEBOUNCED)
-  // Only fires when scrubbing the timeline aggressively.
   useEffect(() => {
     if (lastFetchRef.current === currentDate) return;
 
     const debounceTimeout = setTimeout(() => {
-      const bodyIds = buildFetchBodyIds([selectedPlanet?.bodyId, hoveredPlanetId]);
-      const timeMs = currentTime.getTime();
-      const { fetchSpanDays } = getDynamicBufferParams();
-
-      const missingIds = bodyIds.filter((id) => {
-        const segments = masterTrajectorySegments[id] || [];
-        return !hasCoverageNearTime(segments, timeMs, COVERAGE_TOLERANCE_MS);
+      const state = useSolarStore.getState();
+      const timeMs = clockRuntime.getTimeMs();
+      const demands = buildCoverageDemands({
+        bodyIds: buildFetchBodyIds([selectedPlanet?.bodyId, hoveredPlanetId]),
+        segmentsByBody: state.masterTrajectorySegments,
+        timeMs,
+        date: currentDate,
+        timeMultiplier,
       });
 
-      if (missingIds.length > 0) {
-        const cacheKey = `jump_${currentDate}_${fetchSpanDays}_${missingIds.join(",")}`;
+      if (demands.length > 0) {
+        if (jumpAbortControllerRef.current) {
+          jumpAbortControllerRef.current.abort();
+        }
+        jumpAbortControllerRef.current = new AbortController();
 
-        if (!loadingRef.current.has(cacheKey)) {
-          if (jumpAbortControllerRef.current) {
-            jumpAbortControllerRef.current.abort();
-          }
-          jumpAbortControllerRef.current = new AbortController();
-
-          loadingRef.current.add(cacheKey);
-          fetchBlock(currentDate, fetchSpanDays, missingIds, jumpAbortControllerRef.current.signal);
-          lastFetchRef.current = currentDate;
-
-          setTimeout(() => loadingRef.current.delete(cacheKey), 5000);
+        for (const demand of demands) {
+          void fetchBlock(
+            demand.date,
+            demand.fetchSpanDays,
+            demand.ids,
+            jumpAbortControllerRef.current.signal,
+          );
         }
       }
-    }, 300);
+      lastFetchRef.current = currentDate;
+    }, JUMP_DEBOUNCE_MS);
 
     return () => clearTimeout(debounceTimeout);
-  }, [currentDate, currentTime, selectedPlanet?.bodyId, hoveredPlanetId, masterTrajectorySegments, fetchBlock]);
+  }, [currentDate, fetchBlock, hoveredPlanetId, selectedPlanet?.bodyId, timeMultiplier]);
 
-  // 1B. Target Change Fetch (IMMEDIATE)
-  // Fires instantly when hovering or clicking a new planet (0ms delay).
-  // Does NOT abort previous requests to avoid killing the Eager Load.
+  // 1B. Target-change fetch
   useEffect(() => {
-    const targetIds = buildFetchBodyIds([selectedPlanet?.bodyId, hoveredPlanetId]);
-    const timeMs = currentTime.getTime();
-    const { fetchSpanDays } = getDynamicBufferParams();
+    const debounceTimeout = setTimeout(() => {
+      const state = useSolarStore.getState();
+      const timeMs = clockRuntime.getTimeMs();
+      const runtimeDate = toDateStringUTC(timeMs);
 
-    const missingIds = targetIds.filter((id) => {
-      const segments = masterTrajectorySegments[id] || [];
-      return !hasCoverageNearTime(segments, timeMs, COVERAGE_TOLERANCE_MS);
-    });
+      const demands = buildCoverageDemands({
+        bodyIds: buildFetchBodyIds([selectedPlanet?.bodyId, hoveredPlanetId]),
+        segmentsByBody: state.masterTrajectorySegments,
+        timeMs,
+        date: runtimeDate,
+        timeMultiplier,
+      });
 
-    if (missingIds.length > 0) {
-      const cacheKey = `target_${currentDate}_${fetchSpanDays}_${missingIds.join(",")}`;
-
-      if (!loadingRef.current.has(cacheKey)) {
-        loadingRef.current.add(cacheKey);
-        // Notice: No abort signal passed here. We don't want a hover to cancel a click.
-        fetchBlock(currentDate, fetchSpanDays, missingIds);
-        setTimeout(() => loadingRef.current.delete(cacheKey), 5000);
+      for (const demand of demands) {
+        void fetchBlock(demand.date, demand.fetchSpanDays, demand.ids);
       }
-    }
-  }, [selectedPlanet?.bodyId, hoveredPlanetId, currentDate, currentTime, masterTrajectorySegments, fetchBlock]);
+    }, TARGET_CHANGE_DEBOUNCE_MS);
+
+    return () => clearTimeout(debounceTimeout);
+  }, [currentDate, fetchBlock, hoveredPlanetId, selectedPlanet?.bodyId, timeMultiplier]);
+
+  // 1C. Prefetch orbit lines for moon systems from hovered/selected planet context.
+  useEffect(() => {
+    const controller = new AbortController();
+    const debounceTimeout = setTimeout(() => {
+      const parentIds = buildMoonOrbitPrefetchParentIds(
+        selectedPlanet?.bodyId,
+        selectedPlanet?.parentId ?? null,
+        hoveredPlanetId,
+      );
+      if (parentIds.length === 0) return;
+
+      const state = useSolarStore.getState();
+      const demands = buildMoonOrbitPrefetchDemands({
+        parentIds,
+        orbitLines: state.orbitLines,
+        minOrbitLinePoints: MIN_ORBIT_LINE_POINTS,
+      });
+
+      for (const demand of demands) {
+        void (async () => {
+          for (let attempt = 0; attempt < MOON_ORBIT_PREFETCH_MAX_RETRIES; attempt += 1) {
+            try {
+              const data = await requestOrbitLines(demand.ids, controller.signal);
+              if (data.length > 0) {
+                appendFullOrbits(data);
+              }
+              return;
+            } catch (error) {
+              if ((error as Error).message === "AbortError" || controller.signal.aborted) {
+                return;
+              }
+
+              if (attempt < MOON_ORBIT_PREFETCH_MAX_RETRIES - 1) {
+                await delay(MOON_ORBIT_PREFETCH_RETRY_BASE_MS * (attempt + 1));
+                continue;
+              }
+
+              debugTrajectoryLog(
+                `[TrajectoryManager] Moon orbit prefetch failed for parent ${demand.parentId}.`,
+              );
+            }
+          }
+        })();
+      }
+    }, MOON_ORBIT_PREFETCH_DEBOUNCE_MS);
+
+    return () => {
+      controller.abort();
+      clearTimeout(debounceTimeout);
+    };
+  }, [appendFullOrbits, hoveredPlanetId, requestOrbitLines, selectedPlanet?.bodyId, selectedPlanet?.parentId]);
 
   // 2. Background pagination driven by segment coverage
   useFrame(() => {
     frameCountRef.current++;
-    if (frameCountRef.current % 60 !== 0) return;
-
-    const timeMs = currentTime.getTime();
-    const { fetchSpanDays, thresholdDays } = getDynamicBufferParams();
+    if (frameCountRef.current % BACKGROUND_PAGINATION_EVERY_FRAMES !== 0) return;
 
     const state = useSolarStore.getState();
-    const bodyIds = buildFetchBodyIds([state.selectedPlanet?.bodyId, state.hoveredPlanetId]);
+    const timeMs = clockRuntime.getTimeMs();
+    const runtimeDate = toDateStringUTC(timeMs);
 
-    const fetchDates = new Set<string>();
-    const missingIdsForDate: Record<string, Set<string>> = {};
+    const demands = buildBackgroundPaginationDemands({
+      bodyIds: buildFetchBodyIds([state.selectedPlanet?.bodyId, state.hoveredPlanetId]),
+      segmentsByBody: state.masterTrajectorySegments,
+      timeMs,
+      runtimeDate,
+      timeMultiplier,
+    });
 
-    for (const id of bodyIds) {
-      const segments = masterTrajectorySegments[id] || [];
-      const plan = computeBufferPlan({
-        segments,
-        timeMs,
-        thresholdDays,
-        fetchSpanDays,
-        timeMultiplier,
-        currentDate,
-      });
-
-      for (const date of plan.fetchDates) {
-        fetchDates.add(date);
-        if (!missingIdsForDate[date]) missingIdsForDate[date] = new Set();
-        missingIdsForDate[date].add(id);
-      }
-    }
-
-    for (const date of fetchDates) {
-      const idsToFetch = Array.from(missingIdsForDate[date]);
-      const preciseCacheKey = `page_${date}_${fetchSpanDays}_${idsToFetch.join(",")}`;
-
-      if (!loadingRef.current.has(preciseCacheKey)) {
-        loadingRef.current.add(preciseCacheKey);
-        fetchBlock(date, fetchSpanDays, idsToFetch);
-
-        setTimeout(() => loadingRef.current.delete(preciseCacheKey), 10000);
-      }
+    for (const demand of demands) {
+      void fetchBlock(demand.date, demand.fetchSpanDays, demand.ids);
     }
   });
 

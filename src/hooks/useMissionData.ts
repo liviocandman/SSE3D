@@ -8,6 +8,15 @@ import {
   fetchMissionHealth,
 } from '@/services/missionClient';
 import { MissionMode } from '@/lib/missionTypes';
+import { temporalMetrics } from '@/lib/time/metrics';
+import { clockRuntime } from '@/lib/time/clockRuntime';
+
+const LIVE_STATE_POLL_MS = 20_000;
+const REPLAY_STATE_POLL_PLAYING_MS = 4_000;
+const REPLAY_STATE_POLL_PAUSED_MS = 12_000;
+const TRAJECTORY_POLL_MS = 60_000;
+const HEALTH_POLL_MS = 60_000;
+const EVENTS_POLL_MS = 300_000;
 
 export function useMissionData() {
   const missionMode = useMissionStore((state) => state.missionMode);
@@ -19,16 +28,50 @@ export function useMissionData() {
 
   const isLive = missionMode === MissionMode.LIVE;
   const controllersRef = useRef<Set<AbortController>>(new Set());
+  const stateRequestIdRef = useRef(0);
+  const trajectoryRequestIdRef = useRef(0);
+  const eventsRequestIdRef = useRef(0);
+  const healthRequestIdRef = useRef(0);
 
   const getReplayTimestampParam = useCallback((): string | undefined => {
     if (isLive) {
       return undefined;
     }
 
-    const currentTime = useSolarStore.getState().currentTime;
-    const date = new Date(currentTime);
+    const date = new Date(clockRuntime.getTimeMs());
     return date.toISOString().split('.')[0] + 'Z';
   }, [isLive]);
+
+  const shouldApplyReplayResponse = useCallback(
+    (requestMode: MissionMode, requestAt: string | undefined, requestId: number, latestRequestId: number) => {
+      if (requestId !== latestRequestId) {
+        return false;
+      }
+
+      const missionStore = useMissionStore.getState();
+      if (missionStore.missionMode !== requestMode) {
+        return false;
+      }
+
+      if (requestMode !== MissionMode.REPLAY) {
+        return true;
+      }
+
+      const solarStore = useSolarStore.getState();
+      if (solarStore.isPlaying) {
+        return true;
+      }
+
+      // Some endpoints (e.g., health) are not timestamp-addressable.
+      // In paused replay, accept the response if mode/request identity still matches.
+      if (requestAt === undefined) {
+        return true;
+      }
+
+      return requestAt === getReplayTimestampParam();
+    },
+    [getReplayTimestampParam]
+  );
 
   useEffect(() => {
     let stateTimeout: NodeJS.Timeout;
@@ -53,12 +96,21 @@ export function useMissionData() {
 
     const fetchState = async () => {
       if (!isMounted) return;
+      
+      const currentMode = useMissionStore.getState().missionMode;
+      const requestId = ++stateRequestIdRef.current;
+      const atParam = getReplayTimestampParam();
+      
       try {
-        const atParam = getReplayTimestampParam();
-        
         const data = await withAbortController((options) => fetchMissionState(atParam, options));
         
         if (isMounted) {
+          if (!shouldApplyReplayResponse(currentMode, atParam, requestId, stateRequestIdRef.current)) {
+            console.debug('[MissionData] Dropping stale mission state response');
+            temporalMetrics.recordDroppedResponse();
+            return;
+          }
+          
           setMissionState(data);
           if (isLive && data.sourceTimestamp) {
             setLiveTimestamp(data.sourceTimestamp);
@@ -66,7 +118,25 @@ export function useMissionData() {
             // Temporal bridge: Sync Solar system time to the live mission time
             const timestampDate = new Date(data.sourceTimestamp);
             if (!Number.isNaN(timestampDate.getTime())) {
-              useSolarStore.getState().setCurrentTime(timestampDate);
+              const solarStore = useSolarStore.getState();
+              
+              // Only bridge if we are in LIVE mode
+              if (solarStore.timeAuthority !== 'mission_live') {
+                console.info('[MissionData] Bridging authority to mission_live');
+                solarStore.setTimeAuthority('mission_live');
+                temporalMetrics.recordAuthoritySwitch();
+              }
+              
+              solarStore.setIsPlaying(false);
+              solarStore.setCurrentTime(timestampDate);
+            }
+          } else if (!isLive) {
+            // Replay mode: ensure authority is 'user'
+            const solarStore = useSolarStore.getState();
+            if (solarStore.timeAuthority !== 'user') {
+              console.info('[MissionData] Returning authority to user');
+              solarStore.setTimeAuthority('user');
+              temporalMetrics.recordAuthoritySwitch();
             }
           }
         }
@@ -77,7 +147,14 @@ export function useMissionData() {
         console.error('Failed to fetch mission state', err);
       } finally {
         if (isMounted) {
-          const delay = isLive ? 20000 : 2000;
+          const missionStore = useMissionStore.getState();
+          const isReplayPlaying = useSolarStore.getState().isPlaying;
+          const delay =
+            missionStore.missionMode === MissionMode.LIVE
+              ? LIVE_STATE_POLL_MS
+              : isReplayPlaying
+                ? REPLAY_STATE_POLL_PLAYING_MS
+                : REPLAY_STATE_POLL_PAUSED_MS;
           stateTimeout = setTimeout(fetchState, delay);
         }
       }
@@ -85,10 +162,12 @@ export function useMissionData() {
 
     const fetchTrajectory = async () => {
       if (!isMounted) return;
+      const currentMode = useMissionStore.getState().missionMode;
+      const requestId = ++trajectoryRequestIdRef.current;
+      const atParam = getReplayTimestampParam();
       try {
-        const atParam = getReplayTimestampParam();
         const data = await withAbortController((options) => fetchMissionTrajectory(atParam, options));
-        if (isMounted) {
+        if (isMounted && shouldApplyReplayResponse(currentMode, atParam, requestId, trajectoryRequestIdRef.current)) {
           setMissionTrajectory(data);
         }
       } catch (err: unknown) {
@@ -98,17 +177,19 @@ export function useMissionData() {
         console.error('Failed to fetch mission trajectory', err);
       } finally {
         if (isMounted) {
-          trajectoryTimeout = setTimeout(fetchTrajectory, 30000);
+          trajectoryTimeout = setTimeout(fetchTrajectory, TRAJECTORY_POLL_MS);
         }
       }
     };
 
     const fetchEvents = async () => {
       if (!isMounted) return;
+      const currentMode = useMissionStore.getState().missionMode;
+      const requestId = ++eventsRequestIdRef.current;
+      const atParam = getReplayTimestampParam();
       try {
-        const atParam = getReplayTimestampParam();
         const data = await withAbortController((options) => fetchMissionEvents(atParam, options));
-        if (isMounted) {
+        if (isMounted && shouldApplyReplayResponse(currentMode, atParam, requestId, eventsRequestIdRef.current)) {
           setMissionEvents(data);
         }
       } catch (err: unknown) {
@@ -118,16 +199,18 @@ export function useMissionData() {
         console.error('Failed to fetch mission events', err);
       } finally {
         if (isMounted) {
-          eventsTimeout = setTimeout(fetchEvents, 300000); // 5 minutes
+          eventsTimeout = setTimeout(fetchEvents, EVENTS_POLL_MS);
         }
       }
     };
 
     const fetchHealth = async () => {
       if (!isMounted) return;
+      const currentMode = useMissionStore.getState().missionMode;
+      const requestId = ++healthRequestIdRef.current;
       try {
         const data = await withAbortController((options) => fetchMissionHealth(options));
-        if (isMounted) {
+        if (isMounted && shouldApplyReplayResponse(currentMode, undefined, requestId, healthRequestIdRef.current)) {
           setMissionHealth(data);
         }
       } catch (err: unknown) {
@@ -137,7 +220,7 @@ export function useMissionData() {
         console.error('Failed to fetch mission health', err);
       } finally {
         if (isMounted) {
-          healthTimeout = setTimeout(fetchHealth, 20000);
+          healthTimeout = setTimeout(fetchHealth, HEALTH_POLL_MS);
         }
       }
     };
@@ -158,5 +241,5 @@ export function useMissionData() {
       clearTimeout(eventsTimeout);
       clearTimeout(healthTimeout);
     };
-  }, [getReplayTimestampParam, isLive, setLiveTimestamp, setMissionEvents, setMissionHealth, setMissionState, setMissionTrajectory]);
+  }, [getReplayTimestampParam, isLive, setLiveTimestamp, setMissionEvents, setMissionHealth, setMissionState, setMissionTrajectory, shouldApplyReplayResponse]);
 }

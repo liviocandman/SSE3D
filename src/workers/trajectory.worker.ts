@@ -1,5 +1,6 @@
 import type { EphemerisData, EphemerisTrajectory } from '../lib/types';
 import { densifyWithCatmullRom } from '../lib/catmullRom';
+import { parseTimestampMs } from '../lib/utils';
 
 /**
  * Trajectory Web Worker
@@ -15,6 +16,12 @@ const SUBDIVISIONS_BY_TIER: Record<string, number> = {
   low:  2,   // 1 synthetic pt per gap
 };
 
+const MIN_POINTS_BEFORE_SKIP_DENSIFY: Record<string, number> = {
+  high: 240,
+  mid: 160,
+  low: 96,
+};
+
 /**
  * Normalizes trajectory points (sorting and uniqueness)
  */
@@ -25,10 +32,19 @@ function normalizePoints(points: EphemerisTrajectory[]): EphemerisTrajectory[] {
   }
   
   return Array.from(unique.values()).sort((a, b) => {
-    const t1 = new Date(a.timestamp.includes('Z') ? a.timestamp : `${a.timestamp}Z`).getTime();
-    const t2 = new Date(b.timestamp.includes('Z') ? b.timestamp : `${b.timestamp}Z`).getTime();
+    const t1 = parseTimestampMs(a.timestamp);
+    const t2 = parseTimestampMs(b.timestamp);
     return t1 - t2;
   });
+}
+
+function shouldDensify(points: EphemerisTrajectory[], tier: string, subdivisions: number): boolean {
+  if (subdivisions <= 1 || points.length < 3) {
+    return false;
+  }
+
+  const minPointThreshold = MIN_POINTS_BEFORE_SKIP_DENSIFY[tier] ?? MIN_POINTS_BEFORE_SKIP_DENSIFY.mid;
+  return points.length < minPointThreshold;
 }
 
 self.onmessage = async (e: MessageEvent) => {
@@ -48,7 +64,8 @@ self.onmessage = async (e: MessageEvent) => {
     activeJobs.set(jobId, controller);
 
     const { date, spanDays, ids, origin, tier } = params;
-    const subdivisions = SUBDIVISIONS_BY_TIER[tier ?? 'mid'];
+    const normalizedTier = tier ?? 'mid';
+    const subdivisions = SUBDIVISIONS_BY_TIER[normalizedTier] ?? SUBDIVISIONS_BY_TIER.mid;
 
     const urlParams = new URLSearchParams({
       date,
@@ -71,12 +88,17 @@ self.onmessage = async (e: MessageEvent) => {
       const rawData = payload.data as EphemerisData[];
 
       // OPTIMIZATION: Initial normalization and Catmull-Rom densification on background thread
-      const processedData = rawData.map(body => ({
-        ...body,
-        trajectory: body.trajectory 
-          ? densifyWithCatmullRom(normalizePoints(body.trajectory), subdivisions) 
-          : []
-      }));
+      const processedData = rawData.map(body => {
+        const normalizedTrajectory = body.trajectory ? normalizePoints(body.trajectory) : [];
+        const processedTrajectory = shouldDensify(normalizedTrajectory, normalizedTier, subdivisions)
+          ? densifyWithCatmullRom(normalizedTrajectory, subdivisions)
+          : normalizedTrajectory;
+
+        return {
+          ...body,
+          trajectory: processedTrajectory,
+        };
+      });
 
       self.postMessage({
         type: 'SUCCESS',
@@ -85,9 +107,7 @@ self.onmessage = async (e: MessageEvent) => {
       });
     } catch (err: unknown) {
       const error = err as Error;
-      if (error.name === 'AbortError') {
-        console.log(`[Worker] Job ${jobId} aborted`);
-      } else {
+      if (error.name !== 'AbortError') {
         self.postMessage({
           type: 'ERROR',
           jobId,

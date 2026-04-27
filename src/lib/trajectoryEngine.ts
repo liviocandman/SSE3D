@@ -1,4 +1,9 @@
 import type { EphemerisTrajectory } from '@/lib/types';
+import {
+  findTemporalInterval,
+  resetCacheIfDataChanged,
+  type TemporalLookupCache,
+} from './temporalLookup';
 
 export interface TrajectorySegment {
   startTime: string;
@@ -22,15 +27,13 @@ export interface BufferPlan {
   fetchDates: string[];
 }
 
+import { parseTimestampMs } from './utils';
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MERGE_GAP_MS = 36 * 60 * 60 * 1000; // 36h merges overlap/adjacent blocks
 
 function parseTimeMs(timestamp: string): number {
-  if (!timestamp) return 0;
-  // NASA timestamps (e.g., "2026-Mar-26 00:00:00") do not have a UTC suffix.
-  // Appending 'Z' ensures consistent parsing across all local timezones.
-  const utcString = timestamp.includes('Z') ? timestamp : `${timestamp}Z`;
-  return new Date(utcString).getTime();
+  return parseTimestampMs(timestamp);
 }
 
 function toDateStringUTC(ms: number): string {
@@ -188,25 +191,6 @@ export function hasCoverageNearTime(
   );
 }
 
-function findIntervalIndex(pointTimesMs: number[], timeMs: number): number {
-  let left = 0;
-  let right = pointTimesMs.length - 2;
-
-  while (left <= right) {
-    const mid = Math.floor((left + right) / 2);
-    const t1 = pointTimesMs[mid];
-    const t2 = pointTimesMs[mid + 1];
-    if (timeMs < t1) {
-      right = mid - 1;
-    } else if (timeMs > t2) {
-      left = mid + 1;
-    } else {
-      return mid;
-    }
-  }
-
-  return Math.max(0, Math.min(pointTimesMs.length - 2, left));
-}
 
 function lerp(a: number, b: number, alpha: number): number {
   return a + (b - a) * alpha;
@@ -294,7 +278,8 @@ function clampToNearestGapEndpoint(
 
 export function sampleTrajectoryAtTime(
   segments: TrajectorySegment[],
-  timeMs: number
+  timeMs: number,
+  lookupCache?: TemporalLookupCache | null
 ): SampledTrajectoryPoint | null {
   if (segments.length === 0) return null;
 
@@ -336,6 +321,9 @@ export function sampleTrajectoryAtTime(
 
   const segment = ordered[segmentIndex];
   const { points, pointTimesMs } = segment;
+  if (lookupCache) {
+    resetCacheIfDataChanged(lookupCache, pointTimesMs);
+  }
   if (points.length === 1) {
     return {
       position: points[0].position,
@@ -367,28 +355,39 @@ export function sampleTrajectoryAtTime(
     };
   }
 
-  const idx = findIntervalIndex(pointTimesMs, timeMs);
-  const p1 = points[idx];
-  const p2 = points[idx + 1];
-  const t1 = pointTimesMs[idx];
-  const t2 = pointTimesMs[idx + 1];
-  const spanMs = t2 - t1;
-  if (spanMs <= 0) {
+  const result = findTemporalInterval(pointTimesMs, timeMs, lookupCache);
+  if (!result) {
     return {
-      position: p1.position,
+      position: points[0].position,
       segmentIndex,
-      pointIndex: idx,
+      pointIndex: 0,
       clamped: true,
       status: 'covered',
     };
   }
 
-  const alpha = Math.max(0, Math.min(1, (timeMs - t1) / spanMs));
+  const { leftIndex, alpha } = result;
+  const p1 = points[leftIndex];
+  const p2 = points[leftIndex + 1];
+  const t1 = pointTimesMs[leftIndex];
+  const t2 = pointTimesMs[leftIndex + 1];
+  const spanMs = t2 - t1;
+
+  if (spanMs <= 0 || alpha <= 0) {
+    return {
+      position: p1.position,
+      segmentIndex,
+      pointIndex: leftIndex,
+      clamped: true,
+      status: 'covered',
+    };
+  }
+
   const interpolated = interpolateHermite(p1, p2, alpha, spanMs / 1000);
   return {
     position: interpolated,
     segmentIndex,
-    pointIndex: idx,
+    pointIndex: leftIndex,
     clamped: false,
     status: 'covered',
   };

@@ -11,6 +11,8 @@ export function useTrajectoryWorker() {
   const pendingRequests = useRef<Map<string, WorkerRequest>>(new Map());
 
   useEffect(() => {
+    const pending = pendingRequests.current;
+
     // Initialize worker with standard Next.js / Webpack / Vite compatible syntax
     const worker = new Worker(
       new URL("../workers/trajectory.worker.ts", import.meta.url),
@@ -35,12 +37,14 @@ export function useTrajectoryWorker() {
     workerRef.current = worker;
 
     return () => {
+      pending.forEach((request) => request.reject(new Error("AbortError")));
+      pending.clear();
       worker.terminate();
       workerRef.current = null;
     };
   }, []);
 
-  const fetchTrajectory = useCallback(
+  const fetchTrajectoryRaw = useCallback(
     async (
       date: string,
       spanDays: number,
@@ -54,19 +58,43 @@ export function useTrajectoryWorker() {
 
       const jobId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-      return new Promise((resolve, reject) => {
-        pendingRequests.current.set(jobId, { resolve, reject });
+      return new Promise<EphemerisData[]>((resolve, reject) => {
+        let completed = false;
 
-        // Handle external abort signal
-        if (signal) {
-          signal.addEventListener("abort", () => {
-            workerRef.current?.postMessage({ type: "CANCEL", jobId });
-            const req = pendingRequests.current.get(jobId);
-            if (req) {
-              req.reject(new Error("AbortError"));
-              pendingRequests.current.delete(jobId);
+        const cleanup = () => {
+          pendingRequests.current.delete(jobId);
+          if (signal && abortHandler) {
+            signal.removeEventListener("abort", abortHandler);
+          }
+        };
+
+        const abortHandler = signal
+          ? () => {
+              if (completed) return;
+              completed = true;
+              workerRef.current?.postMessage({ type: "CANCEL", jobId });
+              cleanup();
+              reject(new Error("AbortError"));
             }
-          });
+          : null;
+
+        pendingRequests.current.set(jobId, {
+          resolve: (data) => {
+            if (completed) return;
+            completed = true;
+            cleanup();
+            resolve(data);
+          },
+          reject: (err) => {
+            if (completed) return;
+            completed = true;
+            cleanup();
+            reject(err);
+          },
+        });
+
+        if (signal && abortHandler) {
+          signal.addEventListener("abort", abortHandler);
         }
 
         workerRef.current?.postMessage({
@@ -85,5 +113,5 @@ export function useTrajectoryWorker() {
     [],
   );
 
-  return { fetchTrajectory };
+  return { fetchTrajectoryRaw };
 }

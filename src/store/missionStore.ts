@@ -55,10 +55,8 @@ export const useMissionStore = create<MissionStoreState & MissionStoreActions>((
     missionMode: isLive ? MissionMode.LIVE : MissionMode.REPLAY,
   }),
   setSelectedMissionTargetId: (id) => set({ selectedMissionTargetId: id }),
-  setMissionState: (state) => set((current) => ({
+  setMissionState: (state) => set(() => ({
     missionState: state,
-    missionMode: state?.mode ?? current.missionMode,
-    isLive: state?.mode ? state.mode === MissionMode.LIVE : current.isLive,
   })),
   setMissionTrajectory: (trajectory) => set({ missionTrajectory: trajectory }),
   setMissionEvents: (events) => set({ missionEvents: events }),

@@ -13,28 +13,26 @@ import {
   type TrajectorySegment,
   flattenTrajectorySegments,
 } from '@/lib/trajectoryEngine';
-import type { EphemerisData, SelectedPlanet, EphemerisTrajectory } from '@/lib/types';
+import type { EphemerisData, SelectedPlanet } from '@/lib/types';
 import {
   getPlanetConfig,
   getTexturePath,
   PLANET_MOONS,
   TextureTier,
 } from '@/lib/textureConfig';
-import { getRadius, scalePositionFromKm } from '@/lib/scales';
+import { getRadius, scalePositionFromKm, KM_TO_UNIT } from '@/lib/scales';
+import { parseTimestampMs } from '@/lib/utils';
 import { CameraController } from '@/hooks/useCameraAnimation';
 import * as THREE from 'three';
 import { useSolarStore } from '@/store/solarStore';
 import { useMissionStore } from '@/store/missionStore';
+import { clockRuntime } from '@/lib/time/clockRuntime';
 import { useShallow } from 'zustand/react/shallow';
 import { TrajectoryManager } from './TrajectoryManager';
-import { KM_TO_UNIT } from '@/lib/scales';
 import StaticOrbitLine from './StaticOrbitLine';
 import DynamicTrailLine from './DynamicTrailLine';
 import {
   SpacecraftBody,
-  SPACECRAFT_CLOSEUP_RADIUS_UNITS,
-  SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS,
-  SPACECRAFT_SELECTION_RADIUS_UNITS,
 } from './SpacecraftBody';
 import { MissionTrajectoryLine } from './MissionTrajectoryLine';
 import { MissionMilestoneMarker } from './MissionMilestoneMarker';
@@ -82,10 +80,37 @@ function SelectionRing({ position, radius }: { position: [number, number, number
 }
 
 function GlobalTimeController() {
-  const advanceTime = useSolarStore(state => state.advanceTime);
-  useFrame((_, delta) => {
-    // This is a transient update to the store state every frame
-    advanceTime(delta);
+  const lastSnapshotSyncSecRef = useRef(0);
+  const SNAPSHOT_SYNC_INTERVAL_SEC = 0.25;
+
+  useFrame((state, delta) => {
+    const solarStore = useSolarStore.getState();
+    const syncSnapshot = solarStore.syncTimeFromRuntime;
+    const ensureRuntimeInitialized = solarStore.ensureRuntimeInitialized;
+    const tickSimulation = solarStore.tickSimulation;
+
+    if (!clockRuntime.isInitialized()) {
+      ensureRuntimeInitialized();
+      return;
+    }
+
+    const isPlaying = solarStore.isPlaying;
+    const auth = solarStore.timeAuthority;
+    const canAdvance = isPlaying && auth === 'user';
+    if (canAdvance) {
+      tickSimulation(delta);
+    }
+
+    const runtimeTimeMs = clockRuntime.getTimeMs();
+    const storeTimeMs = solarStore.currentTime.getTime();
+    const driftMs = Math.abs(runtimeTimeMs - storeTimeMs);
+    const elapsedSinceSync = state.clock.elapsedTime - lastSnapshotSyncSecRef.current;
+    const shouldSyncNow = !canAdvance || elapsedSinceSync >= SNAPSHOT_SYNC_INTERVAL_SEC;
+
+    if (driftMs > 1 && shouldSyncNow) {
+      syncSnapshot(runtimeTimeMs);
+      lastSnapshotSyncSecRef.current = state.clock.elapsedTime;
+    }
   });
   return null;
 }
@@ -109,7 +134,7 @@ const SEGMENTS_BY_TIER: Record<string, number> = {
 
 function calculateMillionKmFromSun(position: [number, number, number]): number {
   const [x, y, z] = position;
-  return Math.sqrt(x * x + y * y + z * z);
+  return Math.sqrt(x * x + y * y + z * z) * KM_TO_UNIT;
 }
 
 const ALL_PLANET_IDS = [
@@ -118,33 +143,29 @@ const ALL_PLANET_IDS = [
 ];
 
 const TRAIL_GRACE_MS = 12 * 60 * 60 * 1000;
-
-
-function parseTimestampMs(timestamp: string): number {
-  const utcString = timestamp.includes('Z') ? timestamp : `${timestamp}Z`;
-  return new Date(utcString).getTime();
-}
+const EMPTY_TRAJECTORY_SEGMENTS: TrajectorySegment[] = [];
 
 interface PlanetTrajectoryGroupProps {
-  segments: TrajectorySegment[];
-  fullOrbitData?: EphemerisTrajectory[];
+  bodyId: string;
 }
 
 
-function PlanetTrajectoryGroup({ segments, fullOrbitData }: PlanetTrajectoryGroupProps) {
+function PlanetTrajectoryGroup({ bodyId }: PlanetTrajectoryGroupProps) {
   const { tier } = useQualityTier();
+  const selectedSegments = useSolarStore((state) => state.masterTrajectorySegments[bodyId]);
+  const fullOrbitData = useSolarStore((state) => state.fullOrbits[bodyId]);
+  const segments = selectedSegments ?? EMPTY_TRAJECTORY_SEGMENTS;
   const maxTrailPoints = tier === 'high' ? 240 : tier === 'mid' ? 120 : 60;
   const allPoints = useMemo(() => flattenTrajectorySegments(segments), [segments]);
 
   const samples = useMemo(() => {
-    return allPoints.map((p) => ({
-      timestampMs: parseTimestampMs(p.timestamp),
-      point: new THREE.Vector3(
-        p.position.x * KM_TO_UNIT,
-        p.position.y * KM_TO_UNIT,
-        p.position.z * KM_TO_UNIT
-      ),
-    })).filter((s, i, arr) => {
+    return allPoints.map((p) => {
+      // Pass absolute KM positions
+      return {
+        timestampMs: parseTimestampMs(p.timestamp),
+        point: new THREE.Vector3(p.position.x, p.position.y, p.position.z),
+      };
+    }).filter((s, i, arr) => {
       // Anti-NaN & Duplicate Shield (from TrailLine logic)
       if (!Number.isFinite(s.point.x) || !Number.isFinite(s.point.y) || !Number.isFinite(s.point.z)) {
         return false;
@@ -181,19 +202,23 @@ function PlanetTrajectoryGroup({ segments, fullOrbitData }: PlanetTrajectoryGrou
   );
 }
 
-// --- Inner Scene Component ---
+interface EarthMissionLayerProps {
+  earthSelectionContext: SelectedPlanet | null;
+  earthEphemeris: EphemerisData | null;
+  isEarthMissionContextActive: boolean;
+  setSelectedPlanet: (planet: SelectedPlanet | null) => void;
+}
 
-export function SceneContent({
-  children,
-  ephemerisData,
-}: SceneContentProps) {
-  const { tier, settings } = useQualityTier();
-
+function EarthMissionLayer({
+  earthSelectionContext,
+  earthEphemeris,
+  isEarthMissionContextActive,
+  setSelectedPlanet,
+}: EarthMissionLayerProps) {
   const {
     missionState,
     missionTrajectory,
     missionEvents,
-    autoFocusEvents,
     estimatedAttitudeEnabled,
     selectedMissionTargetId,
     setSelectedMissionTargetId,
@@ -202,15 +227,123 @@ export function SceneContent({
       missionState: state.missionState,
       missionTrajectory: state.missionTrajectory,
       missionEvents: state.missionEvents,
-      autoFocusEvents: state.autoFocusEvents,
       estimatedAttitudeEnabled: state.estimatedAttitudeEnabled,
       selectedMissionTargetId: state.selectedMissionTargetId,
       setSelectedMissionTargetId: state.setSelectedMissionTargetId,
     }))
   );
 
+  const missionMilestones = useMemo(() => {
+    if (!missionEvents?.events || !missionTrajectory) return [];
+
+    const majorPhases = [
+      MissionPhase.EARTH_DEPARTURE,
+      MissionPhase.LUNAR_FLYBY,
+      MissionPhase.REENTRY,
+    ];
+
+    const allTrajectoryPoints = [...missionTrajectory.past, ...missionTrajectory.planned];
+
+    return missionEvents.events
+      .filter((ev) => majorPhases.includes(ev.phase))
+      .map((ev) => {
+        const evDate = new Date(ev.timestamp).getTime();
+        if (!Number.isFinite(evDate)) return null;
+        let nearestPoint = allTrajectoryPoints[0];
+        let minDiff = Infinity;
+
+        for (const pt of allTrajectoryPoints) {
+          const ptDate = new Date(pt.timestamp).getTime();
+          if (!Number.isFinite(ptDate)) continue;
+          const diff = Math.abs(evDate - ptDate);
+          if (diff < minDiff) {
+            minDiff = diff;
+            nearestPoint = pt;
+          }
+        }
+
+        if (!nearestPoint) return null;
+
+        const pos: [number, number, number] = [
+          nearestPoint.position.x,
+          nearestPoint.position.y,
+          nearestPoint.position.z,
+        ];
+
+        return {
+          id: ev.id,
+          label: ev.name,
+          position: pos,
+        };
+      })
+      .filter((m): m is NonNullable<typeof m> => m !== null);
+  }, [missionEvents, missionTrajectory]);
+
+  if (!missionState || !isEarthMissionContextActive) {
+    return null;
+  }
+
+  return (
+    <>
+      <SpacecraftBody
+        vehicleId={missionState.vehicleId}
+        label={missionState.vehicleId === 'orion' ? 'Orion' : missionState.vehicleId.toUpperCase()}
+        isSelected={selectedMissionTargetId === missionState.vehicleId}
+        attitudeQuaternion={missionState.attitudeQuaternion}
+        earthEphemeris={earthEphemeris}
+        onClick={(id) => {
+          if (earthSelectionContext) {
+            setSelectedPlanet(earthSelectionContext);
+          }
+          setSelectedMissionTargetId(id);
+        }}
+        onDoubleClick={(id) => {
+          if (earthSelectionContext) {
+            setSelectedPlanet(earthSelectionContext);
+          }
+          setSelectedMissionTargetId(id);
+        }}
+        useAttitude={
+          MISSION_CONFIG.ENABLE_ATTITUDE &&
+          (missionState.attitudeSource === 'CK_SPICE' ||
+            (MISSION_CONFIG.ENABLE_POLICY_ATTITUDE && estimatedAttitudeEnabled))
+        }
+      />
+
+      {missionTrajectory && (
+        <MissionTrajectoryLine
+          past={missionTrajectory.past}
+          planned={missionTrajectory.planned}
+          smoothing={false}
+        />
+      )}
+
+      {missionMilestones.map((milestone) => (
+        <MissionMilestoneMarker
+          key={milestone.id}
+          label={milestone.label}
+          position={milestone.position}
+        />
+      ))}
+    </>
+  );
+}
+
+// --- Inner Scene Component ---
+
+export function SceneContent({
+  children,
+  ephemerisData,
+}: SceneContentProps) {
+  const { tier, settings } = useQualityTier();
+  const { selectedMissionTargetId, setSelectedMissionTargetId } = useMissionStore(
+    useShallow((state) => ({
+      selectedMissionTargetId: state.selectedMissionTargetId,
+      setSelectedMissionTargetId: state.setSelectedMissionTargetId,
+    }))
+  );
+
   const {
-    currentTime,
     selectedPlanet,
     setSelectedPlanet,
     viewMode,
@@ -219,12 +352,10 @@ export function SceneContent({
     travelTargetRadius,
     setTravelTarget,
     resetTravel,
-    masterTrajectorySegments,
     fullOrbits,
     appendFullOrbits,
   } = useSolarStore(
     useShallow((state) => ({
-      currentTime: state.currentTime,
       selectedPlanet: state.selectedPlanet,
       setSelectedPlanet: state.setSelectedPlanet,
       viewMode: state.viewMode,
@@ -233,7 +364,6 @@ export function SceneContent({
       travelTargetRadius: state.travelTargetRadius,
       setTravelTarget: state.setTravelTarget,
       resetTravel: state.resetTravel,
-      masterTrajectorySegments: state.masterTrajectorySegments,
       fullOrbits: state.fullOrbits,
       appendFullOrbits: state.appendFullOrbits,
     }))
@@ -242,7 +372,7 @@ export function SceneContent({
   // Load 100% accurate full-cycle NASA orbits on mount
   useEffect(() => {
     const fetchFullOrbits = async () => {
-      const missingIds = ALL_PLANET_IDS.filter(id => !fullOrbits[id]);
+      const missingIds = ALL_PLANET_IDS.filter((id) => !fullOrbits[id]);
       if (missingIds.length === 0) return;
 
       try {
@@ -256,7 +386,7 @@ export function SceneContent({
     };
 
     fetchFullOrbits();
-  }, [fullOrbits, appendFullOrbits]);
+  }, [appendFullOrbits, fullOrbits]);
 
   const planetsToRender = useMemo(() => {
     if (!ephemerisData || ephemerisData.length === 0) {
@@ -289,7 +419,11 @@ export function SceneContent({
           rotationSpeed: config.rotationSpeed,
           axialTilt: config.axialTilt,
           dayLength: config.dayLength,
-          distanceFromSun: calculateMillionKmFromSun(position),
+          distanceFromSun: calculateMillionKmFromSun([
+            body.position.x,
+            body.position.y,
+            body.position.z,
+          ]),
           bodyClass: config.bodyClass,
           segments,
         };
@@ -297,24 +431,34 @@ export function SceneContent({
       .filter((p): p is NonNullable<typeof p> => p !== null);
   }, [ephemerisData, tier, viewMode]);
 
+  const ephemerisById = useMemo(() => {
+    const map: Record<string, EphemerisData> = {};
+    if (!ephemerisData) return map;
+    for (const body of ephemerisData) {
+      map[body.bodyId] = body;
+    }
+    return map;
+  }, [ephemerisData]);
+
   const handlePlanetClick = (bodyId: string) => {
     setSelectedMissionTargetId(null);
     resetTravel();
-    const planet = planetsToRender.find(p => p?.bodyId === bodyId);
+    const planet = ephemerisById[bodyId];
 
     if (planet) {
+      const config = getPlanetConfig(planet.bodyId);
       const selected: SelectedPlanet = {
         bodyId: planet.bodyId,
-        name: planet.name,
-        englishName: planet.englishName,
+        name: config?.name || planet.name,
+        englishName: config?.englishName || planet.name,
         position: {
-          x: planet.position[0],
-          y: planet.position[1],
-          z: planet.position[2],
+          x: planet.position.x,
+          y: planet.position.y,
+          z: planet.position.z,
         },
         velocity: planet.velocity,
-        radius: planet.radius,
-        distanceFromSun: planet.distanceFromSun,
+        radius: getRadius(planet.bodyId, config?.bodyClass || 'ROCKY_PLANET', viewMode),
+        distanceFromSun: calculateMillionKmFromSun([planet.position.x, planet.position.y, planet.position.z]),
         trajectory: planet.trajectory,
       };
       setSelectedPlanet(selected);
@@ -323,25 +467,26 @@ export function SceneContent({
 
   const handlePlanetDoubleClick = (bodyId: string) => {
     setSelectedMissionTargetId(null);
-    const planet = planetsToRender.find(p => p?.bodyId === bodyId);
+    const planet = ephemerisById[bodyId];
 
     if (planet) {
-      const realisticRadius = getRadius(planet.bodyId, planet.bodyClass, 'realistic');
+      const config = getPlanetConfig(planet.bodyId);
+      const realisticRadius = getRadius(planet.bodyId, config?.bodyClass || 'ROCKY_PLANET', 'realistic');
       const moonSystemMultiplier = PLANET_MOONS[planet.bodyId] ? 5 : 1;
       const cameraRadius = realisticRadius * moonSystemMultiplier;
 
       const selected: SelectedPlanet = {
         bodyId: planet.bodyId,
-        name: planet.name,
-        englishName: planet.englishName,
+        name: config?.name || planet.name,
+        englishName: config?.englishName || planet.name,
         position: {
-          x: planet.position[0],
-          y: planet.position[1],
-          z: planet.position[2],
+          x: planet.position.x,
+          y: planet.position.y,
+          z: planet.position.z,
         },
         velocity: planet.velocity,
         radius: cameraRadius,
-        distanceFromSun: planet.distanceFromSun,
+        distanceFromSun: calculateMillionKmFromSun([planet.position.x, planet.position.y, planet.position.z]),
         trajectory: planet.trajectory,
       };
       setSelectedPlanet(selected);
@@ -355,186 +500,44 @@ export function SceneContent({
     : null;
 
   const earthPlanet = planetsToRender.find((planet) => planet?.bodyId === BODY_IDS.EARTH) ?? null;
+  const earthEphemeris = ephemerisById[BODY_IDS.EARTH] ?? null;
+  const sunEphemeris = ephemerisById[SUN_BODY_ID] ?? null;
+  const sunAbsolutePositionKm = sunEphemeris
+    ? {
+      x: sunEphemeris.position.x,
+      y: sunEphemeris.position.y,
+      z: sunEphemeris.position.z,
+    }
+    : { x: 0, y: 0, z: 0 };
   const isEarthMissionContextActive = selectedPlanet?.bodyId === BODY_IDS.EARTH;
 
   const earthSelectionContext = useMemo<SelectedPlanet | null>(() => {
-    if (!earthPlanet) return null;
+    if (!earthPlanet || !earthEphemeris) return null;
 
     return {
       bodyId: earthPlanet.bodyId,
       name: earthPlanet.name,
       englishName: earthPlanet.englishName,
       position: {
-        x: earthPlanet.position[0],
-        y: earthPlanet.position[1],
-        z: earthPlanet.position[2],
+        x: earthEphemeris.position.x,
+        y: earthEphemeris.position.y,
+        z: earthEphemeris.position.z,
       },
-      velocity: earthPlanet.velocity,
+      velocity: earthEphemeris.velocity,
       radius: earthPlanet.radius,
-      distanceFromSun: earthPlanet.distanceFromSun,
-      trajectory: earthPlanet.trajectory,
+      distanceFromSun: calculateMillionKmFromSun([
+        earthEphemeris.position.x,
+        earthEphemeris.position.y,
+        earthEphemeris.position.z,
+      ]),
+      trajectory: earthEphemeris.trajectory,
     };
-  }, [earthPlanet]);
+  }, [earthEphemeris, earthPlanet]);
 
-  const spacecraftLocalPosition = useMemo<[number, number, number] | null>(() => {
-    if (!missionState?.sceneCoordinates) return null;
-
-    return scalePositionFromKm(
-      missionState.sceneCoordinates.x,
-      missionState.sceneCoordinates.y,
-      missionState.sceneCoordinates.z
-    );
-  }, [missionState?.sceneCoordinates]);
-
-  const spacecraftFallbackHeading = useMemo<[number, number, number] | null>(() => {
-    if (!missionState?.sceneCoordinates) return null;
-
-    const current = new THREE.Vector3(
-      missionState.sceneCoordinates.x,
-      missionState.sceneCoordinates.y,
-      missionState.sceneCoordinates.z
-    );
-    const EPS = 1e-12;
-
-    if (missionTrajectory?.planned?.length) {
-      const candidates = missionTrajectory.planned.slice(0, 3);
-      for (const candidate of candidates) {
-        const heading = new THREE.Vector3(
-          candidate.position.x - current.x,
-          candidate.position.y - current.y,
-          candidate.position.z - current.z
-        );
-        if (heading.lengthSq() > EPS) {
-          heading.normalize();
-          return [heading.x, heading.y, heading.z];
-        }
-      }
-    }
-
-    if (missionTrajectory?.past?.length) {
-      const lastPast = missionTrajectory.past[missionTrajectory.past.length - 1];
-      const heading = new THREE.Vector3(
-        current.x - lastPast.position.x,
-        current.y - lastPast.position.y,
-        current.z - lastPast.position.z
-      );
-      if (heading.lengthSq() > EPS) {
-        heading.normalize();
-        return [heading.x, heading.y, heading.z];
-      }
-    }
-
-    if (missionState.velocity) {
-      const sceneVelocityHeading = new THREE.Vector3(
-        missionState.velocity.x,
-        missionState.velocity.z,
-        -missionState.velocity.y
-      );
-      if (sceneVelocityHeading.lengthSq() > EPS) {
-        sceneVelocityHeading.normalize();
-        return [sceneVelocityHeading.x, sceneVelocityHeading.y, sceneVelocityHeading.z];
-      }
-    }
-
-    return null;
-  }, [missionState?.sceneCoordinates, missionState?.velocity, missionTrajectory]);
-
-  const spacecraftWorldPosition = useMemo(() => {
-    if (!earthPlanet || !spacecraftLocalPosition) return null;
-
-    return {
-      x: earthPlanet.position[0] + spacecraftLocalPosition[0],
-      y: earthPlanet.position[1] + spacecraftLocalPosition[1],
-      z: earthPlanet.position[2] + spacecraftLocalPosition[2],
-    };
-  }, [earthPlanet, spacecraftLocalPosition]);
-
-  // --- Guided Event Camera ---
-  const armedAutoFocusEventsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!autoFocusEvents || !missionEvents?.events || !spacecraftWorldPosition || !isEarthMissionContextActive) return;
-
-    const majorPhases = [
-      MissionPhase.EARTH_DEPARTURE,
-      MissionPhase.LUNAR_FLYBY,
-      MissionPhase.REENTRY
-    ];
-
-    const simTime = currentTime.getTime();
-    // 1 minute window for auto-focus trigger
-    const focusWindowMs = 60 * 1000;
-
-    for (const ev of missionEvents.events) {
-      if (!majorPhases.includes(ev.phase)) continue;
-
-      const evTime = new Date(ev.timestamp).getTime();
-      if (!Number.isFinite(evTime)) continue;
-      const diff = Math.abs(simTime - evTime);
-      const isWithinWindow = diff < focusWindowMs;
-
-      if (!isWithinWindow) {
-        armedAutoFocusEventsRef.current.delete(ev.id);
-        continue;
-      }
-
-      if (!armedAutoFocusEventsRef.current.has(ev.id)) {
-        // Trigger non-intrusive focus
-        setTravelTarget(spacecraftWorldPosition, SPACECRAFT_EVENT_FOCUS_RADIUS_UNITS);
-        armedAutoFocusEventsRef.current.add(ev.id);
-
-        console.info(`[Camera] Auto-focus triggered for mission event: ${ev.name}`);
-        break;
-      }
-    }
-  }, [missionEvents, currentTime, autoFocusEvents, spacecraftWorldPosition, isEarthMissionContextActive, setTravelTarget]);
-
-  // --- Event Anchor Resolution ---
-  const missionMilestones = useMemo(() => {
-    if (!missionEvents?.events || !missionTrajectory) return [];
-
-    const majorPhases = [
-      MissionPhase.EARTH_DEPARTURE,
-      MissionPhase.LUNAR_FLYBY,
-      MissionPhase.REENTRY
-    ];
-
-    const allTrajectoryPoints = [...missionTrajectory.past, ...missionTrajectory.planned];
-
-    return missionEvents.events
-      .filter(ev => majorPhases.includes(ev.phase))
-      .map(ev => {
-        // Find nearest point in trajectory by timestamp
-        const evDate = new Date(ev.timestamp).getTime();
-        if (!Number.isFinite(evDate)) return null;
-        let nearestPoint = allTrajectoryPoints[0];
-        let minDiff = Infinity;
-
-        for (const pt of allTrajectoryPoints) {
-          const ptDate = new Date(pt.timestamp).getTime();
-          if (!Number.isFinite(ptDate)) continue;
-          const diff = Math.abs(evDate - ptDate);
-          if (diff < minDiff) {
-            minDiff = diff;
-            nearestPoint = pt;
-          }
-        }
-
-        if (!nearestPoint) return null;
-
-        const pos = scalePositionFromKm(
-          nearestPoint.position.x,
-          nearestPoint.position.y,
-          nearestPoint.position.z
-        );
-
-        return {
-          id: ev.id,
-          label: ev.name,
-          position: pos,
-        };
-      })
-      .filter((m): m is NonNullable<typeof m> => m !== null);
-  }, [missionEvents, missionTrajectory]);
+  const cameraTargetId =
+    selectedMissionTargetId ||
+    selectedPlanet?.bodyId ||
+    (isEarthMissionContextActive ? 'Orion' : undefined);
 
   return (
     <Canvas
@@ -569,7 +572,7 @@ export function SceneContent({
       )}
 
       <Stars
-        radius={4000}
+        radius={50000}
         depth={300}
         count={tier === 'low' ? 2000 : 5000}
         factor={10}
@@ -582,22 +585,21 @@ export function SceneContent({
         enableDamping
         dampingFactor={0.05}
         minDistance={0.00001}
-        maxDistance={12000}
-        enablePan
+        maxDistance={50000}
+        enablePan={false}
         panSpeed={1}
         rotateSpeed={1}
-        zoomSpeed={5}
+        zoomSpeed={3}
       />
 
-      <Sun viewMode={viewMode} />
+      <Sun viewMode={viewMode} absolutePositionKm={sunAbsolutePositionKm} />
 
       {planetsToRender.map((planet) => {
         if (!planet) return null;
         return (
           <PlanetTrajectoryGroup
             key={`orbit-group-${planet.bodyId}`}
-            segments={masterTrajectorySegments[planet.bodyId] || []}
-            fullOrbitData={fullOrbits[planet.bodyId]}
+            bodyId={planet.bodyId}
           />
         );
       })}
@@ -625,11 +627,17 @@ export function SceneContent({
               {PLANET_MOONS[planet.bodyId] &&
                 (selectedPlanet?.bodyId === planet.bodyId ||
                   selectedPlanet?.parentId === planet.bodyId) && (
+                  // MoonSystem is a child of CelestialBody, so [0,0,0] is the
+                  // parent body's render-relative origin for local moon placement.
                   <MoonSystem
                     parentId={planet.bodyId}
                     parentClass={planet.bodyClass}
                     parentPosition={[0, 0, 0]}
-                    worldParentPosition={planet.position}
+                    worldParentPositionKm={{
+                      x: ephemerisById[planet.bodyId]?.position.x ?? 0,
+                      y: ephemerisById[planet.bodyId]?.position.y ?? 0,
+                      z: ephemerisById[planet.bodyId]?.position.z ?? 0,
+                    }}
                     viewMode={viewMode}
                     tier={tier}
                   />
@@ -640,65 +648,15 @@ export function SceneContent({
                   radius={selectedPlanetData.radius}
                 />
               )}
-              {planet.bodyId === BODY_IDS.EARTH && missionState && spacecraftLocalPosition && isEarthMissionContextActive && (
-                <>
-                  <SpacecraftBody
-                    vehicleId={missionState.vehicleId}
-                    label={missionState.vehicleId === 'orion' ? 'Orion' : missionState.vehicleId.toUpperCase()}
-                    position={spacecraftLocalPosition}
-                    fallbackHeading={spacecraftFallbackHeading}
-                    isSelected={selectedMissionTargetId === missionState.vehicleId}
-                    attitudeQuaternion={missionState.attitudeQuaternion}
-                    onClick={(id) => {
-                      if (earthSelectionContext) {
-                        setSelectedPlanet(earthSelectionContext);
-                      }
-                      setSelectedMissionTargetId(id);
-
-                      if (spacecraftWorldPosition) {
-                        setTravelTarget(spacecraftWorldPosition, SPACECRAFT_SELECTION_RADIUS_UNITS);
-                      }
-                    }}
-                    onDoubleClick={(id) => {
-                      if (earthSelectionContext) {
-                        setSelectedPlanet(earthSelectionContext);
-                      }
-                      setSelectedMissionTargetId(id);
-
-                      if (spacecraftWorldPosition) {
-                        setTravelTarget(spacecraftWorldPosition, SPACECRAFT_CLOSEUP_RADIUS_UNITS);
-                      }
-                    }}
-                    useAttitude={
-                      MISSION_CONFIG.ENABLE_ATTITUDE &&
-                      (
-                        missionState.attitudeSource === 'CK_SPICE' ||
-                        (MISSION_CONFIG.ENABLE_POLICY_ATTITUDE && estimatedAttitudeEnabled)
-                      )
-                    }
-                  />
-
-                  {missionTrajectory && (
-                    <MissionTrajectoryLine
-                      past={missionTrajectory.past}
-                      current={[
-                        missionState.sceneCoordinates!.x,
-                        missionState.sceneCoordinates!.y,
-                        missionState.sceneCoordinates!.z
-                      ]}
-                      planned={missionTrajectory.planned}
-                      smoothing={false}
-                    />
-                  )}
-                  {/*  3D Mission Milestones */}
-                  {missionMilestones.map(milestone => (
-                    <MissionMilestoneMarker
-                      key={milestone.id}
-                      label={milestone.label}
-                      position={milestone.position}
-                    />
-                  ))}
-                </>
+              {planet.bodyId === BODY_IDS.EARTH && (
+                // Mission visuals are Earth-local children; Earth's CelestialBody
+                // transform applies renderOrigin for Orion, trajectory, and markers.
+                <EarthMissionLayer
+                  earthSelectionContext={earthSelectionContext}
+                  earthEphemeris={earthEphemeris}
+                  isEarthMissionContextActive={isEarthMissionContextActive}
+                  setSelectedPlanet={setSelectedPlanet}
+                />
               )}
             </CelestialBody>
           </group>
@@ -706,9 +664,9 @@ export function SceneContent({
       })}
 
       <CameraController
-        targetPosition={travelTarget}
-        targetRadius={travelTargetRadius}
-        targetName={selectedMissionTargetId ? (selectedMissionTargetId === 'orion' ? 'Orion' : selectedMissionTargetId.toUpperCase()) : selectedPlanet?.englishName}
+        targetPositionKm={travelTarget}
+        targetRadiusKm={travelTargetRadius ? travelTargetRadius / KM_TO_UNIT : undefined}
+        targetId={cameraTargetId}
       />
 
       {children}

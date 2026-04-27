@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, List
+from enum import Enum
 
 KNOWN_BODY_IDS = {
     "10",
@@ -23,10 +24,34 @@ KNOWN_BODY_IDS = {
     "901",  # Pluto moon
 }
 
+class OrbitLineProfile(str, Enum):
+    RAPID = "rapid"
+    REGULAR = "regular"
+    AUTO = "auto"
+
 class Position(BaseModel):
     x: float
     y: float
     z: float
+
+class OrbitLinePoint(BaseModel):
+    x: float
+    y: float
+    z: float
+    timestamp: str
+
+class OrbitLineData(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
+    points: List[OrbitLinePoint]
+    is_closed: bool = Field(alias="isClosed")
+    profile: OrbitLineProfile
+    algorithm_version: str = Field(alias="algorithmVersion")
+    source_window_start: str = Field(alias="sourceWindowStart")
+    source_window_end: str = Field(alias="sourceWindowEnd")
+    input_point_count: int = Field(alias="inputPointCount")
+    output_point_count: int = Field(alias="outputPointCount")
+    quality_flags: List[str] = Field(default_factory=list, alias="qualityFlags")
 
 class EphemerisTrajectory(BaseModel):
     position: Position
@@ -42,7 +67,8 @@ class EphemerisData(BaseModel):
     velocity: Optional[Position] = None
     timestamp: str
     parent_id: Optional[str] = Field(default=None, alias="parentId")
-    trajectory: Optional[list[EphemerisTrajectory]] = None
+    trajectory: Optional[List[EphemerisTrajectory]] = None
+    orbit_line: Optional[OrbitLineData] = Field(default=None, alias="orbitLine")
 
 class EphemerisMeta(BaseModel):
     model_config = ConfigDict(populate_by_name=True)

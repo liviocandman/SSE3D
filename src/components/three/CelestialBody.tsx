@@ -6,12 +6,15 @@ import { Text, Billboard } from "@react-three/drei";
 import type { Mesh } from "three";
 import * as THREE from "three";
 import "../../app/globals.css";
-import type { ViewMode } from "@/lib/scales";
+import { type ViewMode, KM_TO_UNIT } from "@/lib/scales";
 import { useSolarStore } from "@/store/solarStore";
-import { useShallow } from "zustand/react/shallow";
+import { toRelativeRenderUnitsInto } from "@/lib/renderFrame";
 import type { EphemerisTrajectory } from "@/lib/types";
-import { buildTrajectorySegment, sampleTrajectoryAtTime } from "@/lib/trajectoryEngine";
+import { buildTrajectorySegment } from "@/lib/trajectoryEngine";
+import { createTemporalLookupCache } from "@/lib/temporalLookup";
 import { calculateAbsoluteRotation } from "@/lib/rotationUtils";
+import { clockRuntime } from "@/lib/time/clockRuntime";
+import { resolvePlanetFrame } from "@/lib/simulation/frameResolvers";
 
 // --- Types ---
 
@@ -74,19 +77,18 @@ export function CelestialBody({
   }) as THREE.Texture;
 
 
-  const [fontSize, setFontSize] = useState(5);
+  const labelRef = useRef<THREE.Object3D | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const { camera } = useThree();
 
   const tempVec = useRef(new THREE.Vector3());
+  const absPositionKmRef = useRef(new THREE.Vector3());
+  const lookupCacheRef = useRef(createTemporalLookupCache());
   const isInitializedRef = useRef(false);
   const frameCountRef = useRef(0);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const setHoveredPlanetId = useSolarStore(state => state.setHoveredPlanetId);
-
-  // Selective subscription to this specific planet's segments
-  const masterSegments = useSolarStore(useShallow(state => state.masterTrajectorySegments[bodyId] || []));
 
   const fallbackSegments = useMemo(() => {
     if (!trajectory || trajectory.length === 0) return [];
@@ -118,18 +120,28 @@ export function CelestialBody({
   // Animation loop
   useFrame((state, delta) => {
     const solarState = useSolarStore.getState();
-    const simTime = solarState.currentTime.getTime();
+    const simTime = clockRuntime.getTimeMs();
 
-    // Use current segments from store, fallback to initial props
-    const currentSegments = masterSegments.length > 0 ? masterSegments : fallbackSegments;
+    // 1. Resolve position using the simulation layer
+    const status = resolvePlanetFrame(
+      bodyId,
+      simTime,
+      absPositionKmRef.current,
+      lookupCacheRef.current,
+      fallbackSegments
+    );
 
-    // 1. Interpolate position from trajectory if available
-    if (currentSegments.length > 0 && groupRef.current) {
-      const SCALE = 1 / 1_000_000;
-      const sampled = sampleTrajectoryAtTime(currentSegments, simTime);
-      if (sampled) {
-        const { x, y, z } = sampled.position;
-        const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);
+    if (groupRef.current) {
+      const renderOrigin = solarState.renderOrigin;
+
+      if (status !== 'no-data') {
+        // Convert absolute KM to relative render units (Zero allocation)
+        const targetPos = toRelativeRenderUnitsInto(
+          tempVec.current,
+          absPositionKmRef.current,
+          renderOrigin,
+          KM_TO_UNIT
+        );
 
         if (!isInitializedRef.current) {
           // Snap to first valid position to avoid flying from origin
@@ -140,11 +152,26 @@ export function CelestialBody({
           const lerpFactor = 1 - Math.exp(-6 * delta);
           groupRef.current.position.lerp(targetPos, lerpFactor);
         }
+      } else {
+        // Fallback bodies without trajectory: keep coherent with camera-relative origin
+        const invScale = 1 / KM_TO_UNIT;
+        const absKm = {
+          x: initialPosition[0] * invScale,
+          y: initialPosition[1] * invScale,
+          z: initialPosition[2] * invScale
+        };
+
+        toRelativeRenderUnitsInto(
+          groupRef.current.position,
+          absKm,
+          renderOrigin,
+          KM_TO_UNIT
+        );
+
+        if (!isInitializedRef.current) {
+          isInitializedRef.current = true;
+        }
       }
-    } else if (groupRef.current && !isInitializedRef.current) {
-      // Fallback: use static prop position once if no trajectory is ready
-      groupRef.current.position.set(...initialPosition);
-      isInitializedRef.current = true;
     }
 
     // 2. Planet rotation (Absolute orientation + Optional didactic spin)
@@ -183,18 +210,21 @@ export function CelestialBody({
     // Real distance needed for label size and marker opacity (calculated only when throttled)
     const distance = Math.sqrt(distanceSq);
 
-    // --- Adaptive Label Font Size ---
-    let newFontSize: number;
-    if (distance < 100) {
-      newFontSize = 0.5 + (distance / 100) * 1;
-    } else if (distance < 6000) {
-      newFontSize = 1.5 + ((distance - 100) / 700) * 6.5;
-    } else {
-      newFontSize = 8 + Math.min(192, ((distance - 6000) / 4200) * 192);
-    }
-    newFontSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, newFontSize));
-    if (Math.abs(newFontSize - fontSize) > 0.5) {
-      setFontSize(newFontSize);
+    // --- Adaptive Label Font Size (via scale to avoid re-renders) ---
+    if (labelRef.current) {
+      let newFontSize: number;
+      if (distance < 100) {
+        newFontSize = 0.5 + (distance / 100) * 1;
+      } else if (distance < 6000) {
+        newFontSize = 1.5 + ((distance - 100) / 700) * 6.5;
+      } else {
+        newFontSize = 8 + Math.min(192, ((distance - 6000) / 4200) * 192);
+      }
+      newFontSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, newFontSize));
+      
+      // Fixed base fontSize is 10, so we use scale to reach newFontSize
+      const s = newFontSize / 10;
+      labelRef.current.scale.set(s, s, s);
     }
   });
 
@@ -241,7 +271,7 @@ export function CelestialBody({
   const labelAnchorY = isHovered ? "bottom" : "top";
 
   return (
-    <group name={englishName} ref={groupRef}>
+    <group name={bodyId} ref={groupRef}>
       {/* Invisible hitbox for interaction - always large enough to click */}
       <mesh
         onClick={handleClick}
@@ -296,12 +326,13 @@ export function CelestialBody({
       {/* 3D Text Label - white and above planet on hover */}
       <Billboard follow lockX={false} lockY={false} lockZ={false}>
         <Text
+          ref={labelRef}
           position={[0, labelYPosition, 0]}
-          fontSize={fontSize}
+          fontSize={10}
           color={labelColor}
           anchorX="center"
           anchorY={labelAnchorY as "top" | "bottom"}
-          outlineWidth={fontSize * 0.04}
+          outlineWidth={0.4}
           outlineColor="#000000"
           onClick={handleClick}
           onDoubleClick={handleDoubleClick}

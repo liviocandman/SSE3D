@@ -3,9 +3,14 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Line } from '@react-three/drei';
 import { calculateTrailAlpha } from '@/lib/trailUtils';
+import { toRelativeRenderUnitsInto } from '@/lib/renderFrame';
+import { KM_TO_UNIT } from '@/lib/scales';
 import { useSolarStore } from '@/store/solarStore';
+import { findTemporalInterval, createTemporalLookupCache, resetCacheIfDataChanged } from '@/lib/temporalLookup';
+import { clockRuntime } from '@/lib/time/clockRuntime';
 
 interface DynamicTrailLineProps {
+  /** Absolute positions in KM */
   samples: { timestampMs: number; point: THREE.Vector3 }[];
   maxTrailPoints: number;
   color: string | THREE.Color;
@@ -61,28 +66,41 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
     }
   }, [maxTrailPoints]);
 
+  // --- Phase 3: Monotonic Temporal Lookup Cache ---
+  const lookupCache = useRef(createTemporalLookupCache());
+  
+  // Extract pointTimesMs for the temporal lookup (Array of numbers is required for cache)
+  const pointTimesMs = useMemo(() => samples.map(s => s.timestampMs), [samples]);
+
+  useEffect(() => {
+    resetCacheIfDataChanged(lookupCache.current, pointTimesMs);
+  }, [pointTimesMs]);
+
   // Minimal initial points to satisfy Line's constructor without creating memory pressure
   const initialPoints = useMemo(() => [[0, 0, 0], [0, 0, 0]] as [number, number, number][], []);
+
+  const scratchVec = useRef(new THREE.Vector3());
 
   useFrame(() => {
     if (!lineRef.current) return;
 
-    const currentTime = useSolarStore.getState().currentTime;
-    const simTimeMs = currentTime.getTime();
+    const simTimeMs = clockRuntime.getTimeMs();
     const cutoffMs = simTimeMs + graceMs;
 
-    let left = 0;
-    let right = samples.length - 1;
     let lastVisibleIndex = -1;
-
-    // Binary search for the cutoff
-    while (left <= right) {
-      const mid = Math.floor((left + right) / 2);
-      if (samples[mid].timestampMs <= cutoffMs) {
-        lastVisibleIndex = mid;
-        left = mid + 1;
+    const len = pointTimesMs.length;
+    
+    if (len > 0) {
+      if (cutoffMs >= pointTimesMs[len - 1]) {
+        lastVisibleIndex = len - 1;
       } else {
-        right = mid - 1;
+        const interval = findTemporalInterval(pointTimesMs, cutoffMs, lookupCache.current);
+        if (interval) {
+          lastVisibleIndex = interval.leftIndex;
+        } else {
+          // If cutoff is exactly at the first point or just weirdly behaving:
+          lastVisibleIndex = cutoffMs >= pointTimesMs[0] ? 0 : -1;
+        }
       }
     }
 
@@ -107,14 +125,18 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
     const fc = fadeColor.current;
     const sc = scratchColor.current;
 
+    const solarState = useSolarStore.getState();
+    const renderOrigin = solarState.renderOrigin;
+
     for (let i = 0; i < count; i++) {
       const p = samples[lastVisibleIndex - i].point;
       const idx = i * 3;
 
-      // Direct write into pre-allocated Float32Array (Zero allocation)
-      pos[idx] = p.x;
-      pos[idx + 1] = p.y;
-      pos[idx + 2] = p.z;
+      // Convert absolute KM to relative render units (Zero allocation)
+      toRelativeRenderUnitsInto(scratchVec.current, p, renderOrigin, KM_TO_UNIT);
+      pos[idx] = scratchVec.current.x;
+      pos[idx + 1] = scratchVec.current.y;
+      pos[idx + 2] = scratchVec.current.z;
 
       const alpha = calculateTrailAlpha(i, count, 'tail');
       sc.copy(bc).lerp(fc, 1 - alpha);
@@ -125,25 +147,25 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
     }
 
     // Direct mutation without triggering React renders
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const geometry = lineRef.current.geometry as any; 
+    const geometry = lineRef.current.geometry as unknown as {
+      setPositions: (array: Float32Array) => void;
+      setColors: (array: Float32Array) => void;
+      attributes: Record<string, { needsUpdate: boolean }>;
+    };
     if (geometry.setPositions && geometry.setColors) {
       // Use subarray to provide a view of the buffer (Zero allocation)
       geometry.setPositions(pos.subarray(0, count * 3));
       geometry.setColors(col.subarray(0, count * 3));
       
       // Notify Three.js that the attributes need an update
-      geometry.attributes.instanceStart.needsUpdate = true;
-      geometry.attributes.instanceEnd.needsUpdate = true;
+      if (geometry.attributes.instanceStart) geometry.attributes.instanceStart.needsUpdate = true;
+      if (geometry.attributes.instanceEnd) geometry.attributes.instanceEnd.needsUpdate = true;
     }
-    
-    lineRef.current.computeLineDistances();
   });
 
   return (
     <Line
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ref={lineRef as any}
+      ref={lineRef as unknown as NonNullable<React.ComponentProps<typeof Line>["ref"]>}
       points={initialPoints} 
       vertexColors={[[1, 1, 1], [1, 1, 1]]} // Placeholder colors
       transparent

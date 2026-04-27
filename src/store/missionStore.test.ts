@@ -80,7 +80,9 @@ describe('missionStore', () => {
     expect(useMissionStore.getState().missionMode).toBe(MissionMode.LIVE);
   });
 
-  it('should handle predicted mode when setIsLive(true) but source is predicted', () => {
+  it('should not let backend mission state override the user-selected mode', () => {
+    useMissionStore.getState().setMissionMode(MissionMode.REPLAY);
+
     const mockPredictedState = {
       missionId: 'artemis-2',
       vehicleId: 'orion',
@@ -96,6 +98,8 @@ describe('missionStore', () => {
     };
 
     useMissionStore.getState().setMissionState(mockPredictedState);
-    expect(useMissionStore.getState().missionMode).toBe(MissionMode.PREDICTED);
+    expect(useMissionStore.getState().missionMode).toBe(MissionMode.REPLAY);
+    expect(useMissionStore.getState().isLive).toBe(false);
+    expect(useMissionStore.getState().missionState).toEqual(mockPredictedState);
   });
 });

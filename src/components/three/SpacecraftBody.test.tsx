@@ -34,12 +34,20 @@ vi.mock('three', () => {
       x = 0;
       y = 0;
       z = 0;
+      copy() { return this; }
+      sub() { return this; }
+      crossVectors() { return this; }
+      normalize() { return this; }
+      lengthSq() { return 1; }
       set(x: number, y: number, z: number) {
         this.x = x;
         this.y = y;
         this.z = z;
         return this;
       }
+    },
+    Matrix4: class {
+      makeBasis() { return this; }
     },
     PerspectiveCamera: class {},
     Texture: class {},
@@ -69,9 +77,9 @@ describe('SpacecraftBody', () => {
       <SpacecraftBody
         vehicleId="orion"
         label="Orion Label"
-        position={[0, 0, 0]}
         isSelected={false}
         onClick={vi.fn()}
+        earthEphemeris={null}
       />
     );
     
@@ -88,9 +96,9 @@ describe('SpacecraftBody', () => {
       <SpacecraftBody
         vehicleId="orion"
         label="Orion Label"
-        position={[0, 0, 0]}
         isSelected={false}
         onClick={handleClick}
+        earthEphemeris={null}
       />
     );
     
