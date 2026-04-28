@@ -15,10 +15,48 @@ def mock_token():
             "name": "Test User",
             "provider": "github",
             "provider_account_id": "github_user_123",
+            "iss": "sse3d-bff",
+            "aud": "sse3d-api",
         },
         MOCK_SECRET,
         algorithm="HS256",
     )
+
+@pytest.mark.asyncio
+async def test_save_favorite_invalid_iss_rejected(client):
+    """Verify tokens with wrong issuer are rejected."""
+    bad_token = jwt.encode(
+        {"sub": "123", "iss": "wrong-iss", "aud": "sse3d-api", "provider": "github", "provider_account_id": "1"},
+        MOCK_SECRET,
+        algorithm="HS256",
+    )
+    with patch("app.core.config.settings.bff_jwt_secret", MOCK_SECRET):
+        resp = await client.post("/api/ai/favorites", json={
+            "bodyId": "499",
+            "bodyName": "Mars",
+            "question": "Q",
+            "answer": "A",
+        }, headers={"Authorization": f"Bearer {bad_token}"})
+        # get_optional_user returns None on error, and astronomer/favorites router 
+        # for POST requires authenticated user via require_authenticated_user
+        assert resp.status_code == 401
+
+@pytest.mark.asyncio
+async def test_save_favorite_invalid_aud_rejected(client):
+    """Verify tokens with wrong audience are rejected."""
+    bad_token = jwt.encode(
+        {"sub": "123", "iss": "sse3d-bff", "aud": "wrong-aud", "provider": "github", "provider_account_id": "1"},
+        MOCK_SECRET,
+        algorithm="HS256",
+    )
+    with patch("app.core.config.settings.bff_jwt_secret", MOCK_SECRET):
+        resp = await client.post("/api/ai/favorites", json={
+            "bodyId": "499",
+            "bodyName": "Mars",
+            "question": "Q",
+            "answer": "A",
+        }, headers={"Authorization": f"Bearer {bad_token}"})
+        assert resp.status_code == 401
 
 @pytest.mark.asyncio
 async def test_save_favorite_anonymous_allowed(client):

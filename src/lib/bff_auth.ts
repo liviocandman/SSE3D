@@ -1,35 +1,43 @@
 import jwt from 'jsonwebtoken';
 import { auth } from '@/auth';
 
-const BFF_JWT_SECRET = process.env.BFF_JWT_SECRET || process.env.NEXTAUTH_SECRET;
+const BFF_JWT_SECRET = process.env.BFF_JWT_SECRET;
 type SessionUserWithProvider = {
   provider?: string;
   providerAccountId?: string;
 };
 
 export async function signBffToken() {
+  if (!BFF_JWT_SECRET) {
+    console.warn('[BFF Auth] BFF_JWT_SECRET not configured');
+    return null;
+  }
+
   const session = await auth();
 
   if (!session?.user?.id) {
     return null;
   }
 
-  // Find the provider and providerAccountId from the session
-  // NextAuth v5 (Auth.js) session user usually doesn't have these by default
-  // But we can pass them in the JWT/Session callbacks if needed.
-  // For now, we'll assume the session.user has these fields if we configured them.
-  // If not, we'll use the user.id as providerAccountId and 'next-auth' as provider as fallback.
-
   const user = session.user as typeof session.user & SessionUserWithProvider;
+  
+  // Reject signing for unresolved providers — prevents garbage identity linking
+  const provider = user.provider;
+  if (!provider || provider === 'unknown') {
+    console.warn('[BFF Auth] Cannot sign token: provider is unknown');
+    return null;
+  }
+
   const payload = {
     email: user.email,
     name: user.name,
-    // These need to be available in the session for Identity Linking to work properly
-    provider: user.provider || 'unknown',
+    provider,
     provider_account_id: user.providerAccountId || user.id,
+    iss: 'sse3d-bff',
+    aud: 'sse3d-api',
   };
 
-  return jwt.sign(payload, BFF_JWT_SECRET!, {
+  return jwt.sign(payload, BFF_JWT_SECRET, {
     expiresIn: '5m',
     algorithm: 'HS256',
   });

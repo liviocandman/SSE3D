@@ -1,5 +1,6 @@
 import jwt
 import uuid
+from loguru import logger
 from fastapi import Request, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -25,7 +26,9 @@ def _decode_bff_jwt(token: str) -> dict:
         token,
         settings.bff_jwt_secret,
         algorithms=["HS256"],
-        options={"verify_aud": False},
+        options={"verify_aud": True},
+        audience="sse3d-api",
+        issuer="sse3d-bff",
     )
     return payload
 
@@ -47,16 +50,20 @@ async def get_optional_user(
     try:
         payload = _decode_bff_jwt(token)
     except jwt.InvalidTokenError as e:
-        print(f"[Auth] Invalid BFF JWT: {e}")
-        return None
+        logger.warning(f"[Auth] Invalid BFF JWT: {e}")
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "INVALID_TOKEN", "message": str(e)}
+        )
 
     provider = payload.get("provider")
+
     provider_account_id = payload.get("provider_account_id")
     email = payload.get("email")
     name = payload.get("name", "")
 
     if not provider or not provider_account_id:
-        print(f"[Auth] Missing identity info in token: {payload}")
+        logger.warning(f"[Auth] Missing identity info in token: {payload}")
         return None
 
     # 1. Find by Account
@@ -90,7 +97,7 @@ async def get_optional_user(
         session.add(user)
         # Flush to get user.id for account
         await session.flush()
-        print(f"[Auth] New unified user created: {user.id} ({internal_email})")
+        logger.info(f"[Auth] New unified user created: {user.id} ({internal_email})")
 
     # Link current account to the user
     new_account = Account(
@@ -101,7 +108,7 @@ async def get_optional_user(
     session.add(new_account)
     await session.commit()
     await session.refresh(user)
-    print(f"[Auth] Linked {provider} account to user {user.id}")
+    logger.info(f"[Auth] Linked {provider} account to user {user.id}")
 
     return user
 
