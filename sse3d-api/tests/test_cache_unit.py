@@ -20,9 +20,9 @@ async def test_get_bulk_cached_deserialization():
     
     raw_json = '{"bodyId": "399", "name": "Earth", "position": {"x": 1, "y": 2, "z": 3}, "timestamp": "2024-01-01"}'
     
-    with patch("app.services.cache_service.AsyncRedis") as mock_class:
+    with patch("app.services.cache_service.get_redis") as mock_get_redis:
         mock_redis = AsyncMock()
-        mock_class.return_value = mock_redis
+        mock_get_redis.return_value = mock_redis
         mock_redis.get.return_value = raw_json
         
         cached, missing = await get_bulk_cached(["399"], "2024-01-01")
@@ -35,9 +35,9 @@ async def test_get_bulk_cached_deserialization():
 async def test_get_bulk_cached_with_center_key():
     from app.services.cache_service import get_bulk_cached
 
-    with patch("app.services.cache_service.AsyncRedis") as mock_class:
+    with patch("app.services.cache_service.get_redis") as mock_get_redis:
         mock_redis = AsyncMock()
-        mock_class.return_value = mock_redis
+        mock_get_redis.return_value = mock_redis
         mock_redis.get.return_value = None
 
         cached, missing = await get_bulk_cached(["501"], "2024-01-01", center="599")
@@ -52,9 +52,9 @@ async def test_get_bulk_cached_orbit_ready_requires_orbit_line():
 
     raw_json_without_orbit_line = '{"bodyId": "401", "name": "Phobos", "position": {"x": 1, "y": 2, "z": 3}, "timestamp": "2024-01-01"}'
 
-    with patch("app.services.cache_service.AsyncRedis") as mock_class:
+    with patch("app.services.cache_service.get_redis") as mock_get_redis:
         mock_redis = AsyncMock()
-        mock_class.return_value = mock_redis
+        mock_get_redis.return_value = mock_redis
         mock_redis.get.return_value = raw_json_without_orbit_line
 
         cached, missing = await get_bulk_cached(
@@ -71,9 +71,9 @@ async def test_get_bulk_cached_orbit_ready_requires_orbit_line():
 async def test_get_bulk_cached_orbit_line_only_uses_specific_cache_key():
     from app.services.cache_service import get_bulk_cached
 
-    with patch("app.services.cache_service.AsyncRedis") as mock_class:
+    with patch("app.services.cache_service.get_redis") as mock_get_redis:
         mock_redis = AsyncMock()
-        mock_class.return_value = mock_redis
+        mock_get_redis.return_value = mock_redis
         mock_redis.get.return_value = None
 
         await get_bulk_cached(
@@ -92,9 +92,9 @@ async def test_get_bulk_cached_orbit_line_only_uses_specific_cache_key():
 async def test_get_bulk_cached_full_orbit_uses_distinct_cache_key():
     from app.services.cache_service import get_bulk_cached
 
-    with patch("app.services.cache_service.AsyncRedis") as mock_class:
+    with patch("app.services.cache_service.get_redis") as mock_get_redis:
         mock_redis = AsyncMock()
-        mock_class.return_value = mock_redis
+        mock_get_redis.return_value = mock_redis
         mock_redis.get.return_value = None
 
         await get_bulk_cached(

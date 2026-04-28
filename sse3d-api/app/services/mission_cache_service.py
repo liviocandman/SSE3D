@@ -1,5 +1,5 @@
 from typing import Optional, Tuple
-from upstash_redis import AsyncRedis
+from app.core.redis_client import get_redis
 from loguru import logger
 from app.core.config import settings
 from app.models.mission_schemas import MissionStateResponse, MissionHealthResponse
@@ -12,12 +12,7 @@ CACHE_KEY_LAST_GOOD_HEALTH = "mission:artemis2:live:last_good_health"
 
 class MissionCacheService:
     def __init__(self):
-        self.redis = None
-        if settings.upstash_redis_rest_url and settings.upstash_redis_rest_token:
-            self.redis = AsyncRedis(
-                url=settings.upstash_redis_rest_url,
-                token=settings.upstash_redis_rest_token,
-            )
+        self.redis = get_redis()
         self.ttl = settings.arow_cache_ttl_seconds
 
     async def get_live_state(self) -> Tuple[Optional[MissionStateResponse], Optional[MissionHealthResponse]]:

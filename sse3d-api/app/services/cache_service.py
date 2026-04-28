@@ -1,4 +1,5 @@
-from upstash_redis import AsyncRedis
+from app.core.redis_client import get_redis
+from loguru import logger
 from app.models.schemas import EphemerisData, OrbitLineProfile
 from app.services.orbit_line_service import ALGORITHM_VERSION
 from app.core.config import settings
@@ -64,10 +65,10 @@ async def get_bulk_cached(
     orbit_line_only: bool = False,
 ) -> tuple[list[EphemerisData], list[str]]:
     try:
-        redis = AsyncRedis(
-            url=settings.upstash_redis_rest_url,
-            token=settings.upstash_redis_rest_token,
-        )
+        redis = get_redis()
+        if not redis:
+            return [], body_ids
+            
         cached, missing = [], []
         for bid in body_ids:
             key = _cache_key(
@@ -103,7 +104,7 @@ async def get_bulk_cached(
                 missing.append(bid)
         return cached, missing
     except Exception as e:
-        print(f"[Cache] Error reading from Redis: {e}")
+        logger.error(f"[Cache] Error reading from Redis: {e}")
         return [], body_ids
 
 async def set_bulk_cached(
@@ -117,10 +118,10 @@ async def set_bulk_cached(
     orbit_line_only: bool = False,
 ) -> None:
     try:
-        redis = AsyncRedis(
-            url=settings.upstash_redis_rest_url,
-            token=settings.upstash_redis_rest_token,
-        )
+        redis = get_redis()
+        if not redis:
+            return
+            
         for item in items:
             key = _cache_key(
                 item.body_id,
@@ -135,15 +136,14 @@ async def set_bulk_cached(
             ttl = _get_ttl(item.body_id, date_str=date)
             await redis.set(key, item.model_dump_json(by_alias=True), ex=ttl)
     except Exception as e:
-        print(f"[Cache] Error writing to Redis: {e}")
+        logger.error(f"[Cache] Error writing to Redis: {e}")
 
-# --- Moon Year Cache (Compressed) ---
 async def get_moon_year_cached(body_id: str, year: int) -> EphemerisData | None:
     try:
-        redis = AsyncRedis(
-            url=settings.upstash_redis_rest_url,
-            token=settings.upstash_redis_rest_token,
-        )
+        redis = get_redis()
+        if not redis:
+            return None
+
         key = f"ephemeris:moon:{body_id}:year:{year}"
         compressed_base64 = await redis.get(key)
         if compressed_base64:
@@ -152,15 +152,15 @@ async def get_moon_year_cached(body_id: str, year: int) -> EphemerisData | None:
             return EphemerisData.model_validate(json.loads(json_str))
         return None
     except Exception as e:
-        print(f"[Cache] Error reading compressed moon year from Redis: {e}")
+        logger.error(f"[Cache] Error reading compressed moon year from Redis: {e}")
         return None
 
 async def set_moon_year_cached(body_id: str, year: int, data: EphemerisData) -> None:
     try:
-        redis = AsyncRedis(
-            url=settings.upstash_redis_rest_url,
-            token=settings.upstash_redis_rest_token,
-        )
+        redis = get_redis()
+        if not redis:
+            return
+
         key = f"ephemeris:moon:{body_id}:year:{year}"
         json_str = data.model_dump_json(by_alias=True)
         compressed_data = zlib.compress(json_str.encode('utf-8'))
@@ -169,4 +169,4 @@ async def set_moon_year_cached(body_id: str, year: int, data: EphemerisData) -> 
         # Cache for a very long time (e.g., 30 days) since it's a full year
         await redis.set(key, compressed_base64, ex=2592000)
     except Exception as e:
-        print(f"[Cache] Error writing compressed moon year to Redis: {e}")
+        logger.error(f"[Cache] Error writing compressed moon year to Redis: {e}")
