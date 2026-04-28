@@ -4,13 +4,15 @@ from datetime import datetime, timezone
 
 from app.models.mission_schemas import MissionPosition, MissionVelocity
 from app.services import mission_data_service
+from app.services.mission_phase_resolver import mission_phase_resolver
+import app.services.mission_phase_resolver as mpr_module
+from app.services import mission_event_service
 from app.services.mission_oem_service import OEMStateVector
+from app.services import mission_state_builder
 
 
 def test_replay_prefers_oem_geometry(monkeypatch):
-    monkeypatch.setattr(
-        mission_data_service,
-        "_resolve_orion_state_from_oem",
+    monkeypatch.setattr(mission_state_builder, "_resolve_orion_state_from_oem",
         lambda _timestamp: {
             "position": MissionPosition(x=1.0, y=2.0, z=3.0),
             "velocity": MissionVelocity(x=0.1, y=0.2, z=0.3),
@@ -18,9 +20,7 @@ def test_replay_prefers_oem_geometry(monkeypatch):
             "input_origin": "EARTH",
         },
     )
-    monkeypatch.setattr(
-        mission_data_service,
-        "compute_mission_relative_geometry",
+    monkeypatch.setattr(mission_state_builder, "compute_mission_relative_geometry",
         lambda _timestamp: None,
     )
 
@@ -34,9 +34,7 @@ def test_replay_prefers_oem_geometry(monkeypatch):
 
 
 def test_replay_without_spice_keeps_earth_distance_consistent(monkeypatch):
-    monkeypatch.setattr(
-        mission_data_service,
-        "_resolve_orion_state_from_oem",
+    monkeypatch.setattr(mission_state_builder, "_resolve_orion_state_from_oem",
         lambda _timestamp: {
             "position": MissionPosition(x=3.0, y=4.0, z=12.0),
             "velocity": MissionVelocity(x=0.0, y=0.0, z=0.0),
@@ -44,9 +42,7 @@ def test_replay_without_spice_keeps_earth_distance_consistent(monkeypatch):
             "input_origin": "EARTH",
         },
     )
-    monkeypatch.setattr(
-        mission_data_service,
-        "compute_mission_relative_geometry",
+    monkeypatch.setattr(mission_state_builder, "compute_mission_relative_geometry",
         lambda _timestamp: None,
     )
 
@@ -56,9 +52,7 @@ def test_replay_without_spice_keeps_earth_distance_consistent(monkeypatch):
 
 
 def test_replay_without_spice_uses_right_handed_scene_fallback(monkeypatch):
-    monkeypatch.setattr(
-        mission_data_service,
-        "_resolve_orion_state_from_oem",
+    monkeypatch.setattr(mission_state_builder, "_resolve_orion_state_from_oem",
         lambda _timestamp: {
             "position": MissionPosition(x=10.0, y=20.0, z=30.0),
             "velocity": MissionVelocity(x=0.0, y=0.0, z=0.0),
@@ -66,9 +60,7 @@ def test_replay_without_spice_uses_right_handed_scene_fallback(monkeypatch):
             "input_origin": "EARTH",
         },
     )
-    monkeypatch.setattr(
-        mission_data_service,
-        "compute_mission_relative_geometry",
+    monkeypatch.setattr(mission_state_builder, "compute_mission_relative_geometry",
         lambda _timestamp: None,
     )
 
@@ -83,9 +75,7 @@ def test_replay_without_spice_uses_right_handed_scene_fallback(monkeypatch):
 
 
 def test_replay_with_geometry_adds_solar_range_and_los(monkeypatch):
-    monkeypatch.setattr(
-        mission_data_service,
-        "_resolve_orion_state_from_oem",
+    monkeypatch.setattr(mission_state_builder, "_resolve_orion_state_from_oem",
         lambda _timestamp: {
             "position": MissionPosition(x=3000.0, y=0.0, z=0.0),
             "velocity": MissionVelocity(x=1.0, y=0.0, z=0.0),
@@ -93,9 +83,7 @@ def test_replay_with_geometry_adds_solar_range_and_los(monkeypatch):
             "input_origin": "EARTH",
         },
     )
-    monkeypatch.setattr(
-        mission_data_service,
-        "compute_mission_relative_geometry",
+    monkeypatch.setattr(mission_state_builder, "compute_mission_relative_geometry",
         lambda _timestamp: {
             "et": 0.0,
             "earth_pos": np.array([100.0, 0.0, 0.0]),
@@ -110,9 +98,7 @@ def test_replay_with_geometry_adds_solar_range_and_los(monkeypatch):
 
 
 def test_replay_exposes_attitude_metadata(monkeypatch):
-    monkeypatch.setattr(
-        mission_data_service,
-        "_resolve_orion_state_from_oem",
+    monkeypatch.setattr(mission_state_builder, "_resolve_orion_state_from_oem",
         lambda _timestamp: {
             "position": MissionPosition(x=1000.0, y=0.0, z=0.0),
             "velocity": MissionVelocity(x=0.0, y=1.0, z=0.0),
@@ -120,9 +106,7 @@ def test_replay_exposes_attitude_metadata(monkeypatch):
             "input_origin": "EARTH",
         },
     )
-    monkeypatch.setattr(
-        mission_data_service,
-        "compute_mission_relative_geometry",
+    monkeypatch.setattr(mission_state_builder, "compute_mission_relative_geometry",
         lambda _timestamp: None,
     )
 
@@ -177,7 +161,7 @@ def test_derive_lunar_flyby_window_covers_full_moon_centered_arc(monkeypatch):
         lambda *_args, **_kwargs: list(states),
     )
     monkeypatch.setattr(
-        mission_data_service,
+        mpr_module,
         "compute_mission_relative_geometry",
         lambda timestamp: {
             "et": 0.0,
@@ -186,7 +170,7 @@ def test_derive_lunar_flyby_window_covers_full_moon_centered_arc(monkeypatch):
         },
     )
 
-    start_ts, center_ts, end_ts = mission_data_service._derive_lunar_flyby_window(ephemeris)
+    start_ts, center_ts, end_ts = mission_phase_resolver._derive_lunar_flyby_window(ephemeris)
 
     assert start_ts == timestamps[1]
     assert center_ts == timestamps[2]
@@ -195,7 +179,7 @@ def test_derive_lunar_flyby_window_covers_full_moon_centered_arc(monkeypatch):
 
 def test_replay_uses_nose_to_moon_during_lunar_flyby_window(monkeypatch):
     monkeypatch.setattr(
-        mission_data_service,
+        mission_state_builder,
         "_resolve_orion_state_from_oem",
         lambda _timestamp: {
             "position": MissionPosition(x=300_000.0, y=0.0, z=0.0),
@@ -205,8 +189,8 @@ def test_replay_uses_nose_to_moon_during_lunar_flyby_window(monkeypatch):
         },
     )
     monkeypatch.setattr(
-        mission_data_service,
-        "_get_lunar_flyby_window",
+        mission_phase_resolver,
+        "get_lunar_flyby_window",
         lambda _ephemeris=None: (
             "2026-04-05T07:00:00Z",
             "2026-04-05T08:00:00Z",
@@ -214,7 +198,7 @@ def test_replay_uses_nose_to_moon_during_lunar_flyby_window(monkeypatch):
         ),
     )
     monkeypatch.setattr(
-        mission_data_service,
+        mission_state_builder,
         "compute_mission_relative_geometry",
         lambda _timestamp: {
             "et": 0.0,
@@ -272,7 +256,7 @@ def test_derive_lunar_flyby_window_caps_return_transition_at_2030z(monkeypatch):
         lambda *_args, **_kwargs: list(states),
     )
     monkeypatch.setattr(
-        mission_data_service,
+        mpr_module,
         "compute_mission_relative_geometry",
         lambda timestamp: {
             "et": 0.0,
@@ -281,7 +265,7 @@ def test_derive_lunar_flyby_window_caps_return_transition_at_2030z(monkeypatch):
         },
     )
 
-    start_ts, center_ts, end_ts = mission_data_service._derive_lunar_flyby_window(ephemeris)
+    start_ts, center_ts, end_ts = mission_phase_resolver._derive_lunar_flyby_window(ephemeris)
 
     assert start_ts == timestamps[0]
     assert center_ts == timestamps[2]
@@ -289,14 +273,14 @@ def test_derive_lunar_flyby_window_caps_return_transition_at_2030z(monkeypatch):
 
 
 def test_lunar_return_transition_is_timezone_safe():
-    reference_dt = mission_data_service._parse_split_timestamp("2026-04-05T17:00:00-03:00")
-    transition_dt = mission_data_service._resolve_lunar_return_coast_start(reference_dt)
+    reference_dt = mission_event_service.parse_split_timestamp("2026-04-05T17:00:00-03:00")
+    transition_dt = mission_phase_resolver._resolve_lunar_return_coast_start(reference_dt)
 
-    assert mission_data_service._format_iso_z(transition_dt) == "2026-04-05T20:30:00Z"
+    assert mission_event_service.format_iso_z(transition_dt) == "2026-04-05T20:30:00Z"
 
 
 def test_fallback_lunar_window_normalizes_offset_timestamp_to_utc():
-    start_ts, center_ts, end_ts = mission_data_service._fallback_lunar_flyby_window("2026-04-05T05:00:00-03:00")
+    start_ts, center_ts, end_ts = mission_phase_resolver._fallback_lunar_flyby_window("2026-04-05T05:00:00-03:00")
 
     assert start_ts == "2026-04-05T02:00:00Z"
     assert center_ts == "2026-04-05T08:00:00Z"

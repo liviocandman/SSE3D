@@ -1,7 +1,7 @@
 import numpy as np
 from app.models.mission_schemas import MissionPhase
 from app.models.mission_schemas import MissionPosition, MissionVelocity
-from app.services.mission_data_service import _build_earth_relative_predicted_position
+from app.services.mission_state_builder import _build_earth_relative_predicted_position
 from app.services.mission_geometry_service import (
     compute_mission_attitude,
     transform_to_eclipj2000,
@@ -162,7 +162,7 @@ def test_predicted_fallback_position_aligns_with_earth_moon_direction(monkeypatc
     }
 
     monkeypatch.setattr(
-        "app.services.mission_data_service.compute_mission_relative_geometry",
+        "app.services.mission_state_builder.compute_mission_relative_geometry",
         lambda _timestamp: mocked_geo,
     )
 
