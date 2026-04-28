@@ -29,6 +29,8 @@ export interface EphemerisError {
 }
 
 export type EphemerisErrorType =
+  // Legacy literal kept for compatibility with existing UI handling.
+  // Despite the name, upstream ephemeris is SPICE-kernel-based.
   | "NASA_API_ERROR"
   | "NETWORK_ERROR"
   | "VALIDATION_ERROR"
