@@ -540,7 +540,7 @@ Request → Redis GET (bulk) → missing IDs → NASA fetch (sequential)
 
 ## 🚦 Rate Limiting
 
-AI questions are rate-limited using a **sliding window counter** stored in Redis.
+AI questions are rate-limited using a **fixed window counter** stored in Redis (`INCR` + `EXPIRE`).
 
 | Config | Default | Description |
 |---|---|---|
@@ -551,6 +551,8 @@ AI questions are rate-limited using a **sliding window counter** stored in Redis
 1. **Authenticated user**: `ratelimit:astronomer:user:{userId}`
 2. **Session ID**: `ratelimit:astronomer:session:{sessionId}`
 3. **IP address**: `ratelimit:astronomer:ip:{clientIp}` (via `X-Forwarded-For`, `X-Real-IP`, or `request.client.host`)
+
+Each key increments within the active window and resets automatically when the TTL expires.
 
 **Fail-open design**: If Redis is unavailable, rate limiting is bypassed (allow request).
 
@@ -646,7 +648,7 @@ pytest tests/test_ephemeris.py
 
 ### Docker
 
-The API is containerized with a multi-stage Dockerfile:
+The API is containerized with a single-stage Dockerfile:
 
 ```dockerfile
 FROM python:3.12-slim
