@@ -37,8 +37,8 @@ ORION_VEHICLE_ID = "orion"
 PREDICTED_FALLBACK_EARTH_DISTANCE_KM = 250_000.0
 
 
-def get_mission_events(at: Optional[str] = None):
-    return mission_event_service.get_mission_events(at)
+async def get_mission_events(at: Optional[str] = None):
+    return await mission_event_service.get_mission_events(at)
 
 
 async def get_health() -> MissionHealthResponse:
@@ -78,7 +78,8 @@ async def get_health() -> MissionHealthResponse:
 async def get_live_mission_state() -> MissionStateResponse:
     state, _ = await cache_service.get_live_state()
     if state:
-        state.phase = get_mission_events(state.source_timestamp).current_phase
+        phase_data = await get_mission_events(state.source_timestamp)
+        state.phase = phase_data.current_phase
         state.mission_elapsed_time = format_mission_elapsed_time(state.source_timestamp)
         is_stale = state.staleness_seconds > 60
         fallback_active = state.mode == "predicted" or state.source == MissionDataSource.SPICE_PREDICTED
@@ -99,10 +100,12 @@ async def get_live_mission_state() -> MissionStateResponse:
         if oem_state:
             live_state.position = oem_state["position"]
             live_state.velocity = oem_state["velocity"]
-        live_state.phase = get_mission_events(live_state.source_timestamp).current_phase
+        
+        phase_data = await get_mission_events(live_state.source_timestamp)
+        live_state.phase = phase_data.current_phase
         live_state.mission_elapsed_time = format_mission_elapsed_time(live_state.source_timestamp)
 
-        geo_data = compute_mission_relative_geometry(live_state.source_timestamp)
+        geo_data = await compute_mission_relative_geometry(live_state.source_timestamp)
         input_frame = oem_state["input_frame"] if oem_state else settings.arow_input_frame
         input_origin = oem_state["input_origin"] if oem_state else settings.arow_position_origin
         
@@ -127,13 +130,14 @@ async def get_live_mission_state() -> MissionStateResponse:
             return fallback_state
             
         logger.error("No last good state found. Returning predicted data as ultimate fallback.")
-        predicted = get_predicted_fallback_state()
+        predicted = await get_predicted_fallback_state()
         mission_source_tracker.log_transition(predicted.source, True, True)
         return predicted
 
-def get_predicted_fallback_state() -> MissionStateResponse:
+async def get_predicted_fallback_state() -> MissionStateResponse:
     now = datetime.now(timezone.utc).isoformat()
-    return build_base_mission_state(now, "predicted", MissionDataSource.SPICE_PREDICTED, 999.9, get_mission_events)
+    return await build_base_mission_state(now, "predicted", MissionDataSource.SPICE_PREDICTED, 999.9, get_mission_events)
 
-def get_replay_state(timestamp: str) -> MissionStateResponse:
-    return build_base_mission_state(timestamp, "replay", MissionDataSource.ARCHIVE, 0.0, get_mission_events)
+async def get_replay_state(timestamp: str) -> MissionStateResponse:
+    return await build_base_mission_state(timestamp, "replay", MissionDataSource.ARCHIVE, 0.0, get_mission_events)
+

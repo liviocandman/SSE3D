@@ -11,7 +11,11 @@ from app.services.mission_oem_service import OEMStateVector
 from app.services import mission_state_builder
 
 
-def test_replay_prefers_oem_geometry(monkeypatch):
+import pytest
+from unittest.mock import AsyncMock
+
+@pytest.mark.asyncio
+async def test_replay_prefers_oem_geometry(monkeypatch):
     monkeypatch.setattr(mission_state_builder, "_resolve_orion_state_from_oem",
         lambda _timestamp: {
             "position": MissionPosition(x=1.0, y=2.0, z=3.0),
@@ -21,10 +25,10 @@ def test_replay_prefers_oem_geometry(monkeypatch):
         },
     )
     monkeypatch.setattr(mission_state_builder, "compute_mission_relative_geometry",
-        lambda _timestamp: None,
+        AsyncMock(return_value=None),
     )
 
-    state = mission_data_service.get_replay_state("2026-04-03T13:07:09Z")
+    state = await mission_data_service.get_replay_state("2026-04-03T13:07:09Z")
 
     assert state.position.x == 1.0
     assert state.position.y == 2.0
@@ -33,7 +37,8 @@ def test_replay_prefers_oem_geometry(monkeypatch):
     assert state.source.value == "ARCHIVE"
 
 
-def test_replay_without_spice_keeps_earth_distance_consistent(monkeypatch):
+@pytest.mark.asyncio
+async def test_replay_without_spice_keeps_earth_distance_consistent(monkeypatch):
     monkeypatch.setattr(mission_state_builder, "_resolve_orion_state_from_oem",
         lambda _timestamp: {
             "position": MissionPosition(x=3.0, y=4.0, z=12.0),
@@ -43,15 +48,16 @@ def test_replay_without_spice_keeps_earth_distance_consistent(monkeypatch):
         },
     )
     monkeypatch.setattr(mission_state_builder, "compute_mission_relative_geometry",
-        lambda _timestamp: None,
+        AsyncMock(return_value=None),
     )
 
-    state = mission_data_service.get_replay_state("2026-04-03T13:07:09Z")
+    state = await mission_data_service.get_replay_state("2026-04-03T13:07:09Z")
 
     assert state.distances.earth_km == 13.0
 
 
-def test_replay_without_spice_uses_right_handed_scene_fallback(monkeypatch):
+@pytest.mark.asyncio
+async def test_replay_without_spice_uses_right_handed_scene_fallback(monkeypatch):
     monkeypatch.setattr(mission_state_builder, "_resolve_orion_state_from_oem",
         lambda _timestamp: {
             "position": MissionPosition(x=10.0, y=20.0, z=30.0),
@@ -61,10 +67,10 @@ def test_replay_without_spice_uses_right_handed_scene_fallback(monkeypatch):
         },
     )
     monkeypatch.setattr(mission_state_builder, "compute_mission_relative_geometry",
-        lambda _timestamp: None,
+        AsyncMock(return_value=None),
     )
 
-    state = mission_data_service.get_replay_state("2026-04-03T13:07:09Z")
+    state = await mission_data_service.get_replay_state("2026-04-03T13:07:09Z")
 
     assert state.global_coordinates.x == 10.0
     assert state.global_coordinates.y == 30.0
@@ -74,7 +80,8 @@ def test_replay_without_spice_uses_right_handed_scene_fallback(monkeypatch):
     assert state.scene_coordinates.z == -20.0
 
 
-def test_replay_with_geometry_adds_solar_range_and_los(monkeypatch):
+@pytest.mark.asyncio
+async def test_replay_with_geometry_adds_solar_range_and_los(monkeypatch):
     monkeypatch.setattr(mission_state_builder, "_resolve_orion_state_from_oem",
         lambda _timestamp: {
             "position": MissionPosition(x=3000.0, y=0.0, z=0.0),
@@ -84,20 +91,21 @@ def test_replay_with_geometry_adds_solar_range_and_los(monkeypatch):
         },
     )
     monkeypatch.setattr(mission_state_builder, "compute_mission_relative_geometry",
-        lambda _timestamp: {
+        AsyncMock(return_value={
             "et": 0.0,
             "earth_pos": np.array([100.0, 0.0, 0.0]),
             "moon_pos": np.array([900.0, 0.0, 0.0]),
-        },
+        }),
     )
 
-    state = mission_data_service.get_replay_state("2026-04-03T13:07:09Z")
+    state = await mission_data_service.get_replay_state("2026-04-03T13:07:09Z")
 
     assert state.solar_range_km == 3100.0
     assert state.line_of_sight_status.value == "lunar_occultation"
 
 
-def test_replay_exposes_attitude_metadata(monkeypatch):
+@pytest.mark.asyncio
+async def test_replay_exposes_attitude_metadata(monkeypatch):
     monkeypatch.setattr(mission_state_builder, "_resolve_orion_state_from_oem",
         lambda _timestamp: {
             "position": MissionPosition(x=1000.0, y=0.0, z=0.0),
@@ -107,10 +115,10 @@ def test_replay_exposes_attitude_metadata(monkeypatch):
         },
     )
     monkeypatch.setattr(mission_state_builder, "compute_mission_relative_geometry",
-        lambda _timestamp: None,
+        AsyncMock(return_value=None),
     )
 
-    state = mission_data_service.get_replay_state("2026-04-03T13:07:09Z")
+    state = await mission_data_service.get_replay_state("2026-04-03T13:07:09Z")
 
     assert state.attitude_quaternion is not None
     assert state.inertial_attitude_quaternion is not None
@@ -121,7 +129,8 @@ def test_replay_exposes_attitude_metadata(monkeypatch):
     assert state.attitude_confidence > 0.0
 
 
-def test_derive_lunar_flyby_window_covers_full_moon_centered_arc(monkeypatch):
+@pytest.mark.asyncio
+async def test_derive_lunar_flyby_window_covers_full_moon_centered_arc(monkeypatch):
     timestamps = [
         "2026-04-05T06:00:00Z",
         "2026-04-05T07:00:00Z",
@@ -163,21 +172,22 @@ def test_derive_lunar_flyby_window_covers_full_moon_centered_arc(monkeypatch):
     monkeypatch.setattr(
         mpr_module,
         "compute_mission_relative_geometry",
-        lambda timestamp: {
+        AsyncMock(side_effect=lambda timestamp: {
             "et": 0.0,
             "earth_pos": np.array([0.0, 0.0, 0.0], dtype=float),
             "moon_pos": moon_positions[timestamp],
-        },
+        }),
     )
 
-    start_ts, center_ts, end_ts = mission_phase_resolver._derive_lunar_flyby_window(ephemeris)
+    start_ts, center_ts, end_ts = await mission_phase_resolver._derive_lunar_flyby_window(ephemeris)
 
     assert start_ts == timestamps[1]
     assert center_ts == timestamps[2]
     assert end_ts == timestamps[3]
 
 
-def test_replay_uses_nose_to_moon_during_lunar_flyby_window(monkeypatch):
+@pytest.mark.asyncio
+async def test_replay_uses_nose_to_moon_during_lunar_flyby_window(monkeypatch):
     monkeypatch.setattr(
         mission_state_builder,
         "_resolve_orion_state_from_oem",
@@ -191,30 +201,31 @@ def test_replay_uses_nose_to_moon_during_lunar_flyby_window(monkeypatch):
     monkeypatch.setattr(
         mission_phase_resolver,
         "get_lunar_flyby_window",
-        lambda _ephemeris=None: (
+        AsyncMock(return_value=(
             "2026-04-05T07:00:00Z",
             "2026-04-05T08:00:00Z",
             "2026-04-05T09:00:00Z",
-        ),
+        )),
     )
     monkeypatch.setattr(
         mission_state_builder,
         "compute_mission_relative_geometry",
-        lambda _timestamp: {
+        AsyncMock(return_value={
             "et": 0.0,
             "earth_pos": np.array([0.0, 0.0, 0.0], dtype=float),
             "moon_pos": np.array([400_000.0, 0.0, 0.0], dtype=float),
-        },
+        }),
     )
 
-    state = mission_data_service.get_replay_state("2026-04-05T08:00:00Z")
+    state = await mission_data_service.get_replay_state("2026-04-05T08:00:00Z")
 
     assert state.phase.value == "lunar_flyby"
     assert state.attitude_source.value == "POLICY_ESTIMATED"
     assert state.attitude_mode.value == "NOSE_TO_MOON"
 
 
-def test_derive_lunar_flyby_window_caps_return_transition_at_2030z(monkeypatch):
+@pytest.mark.asyncio
+async def test_derive_lunar_flyby_window_caps_return_transition_at_2030z(monkeypatch):
     timestamps = [
         "2026-04-05T18:00:00Z",
         "2026-04-05T19:00:00Z",
@@ -258,18 +269,19 @@ def test_derive_lunar_flyby_window_caps_return_transition_at_2030z(monkeypatch):
     monkeypatch.setattr(
         mpr_module,
         "compute_mission_relative_geometry",
-        lambda timestamp: {
+        AsyncMock(side_effect=lambda timestamp: {
             "et": 0.0,
             "earth_pos": np.array([0.0, 0.0, 0.0], dtype=float),
             "moon_pos": moon_positions[timestamp],
-        },
+        }),
     )
 
-    start_ts, center_ts, end_ts = mission_phase_resolver._derive_lunar_flyby_window(ephemeris)
+    start_ts, center_ts, end_ts = await mission_phase_resolver._derive_lunar_flyby_window(ephemeris)
 
     assert start_ts == timestamps[0]
     assert center_ts == timestamps[2]
     assert end_ts == "2026-04-05T20:30:00Z"
+
 
 
 def test_lunar_return_transition_is_timezone_safe():

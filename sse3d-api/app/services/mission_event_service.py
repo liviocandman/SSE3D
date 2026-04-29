@@ -53,7 +53,7 @@ class MissionEventService:
         self._events_cache_signature: Optional[tuple[str, str, int, int]] = None
         self._events_cache: Optional[list[MissionEvent]] = None
 
-    def _build_mission_events(self) -> list[MissionEvent]:
+    async def _build_mission_events(self) -> list[MissionEvent]:
         ephemeris = mission_oem_service.get_ephemeris()
         if ephemeris and ephemeris.states:
             signature = (
@@ -67,7 +67,7 @@ class MissionEventService:
 
             launch_dt = parse_split_timestamp(MISSION_LAUNCH_TIMESTAMP)
             tli_dt = parse_split_timestamp(MISSION_TLI_TIMESTAMP)
-            _flyby_start_ts, flyby_center_ts, _flyby_end_ts = mission_phase_resolver.get_lunar_flyby_window(ephemeris)
+            _flyby_start_ts, flyby_center_ts, _flyby_end_ts = await mission_phase_resolver.get_lunar_flyby_window(ephemeris)
             flyby_dt = parse_split_timestamp(flyby_center_ts)
             splashdown_dt = parse_split_timestamp(ephemeris.metadata.stop_time)
         else:
@@ -137,9 +137,9 @@ class MissionEventService:
         self._events_cache = events
         return events
 
-    def derive_current_phase(self, reference_dt: datetime, events: list[MissionEvent]) -> MissionPhase:
+    async def derive_current_phase(self, reference_dt: datetime, events: list[MissionEvent]) -> MissionPhase:
         event_times = {event.id: parse_split_timestamp(event.timestamp) for event in events}
-        flyby_start_ts, _flyby_center_ts, flyby_end_ts = mission_phase_resolver.get_lunar_flyby_window()
+        flyby_start_ts, _flyby_center_ts, flyby_end_ts = await mission_phase_resolver.get_lunar_flyby_window()
         launch_dt = event_times["launch"]
         tli_dt = event_times["tli"]
         reentry_dt = event_times["reentry"]
@@ -161,10 +161,10 @@ class MissionEventService:
             return MissionPhase.REENTRY
         return MissionPhase.SPLASHDOWN
 
-    def get_mission_events(self, at: Optional[str] = None) -> MissionEventsResponse:
-        events = self._build_mission_events()
+    async def get_mission_events(self, at: Optional[str] = None) -> MissionEventsResponse:
+        events = await self._build_mission_events()
         reference_dt = parse_split_timestamp(at)
-        current_phase = self.derive_current_phase(reference_dt, events)
+        current_phase = await self.derive_current_phase(reference_dt, events)
 
         resolved_events: list[MissionEvent] = []
         next_event: Optional[MissionEvent] = None
@@ -188,5 +188,6 @@ class MissionEventService:
             currentPhase=current_phase,
             nextEvent=next_event,
         )
+
 
 mission_event_service = MissionEventService()

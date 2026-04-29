@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Optional
 
+import asyncio
 import numpy as np
 import spiceypy as spice
 from loguru import logger 
@@ -185,7 +186,7 @@ def compute_ephemeris(
     )
 
 
-async def fetch_all_spice(
+def _fetch_all_spice_sync(
     body_ids: list[str],
     target_date: str,
     center_body: str = "10",
@@ -211,12 +212,35 @@ async def fetch_all_spice(
             if item:
                 data.append(item)
         except Exception as e:
-   
             logger.error(f"[fetch_all_spice] Failed to compute ephemeris for body {body_id}: {e}")
             
     return data
 
-def compute_mission_relative_geometry(target_date: str) -> Optional[dict]:
+
+async def fetch_all_spice(
+    body_ids: list[str],
+    target_date: str,
+    center_body: str = "10",
+    span_days: int = 30,
+    full_orbit: bool = False,
+    orbit_ready: bool = False,
+    orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO,
+    orbit_line_only: bool = False,
+) -> list[EphemerisData]:
+    return await asyncio.to_thread(
+        _fetch_all_spice_sync,
+        body_ids,
+        target_date,
+        center_body,
+        span_days,
+        full_orbit,
+        orbit_ready,
+        orbit_profile,
+        orbit_line_only,
+    )
+
+
+def _compute_mission_relative_geometry_sync(target_date: str) -> Optional[dict]:
     """
     Computes Earth and Moon states at target_date for mission geometry calculations.
     Returns raw numpy arrays for positions in ECLIPJ2000.
@@ -238,7 +262,12 @@ def compute_mission_relative_geometry(target_date: str) -> Optional[dict]:
         logger.error(f"Error computing mission relative geometry: {str(e)}")
         return None
 
-def compute_mission_trajectory(start_date: str, end_date: str, steps: int = 100) -> Optional[dict]:
+
+async def compute_mission_relative_geometry(target_date: str) -> Optional[dict]:
+    return await asyncio.to_thread(_compute_mission_relative_geometry_sync, target_date)
+
+
+def _compute_mission_trajectory_sync(start_date: str, end_date: str, steps: int = 100) -> Optional[dict]:
     """
     Computes a mission trajectory window without using planetary full_orbit logic.
     Provides ET times and corresponding Earth, Moon, and potentially Orion states for the window.
@@ -285,3 +314,8 @@ def compute_mission_trajectory(start_date: str, end_date: str, steps: int = 100)
     except Exception as e:
         logger.error(f"Error computing mission trajectory: {str(e)}")
         return None
+
+
+async def compute_mission_trajectory(start_date: str, end_date: str, steps: int = 100) -> Optional[dict]:
+    return await asyncio.to_thread(_compute_mission_trajectory_sync, start_date, end_date, steps)
+

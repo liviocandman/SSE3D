@@ -37,7 +37,7 @@ class MissionPhaseResolver:
             format_iso_z(end_dt),
         )
 
-    def _derive_lunar_flyby_window(self, ephemeris) -> tuple[str, str, str]:
+    async def _derive_lunar_flyby_window(self, ephemeris) -> tuple[str, str, str]:
         from app.services.mission_event_service import DEFAULT_LUNAR_FLYBY_TIMESTAMP
         if not settings.spice_enabled:
             return self._fallback_lunar_flyby_window(DEFAULT_LUNAR_FLYBY_TIMESTAMP)
@@ -56,7 +56,7 @@ class MissionPhaseResolver:
 
         for state in states:
             timestamp = state.timestamp if state.timestamp.endswith("Z") else f"{state.timestamp}Z"
-            geo_data = compute_mission_relative_geometry(timestamp)
+            geo_data = await compute_mission_relative_geometry(timestamp)
             if not geo_data:
                 continue
 
@@ -105,7 +105,7 @@ class MissionPhaseResolver:
             valid_samples[end_idx][0],
         )
 
-    def get_lunar_flyby_window(self, ephemeris=None) -> tuple[str, str, str]:
+    async def get_lunar_flyby_window(self, ephemeris=None) -> tuple[str, str, str]:
         from app.services.mission_event_service import MISSION_LAUNCH_TIMESTAMP, DEFAULT_SPLASHDOWN_TIMESTAMP, DEFAULT_LUNAR_FLYBY_TIMESTAMP
         target_ephemeris = ephemeris or mission_oem_service.get_ephemeris()
         if target_ephemeris and target_ephemeris.states:
@@ -118,7 +118,7 @@ class MissionPhaseResolver:
             if self._lunar_flyby_window_cache_signature == signature and self._lunar_flyby_window_cache is not None:
                 return self._lunar_flyby_window_cache
 
-            window = self._derive_lunar_flyby_window(target_ephemeris)
+            window = await self._derive_lunar_flyby_window(target_ephemeris)
             self._lunar_flyby_window_cache_signature = signature
             self._lunar_flyby_window_cache = window
             return window
@@ -136,5 +136,6 @@ class MissionPhaseResolver:
         self._lunar_flyby_window_cache_signature = fallback_signature
         self._lunar_flyby_window_cache = window
         return window
+
 
 mission_phase_resolver = MissionPhaseResolver()

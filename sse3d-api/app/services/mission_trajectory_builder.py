@@ -7,14 +7,14 @@ from app.core.config import settings
 
 ARTEMIS2_ID = "artemis-2"
 
-def _build_trajectory_point_from_state(
+async def _build_trajectory_point_from_state(
     timestamp: str,
     position: MissionPosition,
     velocity: MissionVelocity,
     segment: MissionTrajectorySegment,
     phase: MissionPhase,
 ):
-    geo_data = compute_mission_relative_geometry(timestamp)
+    geo_data = await compute_mission_relative_geometry(timestamp)
     if geo_data:
         _global_coords, _mission_coords, scene_coords, _distances = enrich_mission_geometry(
             orion_pos=position,
@@ -47,7 +47,7 @@ def _build_trajectory_point_from_state(
         segment=segment,
     )
 
-def get_mission_trajectory(at: str | None = None) -> MissionTrajectoryResponse:
+async def get_mission_trajectory(at: str | None = None) -> MissionTrajectoryResponse:
     """
     Returns the mission trajectory, past and planned points.
     OEM is the primary source for Orion trajectory when available.
@@ -56,7 +56,7 @@ def get_mission_trajectory(at: str | None = None) -> MissionTrajectoryResponse:
     planned_points = []
 
     ephemeris = mission_oem_service.get_ephemeris()
-    events_list = mission_event_service._build_mission_events()
+    events_list = await mission_event_service._build_mission_events()
     
     if ephemeris and ephemeris.states:
         split_dt = parse_split_timestamp(at)
@@ -72,8 +72,8 @@ def get_mission_trajectory(at: str | None = None) -> MissionTrajectoryResponse:
                 if state.dt <= split_dt
                 else MissionTrajectorySegment.PLANNED
             )
-            phase = mission_event_service.derive_current_phase(state.dt, events_list)
-            point = _build_trajectory_point_from_state(
+            phase = await mission_event_service.derive_current_phase(state.dt, events_list)
+            point = await _build_trajectory_point_from_state(
                 state.timestamp if state.timestamp.endswith("Z") else f"{state.timestamp}Z",
                 state.position,
                 state.velocity,
@@ -88,29 +88,30 @@ def get_mission_trajectory(at: str | None = None) -> MissionTrajectoryResponse:
         if not past_points and states:
             first = states[0]
             past_points.append(
-                _build_trajectory_point_from_state(
+                await _build_trajectory_point_from_state(
                     first.timestamp if first.timestamp.endswith("Z") else f"{first.timestamp}Z",
                     first.position,
                     first.velocity,
                     MissionTrajectorySegment.PAST,
-                    mission_event_service.derive_current_phase(first.dt, events_list),
+                    await mission_event_service.derive_current_phase(first.dt, events_list),
                 )
             )
 
         if not planned_points and states:
             last = states[-1]
             planned_points.append(
-                _build_trajectory_point_from_state(
+                await _build_trajectory_point_from_state(
                     last.timestamp if last.timestamp.endswith("Z") else f"{last.timestamp}Z",
                     last.position,
                     last.velocity,
                     MissionTrajectorySegment.PLANNED,
-                    mission_event_service.derive_current_phase(last.dt, events_list),
+                    await mission_event_service.derive_current_phase(last.dt, events_list),
                 )
             )
     else:
-        traj_data = compute_mission_trajectory("2026-04-03T12:00:00Z", "2026-04-05T12:00:00Z", steps=2)
+        traj_data = await compute_mission_trajectory("2026-04-03T12:00:00Z", "2026-04-05T12:00:00Z", steps=2)
         if traj_data and len(traj_data["times"]) == 2:
+
             # Start point (past)
             et_start = traj_data["times"][0]
             earth_pos_start = traj_data["earth_pos"][0]

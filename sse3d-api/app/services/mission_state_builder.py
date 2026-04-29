@@ -23,8 +23,8 @@ def _resolve_orion_state_from_oem(timestamp: str):
         "input_origin": "EARTH",
     }
 
-def _build_earth_relative_predicted_position(timestamp: str):
-    geo_data = compute_mission_relative_geometry(timestamp)
+async def _build_earth_relative_predicted_position(timestamp: str):
+    geo_data = await compute_mission_relative_geometry(timestamp)
     if not geo_data:
         return (
             MissionPosition(x=150000.0, y=200000.0, z=50000.0),
@@ -55,23 +55,24 @@ def _build_earth_relative_predicted_position(timestamp: str):
         geo_data,
     )
 
-def build_base_mission_state(timestamp: str, mode: str, source: str, staleness: float, get_mission_events_func) -> MissionStateResponse:
+async def build_base_mission_state(timestamp: str, mode: str, source: str, staleness: float, get_mission_events_func) -> MissionStateResponse:
     from app.services.mission_event_service import format_mission_elapsed_time
     from app.models.mission_schemas import MissionCoordinates, MissionDistances
     from app.core.config import settings
     ARTEMIS2_ID = "artemis-2"
     ORION_VEHICLE_ID = "orion"
 
-    phase = get_mission_events_func(timestamp).current_phase
+    phase_data = await get_mission_events_func(timestamp)
+    phase = phase_data.current_phase
     oem_state = _resolve_orion_state_from_oem(timestamp)
     if oem_state:
         position = oem_state["position"]
         velocity = oem_state["velocity"]
-        geo_data = compute_mission_relative_geometry(timestamp)
+        geo_data = await compute_mission_relative_geometry(timestamp)
         input_frame = oem_state["input_frame"]
         input_origin = oem_state["input_origin"]
     else:
-        position, velocity, geo_data = _build_earth_relative_predicted_position(timestamp)
+        position, velocity, geo_data = await _build_earth_relative_predicted_position(timestamp)
         input_frame = settings.arow_input_frame
         input_origin = settings.arow_position_origin
     state = MissionStateResponse(
@@ -92,6 +93,7 @@ def build_base_mission_state(timestamp: str, mode: str, source: str, staleness: 
     )
     enrich_state_with_geometry(state, geo_data, input_frame, input_origin)
     return state
+
 
 def _norm_km(position: MissionPosition) -> float:
     return float((position.x ** 2 + position.y ** 2 + position.z ** 2) ** 0.5)
