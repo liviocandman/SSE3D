@@ -47,6 +47,16 @@ function shouldDensify(points: EphemerisTrajectory[], tier: string, subdivisions
   return points.length < minPointThreshold;
 }
 
+function buildEphemerisRequestUrl(
+  origin: string | undefined,
+  params: URLSearchParams,
+): string {
+  const baseOrigin = origin && origin.length > 0 ? origin : self.location.origin;
+  const url = new URL("/api/ephemeris", `${baseOrigin}/`);
+  url.search = params.toString();
+  return url.toString();
+}
+
 self.onmessage = async (e: MessageEvent) => {
   const { type, jobId, params } = e.data;
 
@@ -74,8 +84,7 @@ self.onmessage = async (e: MessageEvent) => {
     });
 
     try {
-      const baseUrl = origin || '';
-      const response = await fetch(`${baseUrl}/api/ephemeris?${urlParams.toString()}`, {
+      const response = await fetch(buildEphemerisRequestUrl(origin, urlParams), {
         signal: controller.signal,
       });
 

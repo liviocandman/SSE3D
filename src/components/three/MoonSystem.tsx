@@ -179,24 +179,23 @@ function MoonMesh({
   const texture = useLoader(SingletonKTX2Loader as unknown as typeof THREE.Loader, textureUrl || '/textures/generic_moon_mid.ktx2', () => {
     getSharedKTX2Loader(gl);
   }) as THREE.Texture;
-
-  // Correct color space for SRGB textures loaded via KTX2
-  useEffect(() => {
-    if (texture) {
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.needsUpdate = true;
-    }
+  const colorTexture = useMemo(() => {
+    const nextTexture = texture.clone();
+    nextTexture.colorSpace = THREE.SRGBColorSpace;
+    nextTexture.needsUpdate = true;
+    return nextTexture;
   }, [texture]);
 
   // Dispose of material on unmount
   useEffect(() => {
     const currentMesh = meshRef.current;
     return () => {
+      colorTexture.dispose();
       if (currentMesh?.material) {
         (currentMesh.material as THREE.Material).dispose();
       }
     };
-  }, []);
+  }, [colorTexture]);
 
   useFrame((_, delta) => {
     if (!config) return;
@@ -311,10 +310,10 @@ function MoonMesh({
 
       <mesh ref={meshRef} {...events} geometry={SPHERE_MID} scale={currentRadius} dispose={null}>
         <meshStandardMaterial
-          map={texture || null}
+          map={colorTexture}
           color="#ffffff"
-          emissive={texture ? 0x000000 : (config.fallbackColor || '#888888')}
-          emissiveIntensity={texture ? 0 : 0.5}
+          emissive={0x000000}
+          emissiveIntensity={0}
           transparent={isDataLoading}
           opacity={isDataLoading ? 0 : 1}
         />

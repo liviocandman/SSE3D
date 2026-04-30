@@ -6,6 +6,14 @@ interface WorkerRequest {
   reject: (reason: unknown) => void;
 }
 
+function getWorkerRequestOrigin(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  return window.location.origin;
+}
+
 export function useTrajectoryWorker() {
   const workerRef = useRef<Worker | null>(null);
   const pendingRequests = useRef<Map<string, WorkerRequest>>(new Map());
@@ -105,7 +113,7 @@ export function useTrajectoryWorker() {
             spanDays,
             ids,
             tier,
-            origin: "",
+            origin: getWorkerRequestOrigin(),
           },
         });
       });

@@ -84,3 +84,26 @@ async def test_ephemeris_503_when_no_spice_and_no_fallback(client):
 
     assert response.status_code == 503
     assert "SPICE kernels not ready" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_ephemeris_force_true_bypasses_cache(client):
+    with patch(
+        "app.routers.ephemeris.get_bulk_cached",
+        new_callable=AsyncMock,
+        return_value=([_mock_planet("399")], []),
+    ) as mock_cache:
+        with patch(
+            "app.routers.ephemeris.fetch_all_spice",
+            new_callable=AsyncMock,
+            return_value=[_mock_planet("399")],
+        ) as mock_fetch:
+            # Call with force=true
+            response = await client.get("/api/ephemeris?date=2024-01-01&ids=399&force=true")
+
+    assert response.status_code == 200
+    # Cache should NOT be called
+    mock_cache.assert_not_called()
+    # Fetch SHOULD be called for the ID
+    mock_fetch.assert_called_once()
+    assert mock_fetch.call_args[0][0] == ["399"]

@@ -1,3 +1,5 @@
+import os
+from loguru import logger
 from sqlmodel import SQLModel
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -26,10 +28,16 @@ if settings.database_url:
 
 async def init_db():
     if not engine:
-        print("[DB] DATABASE_URL not configured — skipping init")
+        logger.info("[DB] DATABASE_URL not configured — skipping init")
         return
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+    
+    env = os.getenv("SSE3D_ENV", "production")
+    if env != "production":
+        async with engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
+        logger.info("[DB] Development mode — schema created via create_all")
+    else:
+        logger.info("[DB] Production mode — schema managed by Alembic")
 
 async def get_session() -> AsyncGenerator[Optional[AsyncSession], None]:
     if not AsyncSessionLocal:

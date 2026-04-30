@@ -3,6 +3,8 @@
 // --- Types ---
 
 export type ErrorType =
+  // Legacy literal retained for compatibility with existing error contracts.
+  // Upstream ephemeris is SPICE-kernel-based, not Horizons-only.
   | 'NASA_API_ERROR'
   | 'NETWORK_ERROR'
   | 'VALIDATION_ERROR'
@@ -31,8 +33,8 @@ interface ErrorOverlayProps {
 
 const ERROR_MESSAGES: Record<ErrorType, { title: string; description: string; icon: string }> = {
   NASA_API_ERROR: {
-    title: 'NASA API ERROR',
-    description: 'Unable to fetch orbital data from JPL Horizons. The service may be offline.',
+    title: 'EPHEMERIS API ERROR',
+    description: 'Unable to fetch orbital data from the ephemeris upstream service.',
     icon: '🛰️',
   },
   NETWORK_ERROR: {

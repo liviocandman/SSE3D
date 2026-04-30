@@ -74,7 +74,11 @@ export function TimeTravelControls() {
   const [localDate, setLocalDate] = useState(currentDate);
 
   useEffect(() => {
-    setLocalDate(currentDate);
+    const timeoutId = setTimeout(() => {
+      setLocalDate(currentDate);
+    }, 0);
+
+    return () => clearTimeout(timeoutId);
   }, [currentDate]);
 
   const togglePlay = () => {

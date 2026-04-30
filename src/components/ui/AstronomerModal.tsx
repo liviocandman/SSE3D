@@ -54,14 +54,22 @@ export function AstronomerModal({
   useEffect(() => {
     if (isOpen) {
       inputRef.current?.focus();
-      if (storageKey) {
-        const history = getSessionItem<ChatMessage[]>(storageKey, []);
-        setMessages(history);
-      }
+      const timeoutId = setTimeout(() => {
+        if (storageKey) {
+          const history = getSessionItem<ChatMessage[]>(storageKey, []);
+          setMessages(history);
+          return;
+        }
+        setMessages([]);
+      }, 0);
+
+      return () => clearTimeout(timeoutId);
     } else {
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         setInputValue('');
       }, 300); // clear after close animation
+
+      return () => clearTimeout(timeoutId);
     }
   }, [isOpen, storageKey]);
 

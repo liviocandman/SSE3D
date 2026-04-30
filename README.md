@@ -5,7 +5,7 @@
 <h1 align="center">🪐 Solar Explorer 3D</h1>
 
 <p align="center">
-  <strong>Real-time 3D Solar System visualization powered by NASA JPL Horizons data</strong>
+  <strong>Real-time 3D Solar System visualization powered by SPICE kernels</strong>
 </p>
 
 <p align="center">
@@ -40,7 +40,7 @@
 
 ## 🔭 Overview
 
-**Solar Explorer 3D (SE3D)** is a web application that renders the Solar System in real time, transforming complex NASA orbital data into an accessible, interactive 3D visualization. Built for astronomy enthusiasts, students, and educators, it combines scientifically accurate ephemeris data from NASA's JPL Horizons system with an AI-powered virtual astronomer chatbot.
+**Solar Explorer 3D (SE3D)** is a web application that renders the Solar System in real time, transforming complex orbital data into an accessible, interactive 3D visualization. Built for astronomy enthusiasts, students, and educators, it combines scientifically accurate ephemeris data from SPICE kernels (via `spiceypy`) with an AI-powered virtual astronomer chatbot.
 
 The application features a **heliocentric coordinate system** based on real ephemeris data, two visualization scales (Didactic and Realistic), and an intelligent assistant powered by Google Gemini that can answer questions about any celestial body in context.
 
@@ -80,7 +80,7 @@ The application features a **heliocentric coordinate system** based on real ephe
 - **Orbital data**: Distance from Sun, Distance from Earth, Orbital Velocity, Orbital Period
 - **Physical properties**: Surface Gravity, Day Length, Temperature, Diameter
 - **Orbital mechanics**: Semi-Major Axis, Eccentricity, Inclination, Body Type
-- **Data attribution**: NASA JPL Horizons source clearly displayed
+- **Data attribution**: SPICE-kernel-backed ephemeris source clearly displayed
 
 ---
 
@@ -128,7 +128,7 @@ The application features a **heliocentric coordinate system** based on real ephe
 
 ### Data Flow
 
-1. **Ephemeris data**: Frontend requests planet positions → Next.js BFF → FastAPI → Redis cache check → NASA JPL Horizons API (if cache miss) → fallback JSON data (if NASA is unavailable)
+1. **Ephemeris data**: Frontend requests planet positions → Next.js BFF → FastAPI → Redis cache check → SPICE kernel computation (if cache miss) → fallback JSON data (if SPICE is unavailable)
 2. **AI questions**: User sends question → Next.js BFF → FastAPI (rate limit check) → Google Gemini API → response with sentence completion post-processing
 3. **Authentication**: NextAuth (Google/GitHub) → JWT session → BFF signs server-to-server JWT → FastAPI validates and performs identity linking
 4. **Textures**: Client loads WebP textures from **AWS CloudFront CDN** (cached at edge) with fallback to local public directory.
@@ -183,7 +183,7 @@ Historical epic-by-epic plans remain under `docs/artemis2/*`, but the files abov
 | **SQLModel** | ORM combining SQLAlchemy + Pydantic |
 | **Alembic** | Database migration management |
 | **asyncpg** | Async PostgreSQL driver |
-| **httpx** | Async HTTP client for NASA API calls |
+| **httpx** | Async HTTP client for external service integrations |
 | **google-generativeai** | Google Gemini AI SDK |
 | **Upstash Redis** | Serverless Redis for caching and rate limiting |
 | **Loguru** | Structured logging |
@@ -345,7 +345,7 @@ Click on any planet to smoothly fly to a close-up view. The camera will orbit th
 - **Orbital Velocity** (km/s) and **Orbital Period** (days)
 - **Physical Properties**: Surface Gravity, Day Length, Temperature, Diameter
 - **Orbital Data**: Semi-Major Axis (AU), Eccentricity, Inclination, Body Type
-- **Data source attribution**: "High-precision ephemeris data provided by NASA JPL Horizons"
+- **Data source attribution**: "High-precision ephemeris data provided by SPICE kernels"
 
 ---
 
@@ -461,7 +461,7 @@ The backend API is fully documented in a separate README. See **[sse3d-api/READM
 - All endpoints with request/response schemas
 - Authentication flow details
 - Rate limiting configuration
-- External API integrations (NASA JPL Horizons, Google Gemini)
+- External integrations (SPICE kernels, Google Gemini)
 - Database schema and models
 - Error handling strategy
 - Deployment instructions
@@ -551,9 +551,9 @@ solar-explore-3d/
 | **Desktop FPS** | 60 FPS | WebGL with optimized Three.js scene graph, React Compiler |
 | **Mobile FPS** | 30 FPS | Adaptive quality tiers, texture downsizing |
 | **API Response (cached)** | < 50ms | Upstash Redis with tiered TTLs (1h–24h based on planet) |
-| **API Response (fresh)** | < 3s | Sequential NASA API calls with 0.5s delay to avoid 503s |
+| **API Response (fresh)** | < 3s | SPICE-based ephemeris computation with Redis caching |
 | **JS Heap Memory** | < 100MB | Texture disposal, geometry pooling, memory optimization |
-| **Resilience** | Graceful degradation | Fallback JSON when NASA API is unavailable |
+| **Resilience** | Graceful degradation | Fallback JSON when SPICE data is unavailable |
 
 ### Cache Strategy (TTL by Planet)
 
@@ -637,7 +637,7 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 
 ## 🙏 Acknowledgments
 
-- **[NASA JPL Horizons](https://ssd.jpl.nasa.gov/horizons/)** — High-precision ephemeris data
+- **[NASA SPICE Toolkit](https://naif.jpl.nasa.gov/naif/toolkit.html)** — High-precision ephemeris data kernels
 - **[Google Gemini](https://ai.google.dev/)** — AI language model for the Virtual Astronomer
 - **[Three.js](https://threejs.org/)** & **[React Three Fiber](https://docs.pmnd.rs/react-three-fiber)** — 3D rendering framework
 - **[Solar System Scope](https://www.solarsystemscope.com/textures/)** — Planet texture assets

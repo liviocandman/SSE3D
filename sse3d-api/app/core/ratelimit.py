@@ -1,17 +1,18 @@
-from upstash_redis import AsyncRedis
+from app.core.redis_client import get_redis
 from loguru import logger
 from app.core.config import settings
 
 KEY_PREFIX = "ratelimit:astronomer"
 
 async def check_rate_limit(identifier: str) -> dict:
-    redis = AsyncRedis(
-        url=settings.upstash_redis_rest_url,
-        token=settings.upstash_redis_rest_token,
-    )
-    key = f"{KEY_PREFIX}:{identifier}"
+    redis = get_redis()
     limit = settings.rate_limit_requests
     window = settings.rate_limit_window_seconds
+
+    if not redis:
+        return {"allowed": True, "remaining": limit, "reset_seconds": window, "limit": limit}
+
+    key = f"{KEY_PREFIX}:{identifier}"
 
     try:
         count = await redis.incr(key)

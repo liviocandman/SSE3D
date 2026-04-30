@@ -27,8 +27,6 @@ async def get_ephemeris(
     orbit_line_only: bool = Query(default=False, alias="orbitLineOnly"),
     force: bool = Query(default=False),
 ):
-    del force  # kept for API compatibility
-
     try:
         actual_date = target_date if target_date else date.today()
 
@@ -42,16 +40,20 @@ async def get_ephemeris(
         body_ids = [i.strip() for i in ids.split(",")] if ids else DEFAULT_BODY_IDS
         orbit_ready_effective = bool(orbit_ready and settings.orbit_ready_enabled)
 
-        cached_data, missing_ids = await get_bulk_cached(
-            body_ids,
-            date_str,
-            center=center_body,
-            span_days=span_days,
-            full_orbit=full_orbit,
-            orbit_ready=orbit_ready_effective,
-            orbit_profile=orbit_profile,
-            orbit_line_only=orbit_line_only,
-        )
+        if force:
+            cached_data = []
+            missing_ids = body_ids
+        else:
+            cached_data, missing_ids = await get_bulk_cached(
+                body_ids,
+                date_str,
+                center=center_body,
+                span_days=span_days,
+                full_orbit=full_orbit,
+                orbit_ready=orbit_ready_effective,
+                orbit_profile=orbit_profile,
+                orbit_line_only=orbit_line_only,
+            )
 
         fetched_spice: list[EphemerisData] = []
         if missing_ids:

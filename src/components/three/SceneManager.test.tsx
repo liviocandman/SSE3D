@@ -1,6 +1,6 @@
 import { render } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { SceneContent } from './SceneManager';
+import { SceneCanvas } from './SceneCanvas';
 import { useMissionStore } from '@/store/missionStore';
 import { useSolarStore } from '@/store/solarStore';
 import { MissionPhase } from '@/lib/missionTypes';
@@ -179,7 +179,7 @@ vi.mock('./CelestialBody', () => ({
   ),
 }));
 
-describe('SceneManager / SceneContent', () => {
+describe('SceneManager / SceneCanvas', () => {
   const setTravelTarget = vi.fn();
   const setSelectedMissionTargetId = vi.fn();
   const setSelectedPlanet = vi.fn();
@@ -238,7 +238,7 @@ describe('SceneManager / SceneContent', () => {
 
     const mockEarthEphemeris = createEarthEphemeris();
 
-    const { getByTestId } = render(<SceneContent ephemerisData={mockEarthEphemeris} />);
+    const { getByTestId } = render(<SceneCanvas ephemerisData={mockEarthEphemeris} />);
     expect(getByTestId('spacecraft')).toBeInTheDocument();
   });
 
@@ -274,7 +274,7 @@ describe('SceneManager / SceneContent', () => {
 
     const mockEarthEphemeris = createEarthEphemeris();
 
-    const { queryByTestId } = render(<SceneContent ephemerisData={mockEarthEphemeris} />);
+    const { queryByTestId } = render(<SceneCanvas ephemerisData={mockEarthEphemeris} />);
     expect(queryByTestId('spacecraft')).not.toBeInTheDocument();
   });
 
@@ -305,7 +305,7 @@ describe('SceneManager / SceneContent', () => {
 
     const mockEarthEphemeris = createEarthEphemeris();
 
-    const { getByTestId } = render(<SceneContent ephemerisData={mockEarthEphemeris} />);
+    const { getByTestId } = render(<SceneCanvas ephemerisData={mockEarthEphemeris} />);
     expect(getByTestId('milestone-marker')).toBeInTheDocument();
     expect(getByTestId('milestone-marker')).toHaveTextContent('TLI');
   });

@@ -1,7 +1,9 @@
 import numpy as np
+import pytest
+from unittest.mock import AsyncMock
 from app.models.mission_schemas import MissionPhase
 from app.models.mission_schemas import MissionPosition, MissionVelocity
-from app.services.mission_data_service import _build_earth_relative_predicted_position
+from app.services.mission_state_builder import _build_earth_relative_predicted_position
 from app.services.mission_geometry_service import (
     compute_mission_attitude,
     transform_to_eclipj2000,
@@ -154,7 +156,8 @@ def test_derive_scene_coordinates_keeps_orion_earth_relative():
     assert scene_coords.z == -20000.0
 
 
-def test_predicted_fallback_position_aligns_with_earth_moon_direction(monkeypatch):
+@pytest.mark.asyncio
+async def test_predicted_fallback_position_aligns_with_earth_moon_direction(monkeypatch):
     mocked_geo = {
         "earth_pos": np.array([10.0, 0.0, 0.0]),
         "moon_pos": np.array([410.0, 0.0, 0.0]),
@@ -162,11 +165,12 @@ def test_predicted_fallback_position_aligns_with_earth_moon_direction(monkeypatc
     }
 
     monkeypatch.setattr(
-        "app.services.mission_data_service.compute_mission_relative_geometry",
-        lambda _timestamp: mocked_geo,
+        "app.services.mission_state_builder.compute_mission_relative_geometry",
+        AsyncMock(return_value=mocked_geo),
     )
 
-    position, _velocity, geo_data = _build_earth_relative_predicted_position("2026-04-03T12:00:00Z")
+    position, _velocity, geo_data = await _build_earth_relative_predicted_position("2026-04-03T12:00:00Z")
+
 
     assert geo_data is mocked_geo
 
