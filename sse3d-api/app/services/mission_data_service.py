@@ -12,6 +12,7 @@ from app.services.mission_arow_client import AROWClient
 from app.services.mission_normalizer import normalize_arow_live_payload, create_mission_health
 from app.services.mission_cache_service import MissionCacheService
 from app.services.spice_engine import compute_mission_relative_geometry
+from app.services.mission_oem_service import mission_oem_service
 
 from app.services.mission_source_tracker import mission_source_tracker
 from app.services.mission_event_service import mission_event_service, format_mission_elapsed_time
@@ -27,6 +28,15 @@ cache_service = MissionCacheService()
 ARTEMIS2_ID = "artemis-2"
 ORION_VEHICLE_ID = "orion"
 PREDICTED_FALLBACK_EARTH_DISTANCE_KM = 250_000.0
+
+__all__ = [
+    "get_mission_events",
+    "get_health",
+    "get_live_mission_state",
+    "get_predicted_fallback_state",
+    "get_replay_state",
+    "mission_oem_service",
+]
 
 
 async def get_mission_events(at: Optional[str] = None):
