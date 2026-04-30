@@ -2,7 +2,6 @@ from app.core.redis_client import get_redis
 from loguru import logger
 from app.models.schemas import EphemerisData, OrbitLineProfile
 from app.services.orbit_line_service import ALGORITHM_VERSION
-from app.core.config import settings
 import json
 import zlib
 import base64

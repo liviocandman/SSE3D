@@ -15,10 +15,10 @@ interface StoreInitializerProps {
  * before the browser paint, eliminating the "pop-in" effect.
  */
 export function StoreInitializer({ initialFullOrbits, initialTrajectoryData }: StoreInitializerProps) {
-  const initialized = useRef(false);
+  const initialized = useRef<true | null>(null);
 
   // Synchronous injection: runs during the render phase
-  if (!initialized.current) {
+  if (initialized.current == null) {
     if (initialFullOrbits && initialFullOrbits.length > 0) {
       useSolarStore.getState().appendFullOrbits(initialFullOrbits);
     }

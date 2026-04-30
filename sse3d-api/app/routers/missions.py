@@ -10,10 +10,10 @@ from app.models.mission_schemas import (
 from app.services.mission_data_service import (
     get_live_mission_state, 
     get_replay_state, 
-    get_mission_trajectory, 
     get_mission_events,
     get_health,
 )
+from app.services.mission_trajectory_builder import get_mission_trajectory
 
 router = APIRouter(prefix="/missions", tags=["Missions"])
 

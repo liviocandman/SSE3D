@@ -313,34 +313,43 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
   useEffect(() => {
     if (!query.data) return;
 
-    setFallbackData(null);
-    setFallbackError(null);
-    setIsFallback(false);
-    setSource(query.data.meta.source);
+    const timeoutId = setTimeout(() => {
+      setFallbackData(null);
+      setFallbackError(null);
+      setIsFallback(false);
+      setSource(query.data.meta.source);
+    }, 0);
+
+    return () => clearTimeout(timeoutId);
   }, [query.data]);
 
   useEffect(() => {
     if (!query.error || query.error.isAbort) return;
 
     let cancelled = false;
-    setIsFallbackLoading(true);
+    const timeoutId = setTimeout(() => {
+      if (cancelled) return;
 
-    loadFallbackData()
-      .then((data) => {
-        if (cancelled) return;
-        setFallbackData(data);
-        setIsFallback(true);
-        setSource("FALLBACK_DATASET");
-        setFallbackError(toEphemerisError(query.error));
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsFallbackLoading(false);
-        }
-      });
+      setIsFallbackLoading(true);
+
+      loadFallbackData()
+        .then((data) => {
+          if (cancelled) return;
+          setFallbackData(data);
+          setIsFallback(true);
+          setSource("FALLBACK_DATASET");
+          setFallbackError(toEphemerisError(query.error));
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setIsFallbackLoading(false);
+          }
+        });
+    }, 0);
 
     return () => {
       cancelled = true;
+      clearTimeout(timeoutId);
     };
   }, [query.error]);
 

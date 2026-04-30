@@ -84,10 +84,7 @@ export function useDisplayTime(intervalMs = 500): Date {
   useEffect(() => {
     const currentClock = getSharedClock(intervalMs);
     currentClock.listeners.add(setDisplayTime);
-    
-    // Immediately sync to the latest clock snapshot in case things changed before mount.
-    setDisplayTime(getDisplayTimeSnapshot());
-    
+
     startSharedTimer(intervalMs);
 
     return () => {

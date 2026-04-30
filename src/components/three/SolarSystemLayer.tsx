@@ -51,9 +51,8 @@ export function SolarSystemLayer({ ephemerisData }: SolarSystemLayerProps) {
     }))
   );
 
-  const { selectedMissionTargetId, setSelectedMissionTargetId } = useMissionStore(
+  const { setSelectedMissionTargetId } = useMissionStore(
     useShallow((state) => ({
-      selectedMissionTargetId: state.selectedMissionTargetId,
       setSelectedMissionTargetId: state.setSelectedMissionTargetId,
     }))
   );

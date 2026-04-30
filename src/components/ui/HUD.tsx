@@ -109,7 +109,11 @@ export function HUD({
   // Always reopen the desktop drawer when a different planet or mission is selected.
   useEffect(() => {
     if (!isMobile && (selectedPlanet?.bodyId || selectedMissionTargetId)) {
-      setIsMinimized(false);
+      const timeoutId = setTimeout(() => {
+        setIsMinimized(false);
+      }, 0);
+
+      return () => clearTimeout(timeoutId);
     }
   }, [isMobile, selectedPlanet?.bodyId, selectedMissionTargetId]);
 
