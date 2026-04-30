@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       headers['Authorization'] = `Bearer ${bffToken}`;
     }
 
-    return proxyPost('/api/ai', payload, headers);
+    return proxyPost('/api/ai', payload, headers, { wakeRetry: true });
   } catch (error) {
     console.error('[AI Proxy Route] Error:', error);
     return NextResponse.json({ error: 'UPSTREAM_ERROR' }, { status: 502 });

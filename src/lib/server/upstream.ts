@@ -10,6 +10,10 @@ if (!PYTHON_API_URL && process.env.NODE_ENV === 'production') {
 
 const upstreamBase = PYTHON_API_URL || 'http://localhost:8000';
 
+interface ProxyPostOptions {
+  wakeRetry?: boolean;
+}
+
 /**
  * Proxy a GET request to the upstream Python API.
  * Uses wake-retry logic for handling cold starts.
@@ -48,18 +52,22 @@ export async function proxyPost(
   path: string,
   body: unknown,
   headers?: Record<string, string>,
+  options?: ProxyPostOptions,
 ): Promise<NextResponse> {
   const url = `${upstreamBase}${path}`;
   
   try {
-    const response = await fetch(url, {
+    const requestInit: RequestInit = {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
         ...headers 
       },
       body: JSON.stringify(body),
-    });
+    };
+    const response = options?.wakeRetry
+      ? await fetchUpstreamWithWakeRetry(url, requestInit)
+      : await fetch(url, requestInit);
     
     const data = await response.json();
     
