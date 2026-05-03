@@ -68,19 +68,29 @@ async def get_bulk_cached(
         if not redis:
             return [], body_ids
             
-        cached, missing = [], []
-        for bid in body_ids:
-            key = _cache_key(
+        if not body_ids:
+            return [], []
+
+        cache_entries = [
+            (
                 bid,
-                date,
-                center=center,
-                span_days=span_days,
-                full_orbit=full_orbit,
-                orbit_ready=orbit_ready,
-                orbit_profile=orbit_profile,
-                orbit_line_only=orbit_line_only,
+                _cache_key(
+                    bid,
+                    date,
+                    center=center,
+                    span_days=span_days,
+                    full_orbit=full_orbit,
+                    orbit_ready=orbit_ready,
+                    orbit_profile=orbit_profile,
+                    orbit_line_only=orbit_line_only,
+                ),
             )
-            raw = await redis.get(key)
+            for bid in body_ids
+        ]
+        raw_values = await redis.mget(*(key for _, key in cache_entries))
+
+        cached, missing = [], []
+        for (bid, _key), raw in zip(cache_entries, raw_values):
             if raw:
                 payload = json.loads(raw)
 
@@ -101,6 +111,10 @@ async def get_bulk_cached(
                 cached.append(EphemerisData.model_validate(payload))
             else:
                 missing.append(bid)
+
+        if len(raw_values) < len(cache_entries):
+            missing.extend(bid for bid, _key in cache_entries[len(raw_values):])
+
         return cached, missing
     except Exception as e:
         logger.error(f"[Cache] Error reading from Redis: {e}")

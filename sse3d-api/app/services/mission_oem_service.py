@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-import io
-import zipfile
 import numpy as np
 from bisect import bisect_left
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse
 
-import httpx
 from loguru import logger
 
 from app.core.config import settings
@@ -77,18 +73,19 @@ class MissionOEMService:
         raw_source_url = source_url if source_url is not None else settings.mission_oem_url
         self.source_url = raw_source_url.strip().strip("'\"")
         self.cache_dir = _as_optional_path(cache_dir if cache_dir is not None else settings.mission_oem_cache_dir)
-        self.refresh_seconds = max(0, int(settings.mission_oem_refresh_seconds))
-        self.download_timeout_seconds = max(1.0, float(settings.mission_oem_download_timeout_seconds))
-        if self.file_path is None and not self.source_url:
+        if self.file_path is None:
             autodetected = self._discover_workspace_oem_file()
             if autodetected is not None:
                 logger.info(f"Mission OEM autodetected from workspace: {autodetected}")
                 self.file_path = autodetected
+        if self.source_url:
+            logger.warning(
+                "mission_oem_url is ignored; mission OEM uses the bundled/local OEM file only."
+            )
 
         self._ephemeris: Optional[OEMEphemeris] = None
         self._adaptive_states: Optional[tuple[OEMStateVector, ...]] = None
         self._loaded_source_file: Optional[Path] = None
-        self._cached_download_file: Optional[Path] = None
 
     def _discover_workspace_oem_file(self) -> Optional[Path]:
         try:
@@ -213,139 +210,16 @@ class MissionOEMService:
         return sampled[:max_points]
 
     def _resolve_source_file(self) -> Optional[Path]:
-        if self.source_url:
-            remote = self._ensure_remote_oem_cached()
-            if remote is not None:
-                return remote
-
         if self.file_path and self.file_path.exists():
-            logger.warning("Mission OEM remote source unavailable; falling back to local OEM file.")
             return self.file_path
 
-        return None
-
-    def _ensure_remote_oem_cached(self) -> Optional[Path]:
-        if self.cache_dir is None:
-            return None
-
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        cached_file = self._cached_download_file
-        if cached_file is None:
-            existing = self.cache_dir / "artemis2_latest.oem"
-            if existing.exists():
-                cached_file = existing
-                self._cached_download_file = existing
-
-        if cached_file and cached_file.exists() and self.refresh_seconds > 0:
-            age_seconds = max(0.0, datetime.now(timezone.utc).timestamp() - cached_file.stat().st_mtime)
-            if age_seconds <= self.refresh_seconds:
-                return cached_file
-
-        try:
-            payload, name_hint = self._download_source_payload(self.source_url)
-            downloaded_file = self._write_oem_payload(payload, name_hint)
-            if downloaded_file:
-                self._cached_download_file = downloaded_file
-                return downloaded_file
-        except Exception as exc:
-            logger.warning(f"Mission OEM download failed: {exc}")
-
-        if cached_file and cached_file.exists():
-            logger.warning(f"Using last cached OEM file after download failure: {cached_file}")
-            return cached_file
-
-        return None
-
-    def _download_source_payload(self, source_url: str) -> tuple[bytes, str]:
-        parsed = urlparse(source_url)
-        scheme = parsed.scheme.lower()
-
-        if scheme in ("http", "https"):
-            response = httpx.get(
-                source_url,
-                timeout=self.download_timeout_seconds,
-                follow_redirects=True,
-                headers={
-                    "User-Agent": settings.arow_user_agent,
-                    "Accept": "application/zip, application/octet-stream, */*",
-                },
+        if self.source_url:
+            logger.warning(
+                "Mission OEM URL is configured, but remote downloads are disabled. "
+                "Provide mission_oem_path or bundle the OEM under public/ephemeris."
             )
-            response.raise_for_status()
-            hint = Path(parsed.path).name or "remote.oem"
-            content_type = (response.headers.get("content-type") or "").lower()
-            if "text/html" in content_type:
-                raise RuntimeError(
-                    f"OEM URL returned HTML instead of a zip/oem payload (content-type={content_type}). "
-                    "Check if the URL is a landing page, expired signed URL, or blocked by network policy."
-                )
-            return response.content, hint
 
-        if scheme == "s3":
-            try:
-                import boto3  # type: ignore
-            except Exception as exc:
-                raise RuntimeError("boto3 is required for s3:// mission_oem_url sources") from exc
-
-            bucket = parsed.netloc
-            key = parsed.path.lstrip("/")
-            if not bucket or not key:
-                raise ValueError(f"Invalid s3 URL for mission OEM source: {source_url}")
-
-            client = boto3.client("s3")
-            obj = client.get_object(Bucket=bucket, Key=key)
-            body = obj["Body"].read()
-            return body, Path(key).name
-
-        raise ValueError(f"Unsupported mission_oem_url scheme: {source_url}")
-
-    def _write_oem_payload(self, payload: bytes, name_hint: str) -> Optional[Path]:
-        if self.cache_dir is None:
-            return None
-
-        if zipfile.is_zipfile(io.BytesIO(payload)):
-            with zipfile.ZipFile(io.BytesIO(payload), "r") as zf:
-                names = [name for name in zf.namelist() if not name.endswith("/")]
-                if not names:
-                    raise ValueError("OEM zip payload is empty")
-
-                def _score_candidate(name: str) -> tuple[int, int, str]:
-                    path = Path(name)
-                    suffix = path.suffix.lower()
-                    stem = path.stem.lower()
-                    filename = path.name.lower()
-
-                    ext_rank = {
-                        ".oem": 0,
-                        ".asc": 1,
-                        ".txt": 2,
-                    }.get(suffix, 3)
-                    oem_hint_rank = 0 if ("oem" in stem or "ephemeris" in filename) else 1
-
-                    return (ext_rank, oem_hint_rank, filename)
-
-                preferred = [
-                    name for name in names
-                    if Path(name).suffix.lower() in {".asc", ".oem", ".txt"}
-                ]
-                selected_name = min(preferred, key=_score_candidate) if preferred else names[0]
-                extracted_payload = zf.read(selected_name)
-                return self._write_atomic(extracted_payload, Path(selected_name).suffix.lower() or ".oem")
-
-        suffix = Path(name_hint).suffix.lower() or ".oem"
-        return self._write_atomic(payload, suffix)
-
-    def _write_atomic(self, payload: bytes, suffix: str) -> Path:
-        target = self.cache_dir / f"artemis2_latest{suffix}"
-        tmp_target = target.with_suffix(f"{target.suffix}.tmp")
-        tmp_target.write_bytes(payload)
-        tmp_target.replace(target)
-
-        canonical = self.cache_dir / "artemis2_latest.oem"
-        if canonical != target:
-            canonical.write_bytes(target.read_bytes())
-            target = canonical
-
-        return target
+        return None
 
     def _build_adaptive_trajectory(
         self,

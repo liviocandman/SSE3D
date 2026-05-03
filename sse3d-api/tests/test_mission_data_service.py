@@ -171,12 +171,15 @@ async def test_derive_lunar_flyby_window_covers_full_moon_centered_arc(monkeypat
     )
     monkeypatch.setattr(
         mpr_module,
-        "compute_mission_relative_geometry",
-        AsyncMock(side_effect=lambda timestamp: {
-            "et": 0.0,
-            "earth_pos": np.array([0.0, 0.0, 0.0], dtype=float),
-            "moon_pos": moon_positions[timestamp],
-        }),
+        "compute_mission_relative_geometry_batch",
+        AsyncMock(side_effect=lambda batch_timestamps: [
+            {
+                "et": 0.0,
+                "earth_pos": np.array([0.0, 0.0, 0.0], dtype=float),
+                "moon_pos": moon_positions[timestamp],
+            }
+            for timestamp in batch_timestamps
+        ]),
     )
 
     start_ts, center_ts, end_ts = await mission_phase_resolver._derive_lunar_flyby_window(ephemeris)
@@ -268,12 +271,15 @@ async def test_derive_lunar_flyby_window_caps_return_transition_at_2030z(monkeyp
     )
     monkeypatch.setattr(
         mpr_module,
-        "compute_mission_relative_geometry",
-        AsyncMock(side_effect=lambda timestamp: {
-            "et": 0.0,
-            "earth_pos": np.array([0.0, 0.0, 0.0], dtype=float),
-            "moon_pos": moon_positions[timestamp],
-        }),
+        "compute_mission_relative_geometry_batch",
+        AsyncMock(side_effect=lambda batch_timestamps: [
+            {
+                "et": 0.0,
+                "earth_pos": np.array([0.0, 0.0, 0.0], dtype=float),
+                "moon_pos": moon_positions[timestamp],
+            }
+            for timestamp in batch_timestamps
+        ]),
     )
 
     start_ts, center_ts, end_ts = await mission_phase_resolver._derive_lunar_flyby_window(ephemeris)

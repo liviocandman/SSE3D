@@ -50,8 +50,12 @@ vi.mock('three', () => {
       makeBasis() { return this; }
     },
     PerspectiveCamera: class {},
-    Texture: class {},
-    CanvasTexture: class {},
+    Texture: class {
+      dispose() { return undefined; }
+    },
+    CanvasTexture: class {
+      dispose() { return undefined; }
+    },
     MathUtils: {
       degToRad: (value: number) => (value * Math.PI) / 180,
       clamp: (value: number, min: number, max: number) => Math.min(max, Math.max(min, value)),

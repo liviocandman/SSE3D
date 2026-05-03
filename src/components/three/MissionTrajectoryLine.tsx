@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useEffect } from 'react';
+import React, { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Line } from '@react-three/drei';
@@ -18,6 +18,8 @@ interface MissionTrajectoryLineProps {
 
 const isValidPoint = (p: [number, number, number]) => 
   Number.isFinite(p[0]) && Number.isFinite(p[1]) && Number.isFinite(p[2]);
+
+const EMPTY_LINE_POINTS: [number, number, number][] = [[0, 0, 0], [0, 0, 0]];
 
 function scaleMissionPointInEarthFrame(point: MissionTrajectoryPoint): [number, number, number] {
   return [
@@ -42,6 +44,46 @@ function isLineSegmentsGeometry(geometry: THREE.BufferGeometry): geometry is Lin
   return 'setPositions' in geometry && typeof (geometry as LineSegmentsGeometry).setPositions === 'function';
 }
 
+function updateConnectorLine(
+  line: DreiLineRef | null,
+  start: [number, number, number] | null,
+  end: [number, number, number] | null,
+  buffer: Float32Array,
+  recomputeLineDistances = false
+): void {
+  if (!line || !start || !end) {
+    if (line) {
+      line.visible = false;
+    }
+    return;
+  }
+
+  buffer[0] = start[0];
+  buffer[1] = start[1];
+  buffer[2] = start[2];
+  buffer[3] = end[0];
+  buffer[4] = end[1];
+  buffer[5] = end[2];
+
+  const geometry = line.geometry;
+  if (isLineSegmentsGeometry(geometry)) {
+    geometry.setPositions(buffer);
+    if (geometry.attributes.instanceStart) {
+      geometry.attributes.instanceStart.needsUpdate = true;
+    }
+    if (geometry.attributes.instanceEnd) {
+      geometry.attributes.instanceEnd.needsUpdate = true;
+    }
+  }
+
+  if (recomputeLineDistances) {
+    const lineWithDistances = line as unknown as { computeLineDistances?: () => void };
+    lineWithDistances.computeLineDistances?.();
+  }
+
+  line.visible = true;
+}
+
 /**
  * Renders the dedicated mission trajectory for Orion.
  * Ref-driven implementation for high performance (no re-renders on tick).
@@ -52,8 +94,8 @@ export const MissionTrajectoryLine: React.FC<MissionTrajectoryLineProps> = ({
   smoothing = false,
   velocityThreshold = 5,
 }) => {
-  const pastLineRef = useRef<DreiLineRef>(null);
-  const plannedLineRef = useRef<DreiLineRef>(null);
+  const pastConnectorRef = useRef<DreiLineRef>(null);
+  const plannedConnectorRef = useRef<DreiLineRef>(null);
 
   // 1. Process Past & Planned base points (Low frequency)
   // Mission trajectory points are Earth-relative scene KM. This component is
@@ -82,20 +124,13 @@ export const MissionTrajectoryLine: React.FC<MissionTrajectoryLineProps> = ({
     return sourcePoints.map(scaleMissionPointInEarthFrame).filter(isValidPoint);
   }, [planned, smoothing, velocityThreshold]);
 
-  // Pre-allocate buffers
-  const pastPosBuffer = useRef(new Float32Array((basePastPoints.length + 1) * 3));
-  const plannedPosBuffer = useRef(new Float32Array((basePlannedPoints.length + 1) * 3));
+  const pastBaseLinePoints = basePastPoints.length >= 2 ? basePastPoints : EMPTY_LINE_POINTS;
+  const plannedBaseLinePoints = basePlannedPoints.length >= 2 ? basePlannedPoints : EMPTY_LINE_POINTS;
+  const pastConnectorBuffer = useRef(new Float32Array(6));
+  const plannedConnectorBuffer = useRef(new Float32Array(6));
   const absPositionKmRef = useRef(new THREE.Vector3());
   const earthRelativePositionKmRef = useRef(new THREE.Vector3());
   const headingQuaternionRef = useRef(new THREE.Quaternion());
-
-  useEffect(() => {
-    pastPosBuffer.current = new Float32Array((basePastPoints.length + 1) * 3);
-  }, [basePastPoints.length]);
-
-  useEffect(() => {
-    plannedPosBuffer.current = new Float32Array((basePlannedPoints.length + 1) * 3);
-  }, [basePlannedPoints.length]);
 
   useFrame(() => {
     const simTimeMs = clockRuntime.getTimeMs();
@@ -118,102 +153,48 @@ export const MissionTrajectoryLine: React.FC<MissionTrajectoryLineProps> = ({
       ];
     }
 
-    // Update Past Line
-    if (pastLineRef.current) {
-      if (basePastPoints.length > 0) {
-        const hasCurrentPos = !!currentPosLocalUnits;
-        const count = basePastPoints.length + (hasCurrentPos ? 1 : 0);
-        const pos = pastPosBuffer.current;
-        
-        // Copy base points (already in local render units)
-        for (let i = 0; i < basePastPoints.length; i++) {
-          const p = basePastPoints[i];
-          pos[i * 3] = p[0];
-          pos[i * 3 + 1] = p[1];
-          pos[i * 3 + 2] = p[2];
-        }
-        
-        // Append current point (also in local render units)
-        if (hasCurrentPos) {
-          pos[(count - 1) * 3] = currentPosLocalUnits![0];
-          pos[(count - 1) * 3 + 1] = currentPosLocalUnits![1];
-          pos[(count - 1) * 3 + 2] = currentPosLocalUnits![2];
-        }
+    const lastPastPoint = basePastPoints.length > 0 ? basePastPoints[basePastPoints.length - 1] : null;
+    const firstPlannedPoint = basePlannedPoints.length > 0 ? basePlannedPoints[0] : null;
 
-        const geometry = pastLineRef.current.geometry;
-        if (isLineSegmentsGeometry(geometry)) {
-          geometry.setPositions(pos.subarray(0, count * 3));
-          if (geometry.attributes.instanceStart) {
-            geometry.attributes.instanceStart.needsUpdate = true;
-          }
-          if (geometry.attributes.instanceEnd) {
-            geometry.attributes.instanceEnd.needsUpdate = true;
-          }
-        }
-        pastLineRef.current.visible = true;
-      } else {
-        pastLineRef.current.visible = false;
-      }
-    }
-
-    // Update Planned Line
-    if (plannedLineRef.current) {
-      if (basePlannedPoints.length > 0) {
-        const hasCurrentPos = !!currentPosLocalUnits;
-        const count = basePlannedPoints.length + (hasCurrentPos ? 1 : 0);
-        const pos = plannedPosBuffer.current;
-        
-        // Start with current point
-        if (hasCurrentPos) {
-          pos[0] = currentPosLocalUnits![0];
-          pos[1] = currentPosLocalUnits![1];
-          pos[2] = currentPosLocalUnits![2];
-        }
-
-        const offset = hasCurrentPos ? 1 : 0;
-        // Copy base points
-        for (let i = 0; i < basePlannedPoints.length; i++) {
-          const p = basePlannedPoints[i];
-          pos[(i + offset) * 3] = p[0];
-          pos[(i + offset) * 3 + 1] = p[1];
-          pos[(i + offset) * 3 + 2] = p[2];
-        }
-
-        const geometry = plannedLineRef.current.geometry;
-        if (isLineSegmentsGeometry(geometry)) {
-          geometry.setPositions(pos.subarray(0, count * 3));
-          if (geometry.attributes.instanceStart) {
-            geometry.attributes.instanceStart.needsUpdate = true;
-          }
-          if (geometry.attributes.instanceEnd) {
-            geometry.attributes.instanceEnd.needsUpdate = true;
-          }
-        }
-        const planRef = plannedLineRef.current as unknown as Record<string, unknown>;
-        if (typeof planRef.computeLineDistances === 'function') {
-          planRef.computeLineDistances();
-        }
-        plannedLineRef.current.visible = true;
-      } else {
-        plannedLineRef.current.visible = false;
-      }
-    }
+    updateConnectorLine(
+      pastConnectorRef.current,
+      lastPastPoint,
+      currentPosLocalUnits,
+      pastConnectorBuffer.current
+    );
+    updateConnectorLine(
+      plannedConnectorRef.current,
+      currentPosLocalUnits,
+      firstPlannedPoint,
+      plannedConnectorBuffer.current,
+      true
+    );
   });
 
   return (
     <group name="mission-trajectory">
       <Line
-        ref={pastLineRef}
-        points={[[0,0,0], [0,0,0]]} // Placeholder
+        points={pastBaseLinePoints}
         color="#00ffff"
         lineWidth={2}
         transparent
         opacity={0.6}
         frustumCulled={false}
+        visible={basePastPoints.length >= 2}
       />
       <Line
-        ref={plannedLineRef}
-        points={[[0,0,0], [0,0,0]]} // Placeholder
+        ref={pastConnectorRef}
+        points={EMPTY_LINE_POINTS}
+        color="#00ffff"
+        lineWidth={2}
+        transparent
+        opacity={0.6}
+        frustumCulled={false}
+        visible={false}
+      />
+      <Line
+        ref={plannedConnectorRef}
+        points={EMPTY_LINE_POINTS}
         color="#00ffff"
         lineWidth={1.5}
         dashed
@@ -223,6 +204,20 @@ export const MissionTrajectoryLine: React.FC<MissionTrajectoryLineProps> = ({
         transparent
         opacity={0.4}
         frustumCulled={false}
+        visible={false}
+      />
+      <Line
+        points={plannedBaseLinePoints}
+        color="#00ffff"
+        lineWidth={1.5}
+        dashed
+        dashScale={50}
+        dashSize={0.5}
+        gapSize={0.5}
+        transparent
+        opacity={0.4}
+        frustumCulled={false}
+        visible={basePlannedPoints.length >= 2}
       />
     </group>
   );

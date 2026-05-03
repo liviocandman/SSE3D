@@ -3,7 +3,7 @@ from typing import Optional
 
 from app.core.config import settings
 from app.services.mission_oem_service import mission_oem_service
-from app.services.spice_engine import compute_mission_relative_geometry
+from app.services.spice_engine import compute_mission_relative_geometry_batch
 from app.services.mission_geometry_service import transform_to_eclipj2000
 
 class MissionPhaseResolver:
@@ -53,10 +53,15 @@ class MissionPhaseResolver:
 
         valid_samples: list[tuple[str, datetime, float, float]] = []
         input_frame = ephemeris.metadata.ref_frame or "EME2000"
+        timestamps = [
+            state.timestamp if state.timestamp.endswith("Z") else f"{state.timestamp}Z"
+            for state in states
+        ]
+        relative_geometries = await compute_mission_relative_geometry_batch(timestamps)
+        if len(relative_geometries) != len(states):
+            relative_geometries = [None for _state in states]
 
-        for state in states:
-            timestamp = state.timestamp if state.timestamp.endswith("Z") else f"{state.timestamp}Z"
-            geo_data = await compute_mission_relative_geometry(timestamp)
+        for state, timestamp, geo_data in zip(states, timestamps, relative_geometries):
             if not geo_data:
                 continue
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import datetime, timedelta, timezone
+from typing import Optional, TypedDict
 
 import asyncio
 import numpy as np
@@ -11,6 +11,15 @@ from loguru import logger
 from app.models.schemas import EphemerisData, EphemerisTrajectory, OrbitLineProfile
 from app.services.body_catalog import BODY_NAMES, MOON_PARENTS, ORBITAL_PERIODS_DAYS
 from app.services.spice_kernel_manager import assert_spice_ready
+
+
+class MissionRelativeGeometry(TypedDict):
+    et: float
+    earth_pos: np.ndarray
+    moon_pos: np.ndarray
+
+
+MissionGeometryTimestamp = str | datetime
 
 
 def calculate_trajectory_params(
@@ -39,6 +48,14 @@ def _parse_target_datetime(target_date: str) -> datetime:
     if "T" in target_date:
         return datetime.fromisoformat(target_date.replace("Z", "+00:00")).replace(tzinfo=None)
     return datetime.strptime(target_date, "%Y-%m-%d")
+
+
+def _to_spice_datetime(value: MissionGeometryTimestamp) -> str:
+    if isinstance(value, datetime):
+        if value.tzinfo is not None:
+            value = value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value.isoformat()
+    return _parse_target_datetime(value).isoformat()
 
 
 def _to_scene_coords(state_xyz: np.ndarray) -> dict[str, float]:
@@ -240,31 +257,126 @@ async def fetch_all_spice(
     )
 
 
-def _compute_mission_relative_geometry_sync(target_date: str) -> Optional[dict]:
+def _fetch_mission_body_positions(
+    target_id: str,
+    ets: list[float],
+) -> list[Optional[np.ndarray]]:
+    if not ets:
+        return []
+
+    try:
+        states, _ = spice.spkezr(
+            target_id,
+            np.array(ets, dtype=float),
+            "ECLIPJ2000",
+            "NONE",
+            "10",
+        )
+        states_array = np.asarray(states, dtype=float)
+        if states_array.ndim == 1:
+            states_array = states_array.reshape(1, 6)
+        if states_array.shape[0] != len(ets):
+            raise ValueError(
+                f"SPICE returned {states_array.shape[0]} states for {len(ets)} requested ETs"
+            )
+
+        return [
+            np.array(states_array[index, 0:3])
+            for index in range(len(ets))
+        ]
+    except Exception as e:
+        if len(ets) == 1:
+            logger.warning(
+                f"Skipping mission geometry sample for body {target_id} at ET={ets[0]}: {e}"
+            )
+            return [None]
+
+        midpoint = len(ets) // 2
+        return _fetch_mission_body_positions(
+            target_id,
+            ets[:midpoint],
+        ) + _fetch_mission_body_positions(
+            target_id,
+            ets[midpoint:],
+        )
+
+
+def _compute_mission_relative_geometry_batch_sync(
+    target_dates: list[MissionGeometryTimestamp],
+) -> list[Optional[MissionRelativeGeometry]]:
+    """
+    Computes Earth and Moon states for mission geometry calculations.
+    Returns raw numpy arrays for positions in ECLIPJ2000, preserving input order.
+    """
+    geometries: list[Optional[MissionRelativeGeometry]] = [
+        None for _date in target_dates
+    ]
+    if not target_dates:
+        return geometries
+
+    try:
+        assert_spice_ready()
+    except Exception as e:
+        logger.error(f"Error preparing mission relative geometry batch: {str(e)}")
+        return geometries
+
+    valid_indices: list[int] = []
+    valid_ets: list[float] = []
+    for index, target_date in enumerate(target_dates):
+        try:
+            et = float(spice.str2et(_to_spice_datetime(target_date)))
+        except Exception as e:
+            logger.warning(f"Skipping mission geometry timestamp {target_date}: {e}")
+            continue
+
+        valid_indices.append(index)
+        valid_ets.append(et)
+
+    if not valid_ets:
+        return geometries
+
+    earth_positions = _fetch_mission_body_positions("399", valid_ets)
+    moon_positions = _fetch_mission_body_positions("301", valid_ets)
+
+    for local_index, result_index in enumerate(valid_indices):
+        earth_pos = (
+            earth_positions[local_index]
+            if local_index < len(earth_positions)
+            else None
+        )
+        moon_pos = (
+            moon_positions[local_index]
+            if local_index < len(moon_positions)
+            else None
+        )
+        if earth_pos is None or moon_pos is None:
+            continue
+
+        geometries[result_index] = {
+            "et": valid_ets[local_index],
+            "earth_pos": earth_pos,
+            "moon_pos": moon_pos,
+        }
+
+    return geometries
+
+def _compute_mission_relative_geometry_sync(target_date: str) -> Optional[MissionRelativeGeometry]:
     """
     Computes Earth and Moon states at target_date for mission geometry calculations.
     Returns raw numpy arrays for positions in ECLIPJ2000.
     """
-    try:
-        assert_spice_ready()
-        dt = _parse_target_datetime(target_date)
-        et = spice.str2et(dt.isoformat())
-        
-        earth_state, _ = spice.spkezr("399", et, "ECLIPJ2000", "NONE", "10")
-        moon_state, _ = spice.spkezr("301", et, "ECLIPJ2000", "NONE", "10")
-        
-        return {
-            "et": et,
-            "earth_pos": np.array(earth_state[0:3]),
-            "moon_pos": np.array(moon_state[0:3])
-        }
-    except Exception as e:
-        logger.error(f"Error computing mission relative geometry: {str(e)}")
-        return None
+    geometries = _compute_mission_relative_geometry_batch_sync([target_date])
+    return geometries[0] if geometries else None
 
 
-async def compute_mission_relative_geometry(target_date: str) -> Optional[dict]:
+async def compute_mission_relative_geometry(target_date: str) -> Optional[MissionRelativeGeometry]:
     return await asyncio.to_thread(_compute_mission_relative_geometry_sync, target_date)
+
+
+async def compute_mission_relative_geometry_batch(
+    target_dates: list[MissionGeometryTimestamp],
+) -> list[Optional[MissionRelativeGeometry]]:
+    return await asyncio.to_thread(_compute_mission_relative_geometry_batch_sync, target_dates)
 
 
 def _compute_mission_trajectory_sync(start_date: str, end_date: str, steps: int = 100) -> Optional[dict]:

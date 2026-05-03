@@ -124,6 +124,12 @@ export function SpacecraftBody({
   }, [missionEvents]);
 
   const markerTexture = useMemo(() => createCircleTexture('#d0dadfff'), []);
+  useEffect(() => {
+    return () => {
+      markerTexture.dispose();
+    };
+  }, [markerTexture]);
+
   const handleDetailedReady = useCallback(() => {
     setIsDetailedReady(true);
   }, []);

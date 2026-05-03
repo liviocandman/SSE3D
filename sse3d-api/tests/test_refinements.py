@@ -35,11 +35,16 @@ async def test_spice_path_returns_200(client):
 @pytest.mark.asyncio
 async def test_fallback_data_loading(client):
     with patch(
-        "app.routers.ephemeris.fetch_all_spice",
+        "app.routers.ephemeris.get_bulk_cached",
         new_callable=AsyncMock,
-        return_value=[],
+        return_value=([], ["399"]),
     ):
-        response = await client.get("/api/ephemeris?date=2024-01-01&ids=399")
+        with patch(
+            "app.routers.ephemeris.fetch_all_spice",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            response = await client.get("/api/ephemeris?date=2024-01-01&ids=399")
 
     assert response.status_code == 200
     data = response.json()["data"]

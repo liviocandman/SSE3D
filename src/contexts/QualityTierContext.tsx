@@ -78,10 +78,12 @@ function detectQualityTier(): QualityTier {
 
   // Check for WebGL renderer info
   let gpuTier: QualityTier = 'mid';
+  let gl: WebGLRenderingContext | null = null;
   try {
     const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-    if (gl && gl instanceof WebGLRenderingContext) {
+    const context = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if (context && context instanceof WebGLRenderingContext) {
+      gl = context;
       const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
       if (debugInfo) {
         const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) as string;
@@ -107,6 +109,8 @@ function detectQualityTier(): QualityTier {
     }
   } catch (error) {
     console.warn('Could not detect GPU info:', error);
+  } finally {
+    gl?.getExtension('WEBGL_lose_context')?.loseContext();
   }
 
   // Determine final tier based on all factors
