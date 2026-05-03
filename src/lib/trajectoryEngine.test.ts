@@ -67,6 +67,20 @@ describe('trajectoryEngine', () => {
     expect(segments).toHaveLength(3);
   });
 
+  it('should keep upserted segments sorted by start time', () => {
+    let segments = upsertTrajectorySegments([], makeTrajectory('2026-03-01T00:00:00.000Z', 3), Date.now(), 4);
+    segments = upsertTrajectorySegments(segments, makeTrajectory('2026-01-01T00:00:00.000Z', 3), Date.now(), 4);
+    segments = upsertTrajectorySegments(segments, makeTrajectory('2026-04-01T00:00:00.000Z', 3), Date.now(), 4);
+    segments = upsertTrajectorySegments(segments, makeTrajectory('2026-02-01T00:00:00.000Z', 3), Date.now(), 4);
+
+    expect(segments.map((segment) => segment.startTime)).toEqual([
+      '2026-01-01T00:00:00.000Z',
+      '2026-02-01T00:00:00.000Z',
+      '2026-03-01T00:00:00.000Z',
+      '2026-04-01T00:00:00.000Z',
+    ]);
+  });
+
   it('computeBufferPlan should pause and request current date when uncovered', () => {
     const segment = buildTrajectorySegment(makeTrajectory('2026-01-01T00:00:00.000Z', 3))!;
     const plan = computeBufferPlan({

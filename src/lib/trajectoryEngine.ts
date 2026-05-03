@@ -283,9 +283,8 @@ export function sampleTrajectoryAtTime(
 ): SampledTrajectoryPoint | null {
   if (segments.length === 0) return null;
 
-  const ordered = sortSegments(segments);
-  const first = ordered[0];
-  const last = ordered[ordered.length - 1];
+  const first = segments[0];
+  const last = segments[segments.length - 1];
 
   if (timeMs <= first.startTimeMs) {
     return {
@@ -300,16 +299,16 @@ export function sampleTrajectoryAtTime(
   if (timeMs >= last.endTimeMs) {
     return {
       position: last.points[last.points.length - 1].position,
-      segmentIndex: ordered.length - 1,
+      segmentIndex: segments.length - 1,
       pointIndex: last.points.length - 1,
       clamped: true,
       status: 'after_all',
     };
   }
 
-  const segmentIndex = findSegmentIndexForTime(ordered, timeMs);
+  const segmentIndex = findSegmentIndexForTime(segments, timeMs);
   if (segmentIndex === -1) {
-    const nearest = clampToNearestGapEndpoint(ordered, timeMs);
+    const nearest = clampToNearestGapEndpoint(segments, timeMs);
     return {
       position: nearest.position,
       segmentIndex: nearest.segmentIndex,
@@ -319,7 +318,7 @@ export function sampleTrajectoryAtTime(
     };
   }
 
-  const segment = ordered[segmentIndex];
+  const segment = segments[segmentIndex];
   const { points, pointTimesMs } = segment;
   if (lookupCache) {
     resetCacheIfDataChanged(lookupCache, pointTimesMs);
