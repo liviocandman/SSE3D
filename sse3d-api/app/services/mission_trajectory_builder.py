@@ -1,5 +1,10 @@
 from app.models.mission_schemas import MissionTrajectoryResponse, MissionTrajectoryPoint, MissionTrajectorySegment, MissionPhase, MissionPosition, MissionVelocity
-from app.services.spice_engine import compute_mission_relative_geometry, compute_mission_trajectory
+from app.services.spice_engine import (
+    MissionRelativeGeometry,
+    compute_mission_relative_geometry,
+    compute_mission_relative_geometry_batch,
+    compute_mission_trajectory,
+)
 from app.services.mission_geometry_service import enrich_mission_geometry, transform_to_eclipj2000, to_scene_frame, derive_scene_coordinates
 from app.services.mission_oem_service import mission_oem_service
 from app.services.mission_event_service import mission_event_service, parse_split_timestamp
@@ -7,14 +12,18 @@ from app.core.config import settings
 
 ARTEMIS2_ID = "artemis-2"
 
-async def _build_trajectory_point_from_state(
+def _timestamp_z(timestamp: str) -> str:
+    return timestamp if timestamp.endswith("Z") else f"{timestamp}Z"
+
+
+def _build_trajectory_point_from_state_with_geometry(
     timestamp: str,
     position: MissionPosition,
     velocity: MissionVelocity,
     segment: MissionTrajectorySegment,
     phase: MissionPhase,
-):
-    geo_data = await compute_mission_relative_geometry(timestamp)
+    geo_data: MissionRelativeGeometry | None,
+) -> MissionTrajectoryPoint:
     if geo_data:
         _global_coords, _mission_coords, scene_coords, _distances = enrich_mission_geometry(
             orion_pos=position,
@@ -47,6 +56,25 @@ async def _build_trajectory_point_from_state(
         segment=segment,
     )
 
+
+async def _build_trajectory_point_from_state(
+    timestamp: str,
+    position: MissionPosition,
+    velocity: MissionVelocity,
+    segment: MissionTrajectorySegment,
+    phase: MissionPhase,
+) -> MissionTrajectoryPoint:
+    geo_data = await compute_mission_relative_geometry(timestamp)
+    return _build_trajectory_point_from_state_with_geometry(
+        timestamp,
+        position,
+        velocity,
+        segment,
+        phase,
+        geo_data,
+    )
+
+
 async def get_mission_trajectory(at: str | None = None) -> MissionTrajectoryResponse:
     """
     Returns the mission trajectory, past and planned points.
@@ -65,20 +93,27 @@ async def get_mission_trajectory(at: str | None = None) -> MissionTrajectoryResp
             ephemeris.metadata.stop_time,
             max_points=1500,
         )
+        state_timestamps = [_timestamp_z(state.timestamp) for state in states]
+        relative_geometries = await compute_mission_relative_geometry_batch(state_timestamps)
+        if len(relative_geometries) != len(states):
+            relative_geometries = [None for _state in states]
+        phases: list[MissionPhase] = []
 
-        for state in states:
+        for state, timestamp, geo_data in zip(states, state_timestamps, relative_geometries):
             segment = (
                 MissionTrajectorySegment.PAST
                 if state.dt <= split_dt
                 else MissionTrajectorySegment.PLANNED
             )
             phase = await mission_event_service.derive_current_phase(state.dt, events_list)
-            point = await _build_trajectory_point_from_state(
-                state.timestamp if state.timestamp.endswith("Z") else f"{state.timestamp}Z",
+            phases.append(phase)
+            point = _build_trajectory_point_from_state_with_geometry(
+                timestamp,
                 state.position,
                 state.velocity,
                 segment,
                 phase,
+                geo_data,
             )
             if segment == MissionTrajectorySegment.PAST:
                 past_points.append(point)
@@ -87,25 +122,29 @@ async def get_mission_trajectory(at: str | None = None) -> MissionTrajectoryResp
 
         if not past_points and states:
             first = states[0]
+            phase = phases[0] if phases else await mission_event_service.derive_current_phase(first.dt, events_list)
             past_points.append(
-                await _build_trajectory_point_from_state(
-                    first.timestamp if first.timestamp.endswith("Z") else f"{first.timestamp}Z",
+                _build_trajectory_point_from_state_with_geometry(
+                    state_timestamps[0],
                     first.position,
                     first.velocity,
                     MissionTrajectorySegment.PAST,
-                    await mission_event_service.derive_current_phase(first.dt, events_list),
+                    phase,
+                    relative_geometries[0],
                 )
             )
 
         if not planned_points and states:
             last = states[-1]
+            phase = phases[-1] if phases else await mission_event_service.derive_current_phase(last.dt, events_list)
             planned_points.append(
-                await _build_trajectory_point_from_state(
-                    last.timestamp if last.timestamp.endswith("Z") else f"{last.timestamp}Z",
+                _build_trajectory_point_from_state_with_geometry(
+                    state_timestamps[-1],
                     last.position,
                     last.velocity,
                     MissionTrajectorySegment.PLANNED,
-                    await mission_event_service.derive_current_phase(last.dt, events_list),
+                    phase,
+                    relative_geometries[-1],
                 )
             )
     else:
