@@ -41,6 +41,7 @@ vi.mock('@react-three/fiber', () => ({
 type MockLineProps = {
   points?: unknown;
   dashed?: boolean;
+  visible?: boolean;
 };
 
 vi.mock('@react-three/drei', async () => {
@@ -48,11 +49,12 @@ vi.mock('@react-three/drei', async () => {
   const { createElement, forwardRef } = ReactModule;
 
   return {
-    Line: forwardRef(function MockLine({ points, dashed }: MockLineProps, ref: ForwardedRef<HTMLDivElement>) {
+    Line: forwardRef(function MockLine({ points, dashed, visible = true }: MockLineProps, ref: ForwardedRef<HTMLDivElement>) {
       return createElement('div', {
         ref,
         'data-testid': 'line',
         'data-dashed': dashed ? 'true' : 'false',
+        'data-visible': visible ? 'true' : 'false',
         'data-points': JSON.stringify(points),
       });
     }),
@@ -62,20 +64,40 @@ vi.mock('@react-three/drei', async () => {
 describe('MissionTrajectoryLine', () => {
   const mockPast = [
     { timestamp: '2026-01-01T00:00:00Z', position: { x: 1000, y: 0, z: 0 }, segment: MissionTrajectorySegment.PAST },
+    { timestamp: '2026-01-01T01:00:00Z', position: { x: 2000, y: 0, z: 0 }, segment: MissionTrajectorySegment.PAST },
   ] satisfies MissionTrajectoryPoint[];
   const mockPlanned = [
     { timestamp: '2026-01-01T02:00:00Z', position: { x: 3000, y: 0, z: 0 }, segment: MissionTrajectorySegment.PLANNED },
+    { timestamp: '2026-01-01T03:00:00Z', position: { x: 4000, y: 0, z: 0 }, segment: MissionTrajectorySegment.PLANNED },
   ] satisfies MissionTrajectoryPoint[];
 
-  it('renders past and planned lines when data is provided', () => {
+  it('renders static base lines plus dynamic connector lines', () => {
     const { getAllByTestId } = render(
       <MissionTrajectoryLine past={mockPast} planned={mockPlanned} />
     );
     
     const lines = getAllByTestId('line');
-    expect(lines).toHaveLength(2);
+    expect(lines).toHaveLength(4);
     expect(lines[0]).toHaveAttribute('data-dashed', 'false');
-    expect(lines[1]).toHaveAttribute('data-dashed', 'true');
+    expect(lines[0]).toHaveAttribute('data-visible', 'true');
+    expect(lines[1]).toHaveAttribute('data-dashed', 'false');
+    expect(lines[1]).toHaveAttribute('data-visible', 'false');
+    expect(lines[2]).toHaveAttribute('data-dashed', 'true');
+    expect(lines[2]).toHaveAttribute('data-visible', 'false');
+    expect(lines[3]).toHaveAttribute('data-dashed', 'true');
+    expect(lines[3]).toHaveAttribute('data-visible', 'true');
+  });
+
+  it('passes full trajectory points only to static base lines', () => {
+    const { getAllByTestId } = render(
+      <MissionTrajectoryLine past={mockPast} planned={mockPlanned} />
+    );
+
+    const lines = getAllByTestId('line');
+    expect(lines[0]).toHaveAttribute('data-points', JSON.stringify([[1, 0, 0], [2, 0, 0]]));
+    expect(lines[1]).toHaveAttribute('data-points', JSON.stringify([[0, 0, 0], [0, 0, 0]]));
+    expect(lines[2]).toHaveAttribute('data-points', JSON.stringify([[0, 0, 0], [0, 0, 0]]));
+    expect(lines[3]).toHaveAttribute('data-points', JSON.stringify([[3, 0, 0], [4, 0, 0]]));
   });
 
   it('calls smoothing (densifyWithCatmullRom) when smoothing prop is true', async () => {
