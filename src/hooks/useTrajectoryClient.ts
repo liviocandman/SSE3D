@@ -31,6 +31,11 @@ const TRAJECTORY_RESPONSE_CACHE_TTL_MS = 5_000;
 const TRAJECTORY_FETCH_COOLDOWN_MS = 15_000;
 const ORBIT_LINE_RESPONSE_CACHE_TTL_MS = 30_000;
 const ORBIT_LINE_FETCH_COOLDOWN_MS = 30_000;
+const MAX_LOCAL_CACHE_ENTRIES = 50;
+const MAX_REQUEST_COOLDOWN_MS = Math.max(
+  TRAJECTORY_FETCH_COOLDOWN_MS,
+  ORBIT_LINE_FETCH_COOLDOWN_MS,
+);
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -44,6 +49,26 @@ function getBackoffDelay(attempt: number): number {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.message === "AbortError";
+}
+
+function pruneOldestEntries<T>(
+  entries: Map<string, T>,
+  maxEntries: number,
+  protectedKey?: string,
+): void {
+  if (entries.size <= maxEntries) {
+    return;
+  }
+
+  for (const key of entries.keys()) {
+    if (entries.size <= maxEntries) {
+      return;
+    }
+    if (key === protectedKey) {
+      continue;
+    }
+    entries.delete(key);
+  }
 }
 
 function attachAbortToPromise<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
@@ -88,13 +113,20 @@ export function useTrajectoryClient() {
   const responseCacheRef = useRef<Map<string, CacheEntry<EphemerisData[]>>>(new Map());
   const lastRequestAtRef = useRef<Map<string, number>>(new Map());
 
-  const clearExpiredCacheEntries = useCallback(() => {
+  const pruneLocalCacheEntries = useCallback((protectedKey?: string) => {
     const now = Date.now();
     for (const [key, value] of responseCacheRef.current) {
       if (value.expiresAt <= now) {
         responseCacheRef.current.delete(key);
       }
     }
+    for (const [key, lastRequestAt] of lastRequestAtRef.current) {
+      if (now - lastRequestAt >= MAX_REQUEST_COOLDOWN_MS) {
+        lastRequestAtRef.current.delete(key);
+      }
+    }
+    pruneOldestEntries(responseCacheRef.current, MAX_LOCAL_CACHE_ENTRIES, protectedKey);
+    pruneOldestEntries(lastRequestAtRef.current, MAX_LOCAL_CACHE_ENTRIES, protectedKey);
   }, []);
 
   const runCoordinatedRequest = useCallback(
@@ -110,7 +142,7 @@ export function useTrajectoryClient() {
         throw new Error("AbortError");
       }
 
-      clearExpiredCacheEntries();
+      pruneLocalCacheEntries(requestKey);
 
       const cached = responseCacheRef.current.get(requestKey);
       if (cached && cached.expiresAt > Date.now()) {
@@ -143,6 +175,7 @@ export function useTrajectoryClient() {
               expiresAt: Date.now() + cacheTtlMs,
               data,
             });
+            pruneLocalCacheEntries(requestKey);
             return data;
           } catch (error) {
             if (isAbortError(error) || attempt === retries) {
@@ -161,7 +194,7 @@ export function useTrajectoryClient() {
       inFlightRef.current.set(requestKey, coordinatedPromise);
       return attachAbortToPromise(coordinatedPromise, signal);
     },
-    [clearExpiredCacheEntries],
+    [pruneLocalCacheEntries],
   );
 
   const requestTrajectoryBlock = useCallback(
