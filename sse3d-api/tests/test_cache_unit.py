@@ -23,10 +23,12 @@ async def test_get_bulk_cached_deserialization():
     with patch("app.services.cache_service.get_redis") as mock_get_redis:
         mock_redis = AsyncMock()
         mock_get_redis.return_value = mock_redis
-        mock_redis.get.return_value = raw_json
+        mock_redis.mget.return_value = [raw_json]
         
         cached, missing = await get_bulk_cached(["399"], "2024-01-01")
         
+        mock_redis.mget.assert_awaited_once_with("ephemeris:399:2024-01-01:span_30")
+        mock_redis.get.assert_not_called()
         assert len(cached) == 1
         assert cached[0].body_id == "399"
         assert len(missing) == 0
@@ -38,11 +40,12 @@ async def test_get_bulk_cached_with_center_key():
     with patch("app.services.cache_service.get_redis") as mock_get_redis:
         mock_redis = AsyncMock()
         mock_get_redis.return_value = mock_redis
-        mock_redis.get.return_value = None
+        mock_redis.mget.return_value = [None]
 
         cached, missing = await get_bulk_cached(["501"], "2024-01-01", center="599")
 
-        mock_redis.get.assert_awaited_once_with("ephemeris:501:center_599:2024-01-01:span_30")
+        mock_redis.mget.assert_awaited_once_with("ephemeris:501:center_599:2024-01-01:span_30")
+        mock_redis.get.assert_not_called()
         assert cached == []
         assert missing == ["501"]
 
@@ -55,7 +58,7 @@ async def test_get_bulk_cached_orbit_ready_requires_orbit_line():
     with patch("app.services.cache_service.get_redis") as mock_get_redis:
         mock_redis = AsyncMock()
         mock_get_redis.return_value = mock_redis
-        mock_redis.get.return_value = raw_json_without_orbit_line
+        mock_redis.mget.return_value = [raw_json_without_orbit_line]
 
         cached, missing = await get_bulk_cached(
             ["401"],
@@ -64,6 +67,8 @@ async def test_get_bulk_cached_orbit_ready_requires_orbit_line():
             orbit_profile=OrbitLineProfile.AUTO,
         )
 
+        mock_redis.mget.assert_awaited_once_with("ephemeris:401:2024-01-01:span_30:orbit_ready_orbit-ready-v1")
+        mock_redis.get.assert_not_called()
         assert cached == []
         assert missing == ["401"]
 
@@ -74,7 +79,7 @@ async def test_get_bulk_cached_orbit_line_only_uses_specific_cache_key():
     with patch("app.services.cache_service.get_redis") as mock_get_redis:
         mock_redis = AsyncMock()
         mock_get_redis.return_value = mock_redis
-        mock_redis.get.return_value = None
+        mock_redis.mget.return_value = [None]
 
         await get_bulk_cached(
             ["401"],
@@ -84,9 +89,10 @@ async def test_get_bulk_cached_orbit_line_only_uses_specific_cache_key():
             orbit_line_only=True,
         )
 
-        mock_redis.get.assert_awaited_once_with(
+        mock_redis.mget.assert_awaited_once_with(
             "ephemeris:401:2024-01-01:span_30:orbit_ready_orbit-ready-v1:profile_rapid:orbit_line_only"
         )
+        mock_redis.get.assert_not_called()
 
 @pytest.mark.asyncio
 async def test_get_bulk_cached_full_orbit_uses_distinct_cache_key():
@@ -95,7 +101,7 @@ async def test_get_bulk_cached_full_orbit_uses_distinct_cache_key():
     with patch("app.services.cache_service.get_redis") as mock_get_redis:
         mock_redis = AsyncMock()
         mock_get_redis.return_value = mock_redis
-        mock_redis.get.return_value = None
+        mock_redis.mget.return_value = [None]
 
         await get_bulk_cached(
             ["301"],
@@ -104,6 +110,26 @@ async def test_get_bulk_cached_full_orbit_uses_distinct_cache_key():
             full_orbit=True,
         )
 
-        mock_redis.get.assert_awaited_once_with(
+        mock_redis.mget.assert_awaited_once_with(
             "ephemeris:301:2024-01-01:span_30:full_orbit"
         )
+        mock_redis.get.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_get_bulk_cached_uses_single_mget_for_multiple_bodies():
+    from app.services.cache_service import get_bulk_cached
+
+    with patch("app.services.cache_service.get_redis") as mock_get_redis:
+        mock_redis = AsyncMock()
+        mock_get_redis.return_value = mock_redis
+        mock_redis.mget.return_value = [None, None]
+
+        cached, missing = await get_bulk_cached(["399", "499"], "2024-01-01")
+
+        mock_redis.mget.assert_awaited_once_with(
+            "ephemeris:399:2024-01-01:span_30",
+            "ephemeris:499:2024-01-01:span_30",
+        )
+        mock_redis.get.assert_not_called()
+        assert cached == []
+        assert missing == ["399", "499"]
