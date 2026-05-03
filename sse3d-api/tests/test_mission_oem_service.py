@@ -1,6 +1,4 @@
 import numpy as np
-import zipfile
-from io import BytesIO
 from datetime import datetime, timezone
 from app.services.mission_oem_service import MissionOEMService, OEMStateVector
 from app.models.mission_schemas import MissionPosition, MissionVelocity
@@ -166,73 +164,6 @@ def test_adaptive_sampler_preserves_local_curvature_far_from_earth():
     assert states[2].timestamp in kept_timestamps
 
 
-def test_remote_zip_oem_payload_is_cached_and_loaded(tmp_path):
-    service = MissionOEMService(
-        source_url="https://example.com/artemis2.zip",
-        cache_dir=str(tmp_path / "oem-cache"),
-    )
-
-    zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("Artemis_II_OEM_2026.asc", OEM_SAMPLE_TEXT)
-
-    service._download_source_payload = lambda _url: (zip_buffer.getvalue(), "artemis2.zip")  # type: ignore[method-assign]
-    ephemeris = service.get_ephemeris()
-
-    assert ephemeris is not None
-    assert len(ephemeris.states) == 2
-    assert service._cached_download_file is not None  # type: ignore[attr-defined]
-    assert service._cached_download_file.exists()  # type: ignore[attr-defined]
-
-
-def test_remote_zip_prefers_oem_payload_over_other_files(tmp_path):
-    service = MissionOEMService(
-        source_url="https://example.com/artemis2-bundle.zip",
-        cache_dir=str(tmp_path / "oem-cache"),
-    )
-
-    zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("README.txt", "bundle metadata")
-        zf.writestr("nested/Artemis_II_OEM_2026.asc", OEM_SAMPLE_TEXT)
-
-    service._download_source_payload = lambda _url: (zip_buffer.getvalue(), "artemis2-bundle.zip")  # type: ignore[method-assign]
-
-    ephemeris = service.get_ephemeris()
-
-    assert ephemeris is not None
-    assert len(ephemeris.states) == 2
-    assert ephemeris.states[0].position.x == 100000.0
-    assert service._cached_download_file is not None  # type: ignore[attr-defined]
-    assert service._cached_download_file.name == "artemis2_latest.oem"  # type: ignore[attr-defined]
-    assert service._cached_download_file.read_text(encoding="utf-8").startswith("CCSDS_OEM_VERS")  # type: ignore[attr-defined]
-
-
-def test_download_failure_falls_back_to_last_cached_oem(tmp_path):
-    service = MissionOEMService(
-        source_url="https://example.com/artemis2.oem",
-        cache_dir=str(tmp_path / "oem-cache"),
-    )
-
-    service._download_source_payload = lambda _url: (OEM_SAMPLE_TEXT.encode("utf-8"), "artemis2.oem")  # type: ignore[method-assign]
-    first = service.get_ephemeris()
-    assert first is not None
-    cached_path = service._cached_download_file  # type: ignore[attr-defined]
-    assert cached_path is not None
-    assert cached_path.exists()
-
-    service.refresh_seconds = 0
-
-    def _raise(_url: str):
-        raise RuntimeError("network down")
-
-    service._download_source_payload = _raise  # type: ignore[method-assign]
-    second = service.get_ephemeris()
-
-    assert second is not None
-    assert service._cached_download_file == cached_path  # type: ignore[attr-defined]
-
-
 def test_local_file_takes_precedence_over_remote_source(tmp_path):
     local_file = tmp_path / "local.oem"
     local_file.write_text(OEM_SAMPLE_TEXT, encoding="utf-8")
@@ -248,7 +179,7 @@ def test_local_file_takes_precedence_over_remote_source(tmp_path):
     assert ephemeris.states[0].position.x == 100000.0
 
 
-def test_remote_source_priority_with_local_fallback(tmp_path):
+def test_remote_source_does_not_override_local_file(tmp_path):
     local_file = tmp_path / "local.oem"
     local_file.write_text(OEM_SAMPLE_TEXT, encoding="utf-8")
 
@@ -258,38 +189,27 @@ def test_remote_source_priority_with_local_fallback(tmp_path):
         cache_dir=str(tmp_path / "oem-cache"),
     )
 
-    remote_text = OEM_SAMPLE_TEXT.replace("100000", "200000", 1)
-    zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("remote.asc", remote_text)
-
-    service._download_source_payload = lambda _url: (zip_buffer.getvalue(), "artemis2.zip")  # type: ignore[method-assign]
     ephemeris = service.get_ephemeris()
     assert ephemeris is not None
-    assert ephemeris.states[0].position.x == 200000.0
+    assert ephemeris.states[0].position.x == 100000.0
+    assert not (tmp_path / "oem-cache").exists()
 
-    service.refresh_seconds = 0
-    service._download_source_payload = lambda _url: (_ for _ in ()).throw(RuntimeError("down"))  # type: ignore[method-assign]
-    service._cached_download_file = None  # type: ignore[attr-defined]
-    service._loaded_source_file = None  # type: ignore[attr-defined]
-    service._ephemeris = None  # type: ignore[attr-defined]
-    service._adaptive_states = None  # type: ignore[attr-defined]
-    fallback_ephemeris = service.get_ephemeris()
-    assert fallback_ephemeris is not None
-    # If remote refresh fails but a cached remote OEM exists, cached remote remains authoritative.
-    assert fallback_ephemeris.states[0].position.x == 200000.0
 
-    cached = service._cached_download_file  # type: ignore[attr-defined]
-    assert cached is not None
-    cached.unlink(missing_ok=True)
-    service._cached_download_file = None  # type: ignore[attr-defined]
-    service._loaded_source_file = None  # type: ignore[attr-defined]
-    service._ephemeris = None  # type: ignore[attr-defined]
-    service._adaptive_states = None  # type: ignore[attr-defined]
+def test_remote_source_without_local_file_is_not_downloaded(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        MissionOEMService,
+        "_discover_workspace_oem_file",
+        lambda self: None,
+    )
 
-    local_fallback_ephemeris = service.get_ephemeris()
-    assert local_fallback_ephemeris is not None
-    assert local_fallback_ephemeris.states[0].position.x == 100000.0
+    service = MissionOEMService(
+        file_path="",
+        source_url="https://example.com/artemis2.oem",
+        cache_dir=str(tmp_path / "oem-cache"),
+    )
+
+    assert service.get_ephemeris() is None
+    assert not (tmp_path / "oem-cache").exists()
 
 
 def test_autodetect_workspace_oem_when_no_source_configured(tmp_path, monkeypatch):
