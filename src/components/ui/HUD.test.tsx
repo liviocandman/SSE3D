@@ -112,6 +112,8 @@ vi.mock('lucide-react', () => ({
   ChevronLeft: () => <div data-testid="chevron-left" />,
   ChevronRight: () => <div data-testid="chevron-right" />,
   Heart: () => <div data-testid="heart" />,
+  Maximize2: () => <div data-testid="maximize-2" />,
+  Minimize2: () => <div data-testid="minimize-2" />,
   Rocket: () => <div data-testid="rocket" />,
   Telescope: () => <div data-testid="telescope" />,
   Calendar: () => <div data-testid="calendar" />,
@@ -133,17 +135,37 @@ describe('HUD', () => {
     missionStateMock.missionState = null;
   });
 
-  it('toggles minimize state when clicking the control tab', () => {
+  it('moves the panel offscreen and shows a compact launcher when minimized', () => {
     render(<HUD onDateChange={vi.fn()} />);
 
-    const toggleButton = screen.getByTitle('Hide panel');
+    const toggleButton = screen.getByTitle('Minimize panel');
     expect(toggleButton).toBeInTheDocument();
     expect(screen.getByTestId('chevron-right')).toBeInTheDocument();
 
     fireEvent.click(toggleButton);
 
-    expect(screen.getByTitle('Show panel')).toBeInTheDocument();
+    const launcher = screen.getByTitle('Show panel');
+    expect(launcher).toBeInTheDocument();
+    expect(launcher).toHaveTextContent('Solar Explorer');
+    expect(launcher).toHaveTextContent('Earth');
     expect(screen.getByTestId('chevron-left')).toBeInTheDocument();
+
+    fireEvent.click(launcher);
+
+    expect(screen.getByTitle('Minimize panel')).toBeInTheDocument();
+  });
+
+  it('toggles expanded width on desktop and tablet layout', () => {
+    render(<HUD onDateChange={vi.fn()} />);
+
+    const expandButton = screen.getByTitle('Expand panel');
+    expect(expandButton).toBeInTheDocument();
+    expect(screen.getByTestId('maximize-2')).toBeInTheDocument();
+
+    fireEvent.click(expandButton);
+
+    expect(screen.getByTitle('Restore panel width')).toBeInTheDocument();
+    expect(screen.getByTestId('minimize-2')).toBeInTheDocument();
   });
 
   it('renders PlanetInfo by default when a planet is selected', () => {

@@ -1,16 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
-import { 
-  MissionState, 
-  MissionHealth, 
-  MissionEventsResponse, 
-  MissionMode,
-  MissionDataSource,
-  MissionPhase
-} from '@/lib/missionTypes';
-import { useMissionStore } from '@/store/missionStore';
+import { useState } from 'react';
+import { Rocket } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
+
 import {
   formatDistanceKm,
   formatEventETA,
@@ -21,6 +14,15 @@ import {
   getEarthDistanceDisplay,
   getRadialVelocity,
 } from '@/lib/missionFormatters';
+import {
+  MissionDataSource,
+  MissionMode,
+  MissionPhase,
+  type MissionEventsResponse,
+  type MissionHealth,
+  type MissionState,
+} from '@/lib/missionTypes';
+import { useMissionStore } from '@/store/missionStore';
 
 // --- Types ---
 
@@ -30,6 +32,18 @@ interface MissionInfoProps {
   missionEvents: MissionEventsResponse | null;
   isMobile?: boolean;
 }
+
+interface MetricItem {
+  label: string;
+  value: string;
+  unit?: string;
+  note?: string;
+  highlight?: boolean;
+}
+
+type BannerTone = 'red' | 'orange' | 'blue' | 'yellow';
+
+// --- Helpers ---
 
 function getPhaseLabel(phase: MissionPhase): string {
   const labels: Record<MissionPhase, string> = {
@@ -51,6 +65,15 @@ function getSourceLabel(source: MissionDataSource): string {
     [MissionDataSource.SPICE_PREDICTED]: 'SPICE Predicted State',
   };
   return labels[source] || source;
+}
+
+function getSourceDescription(source: MissionDataSource): string {
+  const descriptions: Record<MissionDataSource, string> = {
+    [MissionDataSource.AROW_LIVE]: "Live feed from NASA's Track Artemis API.",
+    [MissionDataSource.ARCHIVE]: 'High-fidelity historical records (OEM format).',
+    [MissionDataSource.SPICE_PREDICTED]: 'Simulated trajectory based on orbital mechanics.',
+  };
+  return descriptions[source] || 'Mission data source metadata unavailable.';
 }
 
 function formatAttitudeConfidence(confidence?: number): string {
@@ -78,9 +101,11 @@ export function MissionInfo({ missionState, missionHealth, missionEvents, isMobi
 
   if (!missionState) {
     return (
-      <div className="text-center py-8 px-4 text-white/50 animate-in fade-in duration-700">
-        <div className="text-5xl mb-4 opacity-50">🚀</div>
-        <p>Select Orion to view mission details</p>
+      <div className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-8 text-center text-white/50 animate-in fade-in duration-700">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-blue-300/20 bg-blue-500/10 text-blue-200">
+          <Rocket size={22} />
+        </div>
+        <p className="text-sm">Select Orion to view mission details</p>
       </div>
     );
   }
@@ -88,7 +113,6 @@ export function MissionInfo({ missionState, missionHealth, missionEvents, isMobi
   const isLive = missionState.mode === MissionMode.LIVE;
   const isPredicted = missionState.mode === MissionMode.PREDICTED;
   const isReplay = missionState.mode === MissionMode.REPLAY;
-  
   const freshnessSeconds = missionHealth?.dataAgeSeconds ?? missionState.stalenessSeconds;
   const isStale = isLive && freshnessSeconds > 60;
   const isFallback = missionHealth?.fallbackActive || false;
@@ -97,189 +121,34 @@ export function MissionInfo({ missionState, missionHealth, missionEvents, isMobi
   const nextEventEta = missionEvents?.nextEvent
     ? formatEventETA(missionEvents.nextEvent.timestamp, missionState.sourceTimestamp)
     : null;
+  const phaseLabel = getPhaseLabel(missionState.phase);
+  const sourceLabel = getSourceLabel(missionState.source);
+  const sourceDescription = getSourceDescription(missionState.source);
+  const attitudeSummary = `${formatAttitudeLabel(missionState.attitudeSource)} | ${formatAttitudeLabel(missionState.attitudeMode)} | ${missionState.referenceFrame ?? 'n/a'} | ${formatAttitudeConfidence(missionState.attitudeConfidence)}`;
 
-  if (isMobile) {
-    return (
-      <div 
-        className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-2 duration-500"
-        onPointerDown={(e) => e.stopPropagation()}
-        onPointerMove={(e) => e.stopPropagation()}
-        onPointerUp={(e) => e.stopPropagation()}
-        onWheel={(e) => e.stopPropagation()}
-        onTouchStart={(e) => e.stopPropagation()}
-        onTouchMove={(e) => e.stopPropagation()}
-      >
-        {/* Mobile Header: High Priority Context */}
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <h2 className="text-2xl font-bold text-white tracking-tight">Orion</h2>
-              <div className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-tighter border ${
-                isLive ? 'bg-green-500/20 text-green-400 border-green-500/40' :
-                isPredicted ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40' :
-                'bg-blue-500/20 text-blue-400 border-blue-500/40'
-              }`}>
-                {missionState.mode.toUpperCase()}
-              </div>
-            </div>
-            <div className="text-xs font-bold text-blue-400 uppercase tracking-widest flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_5px_#3b82f6]" />
-              {getPhaseLabel(missionState.phase)}
-            </div>
-          </div>
-          
-          <div className="flex flex-col items-end gap-2">
-            <button 
-              onClick={() => setAutoFocusEvents(!autoFocusEvents)}
-              className={`px-2 py-1 rounded border transition-all flex items-center gap-1.5 ${
-                autoFocusEvents 
-                  ? 'bg-indigo-500/20 border-indigo-400 text-indigo-300' 
-                  : 'bg-white/5 border-white/10 text-white/30'
-              }`}
-              title="Auto Focus major events"
-            >
-              <span className="text-[8px] font-black uppercase tracking-tighter">Auto Focus</span>
-              <div className={`w-4 h-2 rounded-full relative ${autoFocusEvents ? 'bg-indigo-500' : 'bg-zinc-700'}`}>
-                <div className={`absolute top-0.5 w-1 h-1 rounded-full bg-white transition-all ${autoFocusEvents ? 'left-2.5' : 'left-0.5'}`} />
-              </div>
-            </button>
-            <button 
-              onClick={() => setEstimatedAttitudeEnabled(!estimatedAttitudeEnabled)}
-              className={`px-2 py-1 rounded border transition-all flex items-center gap-1.5 ${
-                estimatedAttitudeEnabled
-                  ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300'
-                  : 'bg-white/5 border-white/10 text-white/30'
-              }`}
-              title="Estimated Attitude rotation"
-            >
-              <span className="text-[8px] font-black uppercase tracking-tighter">Attitude</span>
-              <div className={`w-4 h-2 rounded-full relative ${estimatedAttitudeEnabled ? 'bg-cyan-500' : 'bg-zinc-700'}`}>
-                <div className={`absolute top-0.5 w-1 h-1 rounded-full bg-white transition-all ${estimatedAttitudeEnabled ? 'left-2.5' : 'left-0.5'}`} />
-              </div>
-            </button>
-            <div className="flex flex-col items-end gap-0.5 text-right">
-              <span className="text-[9px] text-white/40 uppercase tracking-widest leading-none font-bold">MET</span>
-              <span className="text-lg font-mono font-bold text-blue-100 tabular-nums leading-none">
-                {formatMissionMET(missionState.missionElapsedTime)}
-              </span>
-            </div>
-          </div>
-        </div>
+  const missionMetrics: MetricItem[] = [
+    { label: 'Mission Elapsed Time', value: formatMissionMET(missionState.missionElapsedTime), highlight: isLive },
+    { label: 'Current Velocity', value: formatVelocityKmH(missionState.velocity), unit: 'km/h' },
+    { label: earthDistanceDisplay.label, value: earthDistanceDisplay.value, unit: earthDistanceDisplay.unit },
+    { label: 'Distance to Moon', value: formatDistanceKm(missionState.distances.moonKm), unit: 'km' },
+    { label: 'Signal Latency', value: formatSignalLatency(missionState.distances.earthKm), note: 'One-way' },
+    { label: 'Radial Velocity', value: radialVelocity.value, unit: radialVelocity.unit, note: radialVelocity.direction },
+  ];
 
-        {/* Primary Mobile Metrics */}
-        <div className="grid grid-cols-2 gap-2">
-          <StatCard
-            label={earthDistanceDisplay.label}
-            value={earthDistanceDisplay.value}
-            unit={earthDistanceDisplay.unit}
-            highlight
-          />
-          <StatCard
-            label="Distance to Moon"
-            value={formatDistanceKm(missionState.distances.moonKm)}
-            unit="km"
-            highlight
-          />
-        </div>
+  const sourceMetrics: MetricItem[] = [
+    { label: 'Current Phase', value: phaseLabel, highlight: true },
+    { label: 'Data Source', value: sourceLabel },
+    { label: 'Freshness', value: isLive ? `${Math.round(freshnessSeconds)} s old` : isReplay ? 'Replay state' : 'Predicted state' },
+    ...((missionState.attitudeSource || missionState.referenceFrame)
+      ? [{ label: 'Attitude', value: attitudeSummary }]
+      : []),
+    ...(typeof missionState.solarRangeKm === 'number'
+      ? [{ label: 'Solar Range', value: formatSolarRange(missionState.solarRangeKm) }]
+      : []),
+  ];
 
-        {/* Next Event - High Priority on Mobile */}
-        {missionEvents?.nextEvent && (
-          <div className="rounded-xl border border-blue-500/30 bg-blue-600/5 p-3 flex flex-col gap-1.5">
-            <div className="flex justify-between items-center">
-              <span className="text-[9px] font-black text-blue-400 tracking-tighter uppercase">Next Milestone</span>
-              {nextEventEta && (
-                <span className="text-[10px] font-bold text-blue-200 tabular-nums">{nextEventEta}</span>
-              )}
-            </div>
-            <div className="flex flex-col">
-              <span className="text-sm font-bold text-white leading-tight">{missionEvents.nextEvent.name}</span>
-              <span className="text-[11px] text-white/60 line-clamp-1">{missionEvents.nextEvent.description}</span>
-            </div>
-          </div>
-        )}
-
-        {/* Secondary Telemetry - Below the main mobile fold */}
-        <div className="flex flex-col gap-3 pt-2 border-t border-white/5">
-          <h3 className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Secondary Telemetry</h3>
-          <div className="grid grid-cols-2 gap-2 opacity-80">
-            <StatCard
-              label="Velocity"
-              value={formatVelocityKmH(missionState.velocity)}
-              unit="km/h"
-            />
-            <StatCard
-              label="Signal Delay"
-              value={formatSignalLatency(missionState.distances.earthKm)}
-              unit=""
-            />
-          </div>
-          
-          {/* Status & Source Section */}
-          <div className="bg-white/5 rounded-lg p-3 flex flex-col gap-2.5">
-            <div 
-              className="flex justify-between items-center relative"
-              onClick={() => setShowSourceInfo(!showSourceInfo)}
-            >
-              <span className="text-[10px] text-white/40 uppercase tracking-wider underline decoration-dotted decoration-white/20">Data Source</span>
-              <span className="text-[10px] text-white/70 font-bold">{getSourceLabel(missionState.source)}</span>
-              {showSourceInfo && (
-                <div className="absolute bottom-full right-0 mb-2 w-full p-2 bg-blue-900/90 backdrop-blur-md border border-blue-400/30 rounded text-[10px] text-white z-50">
-                  {missionState.source === MissionDataSource.AROW_LIVE && "Live feed from NASA's Track Artemis API."}
-                  {missionState.source === MissionDataSource.ARCHIVE && "High-fidelity historical records (OEM format)."}
-                  {missionState.source === MissionDataSource.SPICE_PREDICTED && "Simulated trajectory based on orbital mechanics."}
-                </div>
-              )}
-            </div>
-            
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-white/40 uppercase tracking-wider">Telemetry Freshness</span>
-              <span className="text-[10px] text-white/70 tabular-nums">
-                {isLive ? `${Math.round(freshnessSeconds)}s old` : 'Static / Replay'}
-              </span>
-            </div>
-
-            {(missionState.attitudeSource || missionState.referenceFrame) && (
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] text-white/40 uppercase tracking-wider">Attitude</span>
-                <span className="text-[10px] text-white/70 tabular-nums text-right max-w-[170px] truncate">
-                  {formatAttitudeLabel(missionState.attitudeSource)} | {formatAttitudeLabel(missionState.attitudeMode)} | {missionState.referenceFrame ?? 'n/a'} | {formatAttitudeConfidence(missionState.attitudeConfidence)}
-                </span>
-              </div>
-            )}
-
-            {missionState.lineOfSightStatus === 'lunar_occultation' && (
-              <div className="mt-1 flex items-center gap-1.5 px-2 py-1.5 rounded text-[10px] font-black uppercase bg-red-500/20 text-red-400 border border-red-500/30">
-                <span>📡</span>
-                <span>LOS - Lunar Occultation</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Observability Banners (Mobile) */}
-        {(isFallback || isStale) && (
-          <div className="flex flex-col gap-2">
-            {isFallback && (
-              <div className="bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg p-2 text-[10px] font-bold uppercase flex items-center gap-2">
-                <span>🚨</span>
-                <span>NASA API Unreachable</span>
-              </div>
-            )}
-            {isStale && !isFallback && (
-              <div className="bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-lg p-2 text-[10px] font-bold uppercase flex items-center gap-2">
-                <span>⚠️</span>
-                <span>Telemetry Lag Detected</span>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Desktop Layout
   return (
-    <div 
+    <div
       className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500"
       onPointerDown={(e) => e.stopPropagation()}
       onPointerMove={(e) => e.stopPropagation()}
@@ -288,216 +157,111 @@ export function MissionInfo({ missionState, missionHealth, missionEvents, isMobi
       onTouchStart={(e) => e.stopPropagation()}
       onTouchMove={(e) => e.stopPropagation()}
     >
-      {/* Observability Banners */}
       <div className="flex flex-col gap-2">
         {isFallback && (
-          <div className="bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg p-2 text-[10px] font-bold uppercase tracking-wide flex items-center gap-2">
-            <span className="text-xs">🚨</span>
-            <span>Fallback Mode Active: NASA Live API is currently unreachable.</span>
-          </div>
+          <StatusBanner tone="red" message="Fallback Mode Active: NASA Live API is currently unreachable." />
         )}
-        
+
         {isStale && !isFallback && (
-          <div className="bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-lg p-2 text-[10px] font-bold uppercase tracking-wide flex items-center gap-2">
-            <span className="text-xs">⚠️</span>
-            <span>Telemetry Lag: {Math.round(freshnessSeconds)}s since last update.</span>
-          </div>
+          <StatusBanner tone="orange" message={`Telemetry Lag: ${Math.round(freshnessSeconds)}s since last update.`} />
         )}
 
         {missionState.source === MissionDataSource.ARCHIVE && (
-          <div className="bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg p-2 text-[10px] font-bold uppercase tracking-wide flex items-center gap-2">
-            <span className="text-xs">📚</span>
-            <span>Archived Data: Viewing validated historical trajectory (OEM).</span>
-          </div>
+          <StatusBanner tone="blue" message="Archived Data: Viewing validated historical trajectory (OEM). High-fidelity historical records are active." />
         )}
 
         {missionState.source === MissionDataSource.SPICE_PREDICTED && !isFallback && (
-          <div className="bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded-lg p-2 text-[10px] font-bold uppercase tracking-wide flex items-center gap-2">
-            <span className="text-xs">🔮</span>
-            <span>Predicted State: Viewing mathematically derived trajectory.</span>
-          </div>
+          <StatusBanner tone="yellow" message="Predicted State: Viewing mathematically derived trajectory. Simulated trajectory based on orbital mechanics." />
         )}
       </div>
 
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3 mb-2">
-        <div className="flex items-center gap-3">
-          <div
-            className="w-12 h-12 rounded-full flex items-center justify-center text-2xl bg-gradient-to-br from-blue-600 to-blue-900 shadow-[0_0_20px_rgba(37,99,235,0.4)] border border-blue-400/30"
-          >
-            🚀
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-blue-300/25 bg-blue-500/[0.12] text-blue-100 shadow-[0_0_24px_rgba(37,99,235,0.28)]">
+            <Rocket size={22} />
           </div>
-          <div className="flex flex-col">
-            <h2 className="text-2xl font-semibold text-white m-0">
-              Orion
-            </h2>
-            <span className="text-sm text-white/50 uppercase tracking-widest">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h2 className="truncate text-2xl font-semibold leading-tight text-white">Orion</h2>
+              <ModePill isLive={isLive} isPredicted={isPredicted} mode={missionState.mode} />
+            </div>
+            <p className="mt-1 text-xs font-bold uppercase tracking-[0.16em] text-blue-200/60">
               Artemis II Mission
-            </span>
+            </p>
           </div>
-        </div>
-
-        <div className="flex flex-col items-end gap-2">
-          {/* Mode Badge */}
-          <div className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border ${
-            isLive ? 'bg-green-500/20 text-green-400 border-green-500/40' :
-            isPredicted ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40' :
-            'bg-blue-500/20 text-blue-400 border-blue-500/40'
-          }`}>
-            {missionState.mode.toUpperCase()}
-          </div>
-
-          {/* Auto Focus Toggle */}
-          <button 
-            onClick={() => setAutoFocusEvents(!autoFocusEvents)}
-            className={`flex items-center gap-2 px-2 py-1 rounded border text-[9px] font-bold uppercase transition-all ${
-              autoFocusEvents 
-                ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-400' 
-                : 'bg-white/5 border-white/10 text-white/30 hover:text-white/50'
-            }`}
-          >
-            <span>Auto Focus</span>
-            <div className={`w-5 h-2.5 rounded-full relative ${autoFocusEvents ? 'bg-indigo-500' : 'bg-zinc-700'}`}>
-              <div className={`absolute top-0.5 w-1.5 h-1.5 rounded-full bg-white transition-all ${autoFocusEvents ? 'left-3' : 'left-0.5'}`} />
-            </div>
-          </button>
-          <button 
-            onClick={() => setEstimatedAttitudeEnabled(!estimatedAttitudeEnabled)}
-            className={`flex items-center gap-2 px-2 py-1 rounded border text-[9px] font-bold uppercase transition-all ${
-              estimatedAttitudeEnabled
-                ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-400'
-                : 'bg-white/5 border-white/10 text-white/30 hover:text-white/50'
-            }`}
-          >
-            <span>Attitude</span>
-            <div className={`w-5 h-2.5 rounded-full relative ${estimatedAttitudeEnabled ? 'bg-cyan-500' : 'bg-zinc-700'}`}>
-              <div className={`absolute top-0.5 w-1.5 h-1.5 rounded-full bg-white transition-all ${estimatedAttitudeEnabled ? 'left-3' : 'left-0.5'}`} />
-            </div>
-          </button>
         </div>
       </div>
 
-      {/* Primary Mission Stats */}
-      <div className="grid grid-cols-2 gap-3">
-        <StatCard
-          label="Mission Elapsed Time"
-          value={formatMissionMET(missionState.missionElapsedTime)}
-          unit=""
-          highlight={isLive}
+      <div className="grid grid-cols-2 gap-2">
+        <ToggleButton
+          label="Auto Focus"
+          active={autoFocusEvents}
+          tone="indigo"
+          onClick={() => setAutoFocusEvents(!autoFocusEvents)}
         />
-        <StatCard
-          label="Current Velocity"
-          value={formatVelocityKmH(missionState.velocity)}
-          unit="km/h"
-        />
-        <StatCard
-          label={earthDistanceDisplay.label}
-          value={earthDistanceDisplay.value}
-          unit={earthDistanceDisplay.unit}
-        />
-        <StatCard
-          label="Distance to Moon"
-          value={formatDistanceKm(missionState.distances.moonKm)}
-          unit="km"
-        />
-        <StatCard
-          label="Signal Latency"
-          value={formatSignalLatency(missionState.distances.earthKm)}
-          unit=""
-          note="One-way"
-        />
-        <StatCard
-          label="Radial Velocity"
-          value={radialVelocity.value}
-          unit={radialVelocity.unit}
-          note={radialVelocity.direction}
+        <ToggleButton
+          label="Attitude"
+          active={estimatedAttitudeEnabled}
+          tone="cyan"
+          onClick={() => setEstimatedAttitudeEnabled(!estimatedAttitudeEnabled)}
         />
       </div>
 
-      {/* Mission Status / Phase Section */}
-      <div className="bg-white/5 rounded-lg p-3 border border-white/10 flex flex-col gap-2">
-        <div className="flex justify-between items-center">
-          <span className="text-[10px] text-white/50 uppercase tracking-wider">Current Phase</span>
-          <span className="text-xs font-bold text-blue-400">{getPhaseLabel(missionState.phase)}</span>
-        </div>
-        
-        <div 
-          className="flex justify-between items-center group cursor-help relative"
+      <MetricSection title={isMobile ? 'Mission Snapshot' : 'Mission Overview'} metrics={missionMetrics} />
+
+      <section className="rounded-lg border border-white/10 bg-white/[0.035]">
+        <button
+          type="button"
           onClick={() => setShowSourceInfo(!showSourceInfo)}
+          className="flex w-full items-center justify-between gap-3 border-b border-white/[0.08] px-3 py-2 text-left"
         >
-          <span className="text-[10px] text-white/50 uppercase tracking-wider underline decoration-dotted decoration-white/20">Data Source</span>
-          <span className="text-[10px] text-white/80 text-right max-w-[150px] truncate" title={getSourceLabel(missionState.source)}>
-            {getSourceLabel(missionState.source)}
+          <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/40">
+            Source and Health
           </span>
-          
-          {/* Tooltip-like explainer for Source - supports hover AND click for mobile */}
-          <div className={`absolute bottom-full right-0 mb-2 w-48 p-2 bg-black/90 border border-white/10 rounded shadow-xl text-[9px] text-white/70 transition-opacity z-50 pointer-events-none ${
-            showSourceInfo ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-          }`}>
-            {missionState.source === MissionDataSource.AROW_LIVE && "Live feed from NASA's Track Artemis API."}
-            {missionState.source === MissionDataSource.ARCHIVE && "High-fidelity historical records (OEM format)."}
-            {missionState.source === MissionDataSource.SPICE_PREDICTED && "Simulated trajectory based on orbital mechanics."}
-          </div>
-        </div>
-
-        <div className="flex justify-between items-center">
-          <span className="text-[10px] text-white/50 uppercase tracking-wider">Freshness</span>
-          <span className="text-[10px] text-white/70 tabular-nums">
-            {isLive ? `${Math.round(freshnessSeconds)} s old` : isReplay ? 'Replay state' : 'Predicted state'}
+          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/35">
+            {showSourceInfo ? 'Hide' : 'Details'}
           </span>
-        </div>
-
-        {(missionState.attitudeSource || missionState.referenceFrame) && (
-          <div className="flex justify-between items-center">
-            <span className="text-[10px] text-white/50 uppercase tracking-wider">Attitude</span>
-            <span className="text-[10px] text-white/70 tabular-nums text-right max-w-[190px] truncate">
-              {formatAttitudeLabel(missionState.attitudeSource)} | {formatAttitudeLabel(missionState.attitudeMode)} | {missionState.referenceFrame ?? 'n/a'} | {formatAttitudeConfidence(missionState.attitudeConfidence)}
-            </span>
+        </button>
+        {showSourceInfo && (
+          <div className="border-b border-white/[0.08] px-3 py-2 text-[11px] leading-relaxed text-white/55">
+            {sourceDescription}
           </div>
         )}
-
-        {typeof missionState.solarRangeKm === 'number' && (
-          <div className="flex justify-between items-center">
-            <span className="text-[10px] text-white/50 uppercase tracking-wider">Solar Range</span>
-            <span className="text-[10px] text-white/70 tabular-nums">
-              {formatSolarRange(missionState.solarRangeKm)}
-            </span>
-          </div>
-        )}
-
+        <div className="divide-y divide-white/[0.06]">
+          {sourceMetrics.map((metric) => (
+            <MetricRow key={`source-${metric.label}`} metric={metric} />
+          ))}
+        </div>
         {missionState.lineOfSightStatus === 'lunar_occultation' && (
-          <div className="mt-1 flex items-center gap-1.5 px-2 py-1 rounded text-[9px] font-bold uppercase bg-red-500/20 text-red-400 border border-red-500/30">
-            <span>📡</span>
-            <span>LOS - Lunar Occultation</span>
+          <div className="mx-3 mb-3 rounded-lg border border-red-400/25 bg-red-500/10 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-red-300">
+            LOS - Lunar Occultation
           </div>
         )}
-      </div>
+      </section>
 
-      {/* Next Event Section */}
       {missionEvents?.nextEvent && (
-        <div className="relative overflow-hidden group rounded-xl border border-indigo-500/30 bg-gradient-to-r from-indigo-900/20 to-purple-900/20 p-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-bold text-indigo-300 tracking-wide uppercase">
+        <section className="rounded-lg border border-indigo-400/25 bg-indigo-500/10 px-3 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-200/75">
               Upcoming Event
             </span>
-            <span className="text-sm font-semibold text-white">
-              {missionEvents.nextEvent.name}
-            </span>
-            <span className="text-[11px] text-white/60">
-              {missionEvents.nextEvent.description}
-            </span>
             {nextEventEta && (
-              <span className="text-[10px] text-indigo-200/80 uppercase tracking-wide tabular-nums">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-indigo-100/65 tabular-nums">
                 {nextEventEta}
               </span>
             )}
           </div>
-        </div>
+          <h3 className="mt-2 text-sm font-semibold leading-tight text-white">
+            {missionEvents.nextEvent.name}
+          </h3>
+          <p className="mt-1 text-[11px] leading-relaxed text-white/55">
+            {missionEvents.nextEvent.description}
+          </p>
+        </section>
       )}
 
-      {/* Footer Info */}
-      <div className="p-3 bg-white/5 border border-white/5 rounded-lg">
-        <p className="text-[10px] text-white/40 italic text-center">
+      <div className="rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2">
+        <p className="text-center text-[10px] leading-relaxed text-white/35">
           Geometric calculations Earth-relative in ECLIPJ2000 frame.
         </p>
       </div>
@@ -505,45 +269,106 @@ export function MissionInfo({ missionState, missionHealth, missionEvents, isMobi
   );
 }
 
-function StatCard({
+function ModePill({ isLive, isPredicted, mode }: { isLive: boolean; isPredicted: boolean; mode: MissionMode }) {
+  const className = isLive
+    ? 'border-green-400/30 bg-green-500/10 text-green-300'
+    : isPredicted
+      ? 'border-yellow-400/30 bg-yellow-500/10 text-yellow-300'
+      : 'border-blue-400/30 bg-blue-500/10 text-blue-300';
+
+  return (
+    <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] ${className}`}>
+      {mode.toUpperCase()}
+    </span>
+  );
+}
+
+function ToggleButton({
   label,
-  value,
-  unit,
-  highlight = false,
-  note,
+  active,
+  tone,
+  onClick,
 }: {
   label: string;
-  value: string;
-  unit: string;
-  highlight?: boolean;
-  note?: string;
+  active: boolean;
+  tone: 'indigo' | 'cyan';
+  onClick: () => void;
 }) {
+  const activeClass = tone === 'indigo'
+    ? 'border-indigo-300/45 bg-indigo-500/15 text-indigo-100'
+    : 'border-cyan-300/45 bg-cyan-500/15 text-cyan-100';
+
   return (
-    <div className={`rounded-lg p-3 border transition-colors flex flex-col justify-between min-w-0 ${
-      highlight 
-        ? 'bg-blue-500/10 border-blue-500/30 hover:bg-blue-500/20' 
-        : 'bg-white/5 border-white/10 hover:bg-white/10'
-    }`}>
-      <div className={`text-[10px] mb-1.5 uppercase tracking-wider leading-tight transition-colors ${
-        highlight ? 'text-blue-300' : 'text-white/50'
-      }`}>
-        {label}
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex h-10 items-center justify-between gap-2 rounded-lg border px-3 text-[10px] font-bold uppercase tracking-[0.1em] transition-colors ${
+        active
+          ? activeClass
+          : 'border-white/10 bg-white/[0.035] text-white/35 hover:border-white/20 hover:text-white/60'
+      }`}
+    >
+      <span>{label}</span>
+      <span className={`relative h-3 w-6 rounded-full ${active ? 'bg-white/35' : 'bg-white/10'}`}>
+        <span className={`absolute top-0.5 h-2 w-2 rounded-full bg-white transition-all ${active ? 'left-3.5' : 'left-0.5'}`} />
+      </span>
+    </button>
+  );
+}
+
+function StatusBanner({ tone, message }: { tone: BannerTone; message: string }) {
+  const toneClass: Record<BannerTone, string> = {
+    red: 'border-red-400/25 bg-red-500/10 text-red-300',
+    orange: 'border-orange-400/25 bg-orange-500/10 text-orange-300',
+    blue: 'border-blue-400/25 bg-blue-500/10 text-blue-300',
+    yellow: 'border-yellow-400/25 bg-yellow-500/10 text-yellow-300',
+  };
+
+  return (
+    <div className={`rounded-lg border px-3 py-2 text-[10px] font-bold uppercase leading-relaxed tracking-[0.1em] ${toneClass[tone]}`}>
+      {message}
+    </div>
+  );
+}
+
+function MetricSection({ title, metrics }: { title: string; metrics: MetricItem[] }) {
+  return (
+    <section className="rounded-lg border border-white/10 bg-white/[0.035]">
+      <h3 className="border-b border-white/[0.08] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-white/40">
+        {title}
+      </h3>
+      <div className="divide-y divide-white/[0.06]">
+        {metrics.map((metric) => (
+          <MetricRow key={`${title}-${metric.label}`} metric={metric} />
+        ))}
       </div>
-      <div className="flex items-baseline gap-1 flex-wrap min-w-0">
-        <span className={`text-base font-semibold truncate tabular-nums ${highlight ? 'text-blue-100' : 'text-white'}`}>
-          {value}
+    </section>
+  );
+}
+
+function MetricRow({ metric }: { metric: MetricItem }) {
+  return (
+    <div className="grid min-h-12 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5">
+      <div className="min-w-0">
+        <div className={`text-[10px] font-bold uppercase tracking-[0.11em] ${metric.highlight ? 'text-blue-200/80' : 'text-white/[0.42]'}`}>
+          {metric.label}
+        </div>
+        {metric.note && (
+          <div className="mt-1 text-[10px] uppercase tracking-wide text-white/35">
+            {metric.note}
+          </div>
+        )}
+      </div>
+      <div className="min-w-0 text-right">
+        <span className={`break-words text-sm font-semibold tabular-nums leading-tight ${metric.highlight ? 'text-blue-100' : 'text-white'}`}>
+          {metric.value}
         </span>
-        {unit && (
-          <span className={`text-[10px] uppercase tracking-tighter shrink-0 ${highlight ? 'text-blue-400' : 'text-white/50'}`}>
-            {unit}
+        {metric.unit && (
+          <span className={`ml-1 text-[10px] uppercase tracking-wide ${metric.highlight ? 'text-blue-200/60' : 'text-white/45'}`}>
+            {metric.unit}
           </span>
         )}
       </div>
-      {note && (
-        <div className={`mt-1 text-[10px] uppercase tracking-wide ${highlight ? 'text-blue-300/80' : 'text-white/40'}`}>
-          {note}
-        </div>
-      )}
     </div>
   );
 }

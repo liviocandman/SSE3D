@@ -11,7 +11,7 @@ import { useSolarStore } from "@/store/solarStore";
 import { useMissionStore } from "@/store/missionStore";
 import { useUIStore } from "@/store/uiStore";
 import { useShallow } from "zustand/react/shallow";
-import { ChevronLeft, ChevronRight, Heart, Rocket } from "lucide-react";
+import { ChevronLeft, ChevronRight, Heart, Maximize2, Minimize2, Rocket } from "lucide-react";
 import { useFavorites } from "@/hooks/useFavorites";
 import { TimeTravelControls } from "./TimeTravelControls";
 
@@ -99,11 +99,17 @@ export function HUD({
   // Start expanded if planet or mission is already selected, otherwise collapsed
   const [isExpanded, setIsExpanded] = useState(() => !!selectedPlanet || !!selectedMissionTargetId);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [isDesktopExpanded, setIsDesktopExpanded] = useState(false);
   const missionVehicleId = missionState?.vehicleId ?? null;
   const isMissionSelected = !!missionVehicleId && selectedMissionTargetId === missionVehicleId;
 
   const toggleExpand = () => {
     setIsExpanded(!isExpanded);
+  };
+
+  const toggleDesktopExpanded = () => {
+    setIsMinimized(false);
+    setIsDesktopExpanded((prev) => !prev);
   };
 
   // Always reopen the desktop drawer when a different planet or mission is selected.
@@ -132,10 +138,21 @@ export function HUD({
     : selectedPlanet
       ? getPlanetAccentClass(selectedPlanet.bodyId)
       : "border-white/10 shadow-black/40";
+  const inspectorTitle = isMissionSelected
+    ? "Artemis II"
+    : selectedPlanet?.englishName ?? "Solar Explorer";
+  const inspectorContext = isMissionSelected
+    ? "Mission Control"
+    : selectedPlanet
+      ? "Solar Explorer"
+      : "Inspector";
+  const desktopPanelWidthClass = isDesktopExpanded
+    ? "w-[min(44rem,calc(100vw-1.5rem))] md:w-[min(38rem,calc(100vw-1.5rem))] lg:w-[42rem] xl:w-[46rem]"
+    : "w-[min(24rem,calc(100vw-1.5rem))] md:w-[22rem] lg:w-[24rem] xl:w-[25rem]";
 
   const hudContent = (
-    <div className="space-y-6 pt-2">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 pt-1">
+      <div className="flex items-center justify-between md:hidden">
         <div className="flex items-center gap-2">
           <button
             onClick={openFavorites}
@@ -209,9 +226,9 @@ export function HUD({
     return (
       <>
         <div
-          className={`fixed bottom-0 left-0 right-0 glass-panel rounded-t-2xl z-[100] transition-all duration-500 ease-in-out hardware-accel ${accentClass}`}
+          className={`fixed bottom-0 left-0 right-0 z-[100] flex flex-col overflow-hidden rounded-t-xl border-t border-white/15 bg-black/70 shadow-2xl shadow-black/60 backdrop-blur-2xl transition-all duration-500 ease-in-out hardware-accel ${accentClass}`}
           style={{ 
-            height: isExpanded ? "55vh" : "max(64px, calc(64px + env(safe-area-inset-bottom)))",
+            height: isExpanded ? "min(72dvh, calc(100dvh - 88px))" : "max(68px, calc(68px + env(safe-area-inset-bottom)))",
             paddingBottom: isExpanded ? "env(safe-area-inset-bottom)" : "0"
           }}
           onPointerDown={(e) => e.stopPropagation()}
@@ -223,30 +240,32 @@ export function HUD({
         >
           {/* Drag handle area */}
           <div
-            className="w-full h-8 flex items-center justify-center cursor-pointer"
+            className="flex h-8 w-full cursor-pointer items-center justify-center"
             onClick={toggleExpand}
           >
-            <div className="w-10 h-1 bg-white/30 rounded-full" />
+            <div className="h-1 w-10 rounded-full bg-white/30" />
           </div>
 
           {/* Collapsed preview */}
           {!isExpanded && (
             <div
-              className="px-6 pb-4 flex items-center justify-between cursor-pointer"
+              className="flex cursor-pointer items-center justify-between px-5 pb-4"
               onClick={toggleExpand}
             >
-              <span className="font-semibold text-lg tracking-tight">
-                {isMissionSelected ? "Artemis II" : selectedPlanet ? selectedPlanet.englishName : "Solar Explorer"}
-              </span>
-              <span className="text-xs font-medium text-white/50 uppercase tracking-widest">
-                Tap to explore
-              </span>
+              <div className="min-w-0">
+                <span className="block truncate text-base font-semibold tracking-tight">
+                  {isMissionSelected ? "Artemis II" : selectedPlanet ? selectedPlanet.englishName : "Solar Explorer"}
+                </span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">
+                  Tap to explore
+                </span>
+              </div>
             </div>
           )}
 
           {/* Expanded content */}
           <div
-            className={`px-6 pb-8 overflow-y-auto h-[calc(55vh-32px)] transition-opacity duration-300 ${isExpanded ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+            className={`flex-1 overflow-y-auto px-4 pb-6 transition-opacity duration-300 sm:px-6 ${isExpanded ? "opacity-100" : "opacity-0 pointer-events-none"}`}
           >
             {hudContent}
           </div>
@@ -266,35 +285,67 @@ export function HUD({
   // Desktop sidebar
   return (
     <>
+      {isMinimized && (
+        <button
+          type="button"
+          onClick={() => setIsMinimized(false)}
+          className={`fixed right-3 top-3 z-[120] flex max-w-[min(18rem,calc(100vw-1.5rem))] items-center gap-3 rounded-xl border bg-black/[0.68] px-3 py-2 text-left shadow-2xl shadow-black/50 backdrop-blur-2xl transition-colors hover:bg-black/[0.78] hover:text-white ${accentClass}`}
+          title="Show panel"
+          aria-label={`Show ${inspectorTitle} panel`}
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.05] text-white/70">
+            <ChevronLeft size={16} />
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-[10px] font-bold uppercase tracking-[0.16em] text-white/42">
+              {inspectorContext}
+            </span>
+            <span className="block truncate text-sm font-semibold leading-tight text-white/85">
+              {inspectorTitle}
+            </span>
+          </span>
+        </button>
+      )}
+
       <motion.div
         initial={false}
         animate={{
-          x: isMinimized ? "calc(100% - 48px)" : 0,
-          opacity: (selectedPlanet || isMissionSelected) ? 1 : 0.95,
+          x: isMinimized ? "calc(100% + 1rem)" : 0,
+          opacity: isMinimized ? 0 : (selectedPlanet || isMissionSelected) ? 1 : 0.95,
         }}
         transition={{ type: "spring", stiffness: 320, damping: 34 }}
-        className={`fixed top-4 right-0 bottom-4 w-80 glass-panel rounded-l-2xl z-100 flex flex-col overflow-hidden hardware-accel border-l-2 ${accentClass}`}
+        className={`fixed bottom-3 right-3 top-3 z-[100] flex ${desktopPanelWidthClass} flex-col overflow-hidden rounded-xl border border-white/10 bg-black/[0.62] shadow-2xl shadow-black/60 backdrop-blur-2xl hardware-accel ${isMinimized ? "pointer-events-none" : ""} ${accentClass}`}
       >
-        {/* Left control tab for the desktop drawer */}
-        <button
-          onClick={() => setIsMinimized((prev) => !prev)}
-          className="absolute left-0 top-1/2 z-[110] -translate-y-1/2 flex h-12 w-9 items-center justify-center rounded-r-xl border border-white/20 border-l-0 bg-black/55 backdrop-blur-xl text-white/80 transition-colors hover:bg-black/70 hover:text-white"
-          title={isMinimized ? "Show panel" : "Hide panel"}
-          aria-label={isMinimized ? "Show panel" : "Hide panel"}
-        >
-          {isMinimized ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
-        </button>
-
         {/* Header */}
-        <div className="p-6 pb-4 border-b border-white/10 flex items-center justify-between">
-          <h1 className="text-sm font-bold text-white/70 tracking-[0.15em] uppercase">
+        <div className="flex items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
+          <h1 className="min-w-0 text-xs font-bold uppercase tracking-[0.18em] text-white/60">
             {isMissionSelected ? "Mission Control" : "Solar Explorer"}
           </h1>
           <div className="flex items-center gap-1.5">
+            {/* Desktop/tablet minimize toggle */}
+            <button
+              onClick={() => setIsMinimized(true)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-zinc-900/50 text-zinc-300 transition-colors hover:border-white/25 hover:bg-white/[0.08] hover:text-white"
+              title="Minimize panel"
+              aria-label="Minimize panel"
+            >
+              <ChevronRight size={14} />
+            </button>
+
+            {/* Desktop/tablet width toggle */}
+            <button
+              onClick={toggleDesktopExpanded}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-zinc-900/50 text-zinc-300 transition-colors hover:border-blue-300/40 hover:bg-blue-500/15 hover:text-blue-100"
+              title={isDesktopExpanded ? "Restore panel width" : "Expand panel"}
+              aria-label={isDesktopExpanded ? "Restore panel width" : "Expand panel"}
+            >
+              {isDesktopExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </button>
+
             {/* Favorites Toggle */}
             <button
               onClick={openFavorites}
-              className="relative p-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-md transition-colors group"
+              className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-400/25 bg-red-500/10 text-zinc-300 transition-colors hover:border-red-300/50 hover:bg-red-500/20 hover:text-white"
               title="Favoritos"
             >
               <Heart className={`h-3.5 w-3.5 ${favorites.length > 0 ? 'text-red-500 fill-red-500' : 'text-zinc-400'}`} />
@@ -308,7 +359,7 @@ export function HUD({
             {/* Mission Toggle */}
             <button
               onClick={handleMissionToggle}
-              className={`p-1.5 border rounded-md transition-all ${
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-all ${
                 isMissionSelected 
                   ? 'bg-blue-600 border-blue-400 text-white shadow-[0_0_10px_rgba(37,99,235,0.5)]' 
                   : 'bg-zinc-800/50 border-white/10 text-zinc-400 hover:bg-zinc-700/50 hover:border-white/20'
@@ -322,7 +373,7 @@ export function HUD({
             {/* Scale Toggle Button */}
             <button
               onClick={toggleViewMode}
-              className="inline-flex items-center gap-1 px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-md text-[10px] font-bold text-blue-400 uppercase transition-colors"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-blue-400/25 bg-blue-500/10 px-2 text-[10px] font-bold uppercase text-blue-300 transition-colors hover:border-blue-300/50 hover:bg-blue-500/20 hover:text-blue-100"
               title={
                 viewMode === "didactic"
                   ? "Switch to realistic scale"
@@ -333,7 +384,7 @@ export function HUD({
               <span>{viewMode === "didactic" ? "Didactic" : "Realistic"}</span>
             </button>
             {isFallback && (
-              <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded-md text-[10px] font-bold text-yellow-500 uppercase">
+              <div className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-yellow-400/25 bg-yellow-500/10 px-2 text-[10px] font-bold uppercase text-yellow-300">
                 <span>⚠️</span>
                 <span>Offline</span>
               </div>
@@ -342,7 +393,7 @@ export function HUD({
         </div>
 
         {/* Content */}
-        <div className="flex-1 p-6 overflow-y-auto scrollbar-hide">
+        <div className="flex-1 overflow-y-auto px-5 py-5 inspector-scrollbar">
           {hudContent}
         </div>
 
