@@ -65,3 +65,21 @@ sse3d-api/kernels/**
 
 # api cache
 sse3d-api/.cache/
+
+# Versioned asset recovery outputs (Basis remains tracked)
+.ruff_cache/
+.cache/
+*.zip
+*.part
+public/textures/.staging-*/
+public/textures/.install.lock/
+!public/
+public/*
+!public/basis/
+public/basis/*
+!public/basis/basis_transcoder.js
+!public/basis/basis_transcoder.wasm
+
+# Non-secret configuration templates
+!.env.local.example
+!sse3d-api/.env.example

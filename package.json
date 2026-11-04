@@ -15,7 +15,11 @@
     "setup": "node scripts/setup-assets-tiered.js",
     "setup:force": "node -e \"require('fs').rmSync('public/textures', { recursive: true, force: true })\" && node scripts/setup-assets-tiered.js",
     "upload:textures": "node --env-file=.env.local scripts/upload-textures-s3.mjs",
-    "upload:models": "node --env-file=.env.local scripts/upload-models-s3.mjs"
+    "upload:models": "node --env-file=.env.local scripts/upload-models-s3.mjs",
+    "assets:prepare": "node scripts/prepare-textures.mjs",
+    "assets:verify": "node scripts/prepare-textures.mjs --verify-only",
+    "assets:test": "node --test scripts/assets/*.test.mjs",
+    "prebuild": "npm run assets:prepare"
   },
   "dependencies": {
     "@aws-sdk/lib-storage": "^3.1022.0",
@@ -32,11 +36,13 @@
     "lucide-react": "^0.446.0",
     "next": "^16.1.6",
     "next-auth": "5.0.0-beta.30",
+    "proper-lockfile": "4.1.2",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.5.2",
     "three": "^0.182.0",
+    "yauzl": "3.4.0",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
