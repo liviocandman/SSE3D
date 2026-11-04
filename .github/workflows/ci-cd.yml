@@ -48,12 +48,17 @@ jobs:
       - name: Run Vitest Tests
         run: npm run test
 
+      - name: Asset installer fixtures (offline)
+        run: npm run assets:test
+
       - name: Test Build
         run: npm run build
         env:
           NEXT_PUBLIC_API_URL: "https://sse3d-api.fly.dev"
           PYTHON_API_URL: "https://sse3d-api.fly.dev"
-          NEXT_PUBLIC_TEXTURE_CDN_URL: "https://d31jkr7a4h5bp3.cloudfront.net"
+
+      - name: Verify built static assets and Basis
+        run: npm run assets:verify
 
   # ==========================================
   # JOB 2: Validate Backend (FastAPI / Python)

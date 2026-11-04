@@ -1,0 +1,33 @@
+name: Pinned kernel integration (manual)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  kernels:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: sse3d-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Empty volume installation from pinned public Release
+        run: python scripts/fetch_kernels.py --ensure --kernel-root "$RUNNER_TEMP/kernel-volume"
+      - name: Verify offline reuse
+        run: python scripts/fetch_kernels.py --verify-only --kernel-root "$RUNNER_TEMP/kernel-volume"
+      - name: Runtime/API science and serialization
+        run: python scripts/check_kernel_runtime.py --kernel-root "$RUNNER_TEMP/kernel-volume" --output "$RUNNER_TEMP/kernel-runtime.json"
+      - name: Prove Docker context excludes kernels
+        run: |
+          docker build -t sse3d-kernels-check .
+          docker run --rm --entrypoint python sse3d-kernels-check -c "from pathlib import Path; assert not Path('/app/kernels').exists(); assert Path('/app/assets/kernels.lock.json').is_file()"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kernel-runtime
+          path: ${{ runner.temp }}/kernel-runtime.json
