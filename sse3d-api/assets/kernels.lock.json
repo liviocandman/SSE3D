@@ -1,0 +1,51 @@
+{
+  "current": {
+    "archive": {
+      "bytes": 754352533,
+      "sha256": "c743f07f9eaa182bd723f927492aebfd47e87adc4dc7d3b596d50bbb77bf3420",
+      "url": "https://github.com/liviocandman/SSE3D/releases/download/kernels-2026-11-04.1/kernels-2026-11-04.1.zip"
+    },
+    "manifest": {
+      "bytes": 36247,
+      "sha256": "87667c6b6ede5b1265a9a20d02de22a9866ef8f4bd8c80a6591b56f3b1cae440",
+      "url": "https://github.com/liviocandman/SSE3D/releases/download/kernels-2026-11-04.1/kernels-2026-11-04.1.manifest.json"
+    },
+    "version": "kernels-2026-11-04.1"
+  },
+  "kind": "kernels",
+  "requiredBodyIds": [
+    "10",
+    "199",
+    "299",
+    "399",
+    "499",
+    "599",
+    "699",
+    "799",
+    "899",
+    "999",
+    "301",
+    "401",
+    "402",
+    "501",
+    "502",
+    "503",
+    "504",
+    "601",
+    "602",
+    "603",
+    "604",
+    "605",
+    "606",
+    "608",
+    "701",
+    "702",
+    "703",
+    "704",
+    "705",
+    "801",
+    "901"
+  ],
+  "schemaVersion": 1,
+  "validationProfile": "sse3d-spice-v1"
+}

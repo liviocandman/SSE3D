@@ -1,0 +1,30 @@
+{
+  "basis": [
+    {
+      "bytes": 57529,
+      "path": "public/basis/basis_transcoder.js",
+      "sha256": "8478b5b6d6b74e7d3082b89f6417321d8d1dc0307f2b30d4484bb11b441696a1"
+    },
+    {
+      "bytes": 527333,
+      "path": "public/basis/basis_transcoder.wasm",
+      "sha256": "6cf17dc889352c42e9acf8897107978d127005fe3386c36a0e3845e27967630a"
+    }
+  ],
+  "current": {
+    "archive": {
+      "bytes": 119124466,
+      "sha256": "22649c18d6b13607bf125264a3910ab045797afb572c51bc5af3f256671f110f",
+      "url": "https://github.com/liviocandman/SSE3D/releases/download/textures-2026-11-04.1/textures-2026-11-04.1.zip"
+    },
+    "manifest": {
+      "bytes": 20929,
+      "sha256": "72585aff318ec944d9b1417f50a249c55bc64f32ae53a3ee86d3410cb957dd2e",
+      "url": "https://github.com/liviocandman/SSE3D/releases/download/textures-2026-11-04.1/textures-2026-11-04.1.manifest.json"
+    },
+    "version": "textures-2026-11-04.1"
+  },
+  "kind": "textures",
+  "retained": [],
+  "schemaVersion": 1
+}

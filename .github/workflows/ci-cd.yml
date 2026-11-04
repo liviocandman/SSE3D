@@ -48,12 +48,17 @@ jobs:
       - name: Run Vitest Tests
         run: npm run test
 
+      - name: Asset installer fixtures (offline)
+        run: npm run assets:test
+
       - name: Test Build
         run: npm run build
         env:
           NEXT_PUBLIC_API_URL: "https://sse3d-api.fly.dev"
           PYTHON_API_URL: "https://sse3d-api.fly.dev"
-          NEXT_PUBLIC_TEXTURE_CDN_URL: "https://d31jkr7a4h5bp3.cloudfront.net"
+
+      - name: Verify built static assets and Basis
+        run: npm run assets:verify
 
   # ==========================================
   # JOB 2: Validate Backend (FastAPI / Python)
@@ -73,16 +78,17 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
-          cache-dependency-path: './sse3d-api/requirements.txt'
+          cache-dependency-path: |
+            sse3d-api/requirements.txt
+            sse3d-api/requirements-dev.txt
 
       - name: Install dependencies (Python)
         run: |
           python -m pip install --upgrade pip
-          pip install ruff
-          pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
 
       - name: Run Code Linter (Ruff)
-        run: ruff check .
+        run: python -m ruff check .
 
       - name: Run Tests (Pytest)
         run: pytest tests/ -v

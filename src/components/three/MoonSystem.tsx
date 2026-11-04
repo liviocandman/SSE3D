@@ -14,6 +14,7 @@ import {
   getTexturePath,
   PLANET_MOONS,
   type TextureTier,
+  getGenericMoonTexture,
 } from '@/lib/textureConfig';
 import {
   getMoonOrbitScale,
@@ -176,7 +177,7 @@ function MoonMesh({
     )
     : 1;
 
-  const texture = useLoader(SingletonKTX2Loader as unknown as typeof THREE.Loader, textureUrl || '/textures/generic_moon_mid.ktx2', () => {
+  const texture = useLoader(SingletonKTX2Loader as unknown as typeof THREE.Loader, textureUrl || getGenericMoonTexture('mid'), () => {
     getSharedKTX2Loader(gl);
   }) as THREE.Texture;
   const colorTexture = useMemo(() => {

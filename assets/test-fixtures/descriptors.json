@@ -1,0 +1,321 @@
+[
+  {
+    "name": "valid",
+    "value": {
+      "version": "test-1",
+      "archive": {
+        "url": "https://example.org/a.zip",
+        "bytes": 42,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "manifest": {
+        "url": "https://example.org/m.json",
+        "bytes": 42,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "version uppercase",
+    "value": {
+      "version": "Bad",
+      "archive": {
+        "url": "https://example.org/a.zip",
+        "bytes": 42,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "manifest": {
+        "url": "https://example.org/m.json",
+        "bytes": 42,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "version traversal",
+    "value": {
+      "version": "../bad",
+      "archive": {
+        "url": "https://example.org/a.zip",
+        "bytes": 42,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "manifest": {
+        "url": "https://example.org/m.json",
+        "bytes": 42,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "version long",
+    "value": {
+      "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "archive": {
+        "url": "https://example.org/a.zip",
+        "bytes": 42,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "manifest": {
+        "url": "https://example.org/m.json",
+        "bytes": 42,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "missing descriptor",
+    "value": {
+      "version": "test-1",
+      "archive": null,
+      "manifest": {
+        "url": "https://example.org/m.json",
+        "bytes": 42,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "HTTP",
+    "value": {
+      "version": "test-1",
+      "archive": {
+        "url": "http://example.org/a",
+        "bytes": 42,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "manifest": {
+        "url": "https://example.org/m.json",
+        "bytes": 42,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "credentials",
+    "value": {
+      "version": "test-1",
+      "archive": {
+        "url": "https://example.org/a.zip",
+        "bytes": 42,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "manifest": {
+        "url": "https://name:password@example.org/m",
+        "bytes": 42,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "fragment",
+    "value": {
+      "version": "test-1",
+      "archive": {
+        "url": "https://example.org/a#f",
+        "bytes": 42,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "manifest": {
+        "url": "https://example.org/m.json",
+        "bytes": 42,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "zero bytes",
+    "value": {
+      "version": "test-1",
+      "archive": {
+        "url": "https://example.org/a.zip",
+        "bytes": 0,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "manifest": {
+        "url": "https://example.org/m.json",
+        "bytes": 42,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "negative",
+    "value": {
+      "version": "test-1",
+      "archive": {
+        "url": "https://example.org/a.zip",
+        "bytes": 42,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "manifest": {
+        "url": "https://example.org/m.json",
+        "bytes": -1,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "fraction",
+    "value": {
+      "version": "test-1",
+      "archive": {
+        "url": "https://example.org/a.zip",
+        "bytes": 1.5,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "manifest": {
+        "url": "https://example.org/m.json",
+        "bytes": 42,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "boolean",
+    "value": {
+      "version": "test-1",
+      "archive": {
+        "url": "https://example.org/a.zip",
+        "bytes": 42,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "manifest": {
+        "url": "https://example.org/m.json",
+        "bytes": true,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "unsafe integer",
+    "value": {
+      "version": "test-1",
+      "archive": {
+        "url": "https://example.org/a.zip",
+        "bytes": 9007199254740992,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "manifest": {
+        "url": "https://example.org/m.json",
+        "bytes": 42,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "uppercase sha",
+    "value": {
+      "version": "test-1",
+      "archive": {
+        "url": "https://example.org/a.zip",
+        "bytes": 42,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "manifest": {
+        "url": "https://example.org/m.json",
+        "bytes": 42,
+        "sha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "short sha",
+    "value": {
+      "version": "test-1",
+      "archive": {
+        "url": "https://example.org/a.zip",
+        "bytes": 42,
+        "sha256": "abc"
+      },
+      "manifest": {
+        "url": "https://example.org/m.json",
+        "bytes": 42,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "too big manifest",
+    "value": {
+      "version": "test-1",
+      "archive": {
+        "url": "https://example.org/a.zip",
+        "bytes": 42,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "manifest": {
+        "url": "https://example.org/m.json",
+        "bytes": 3145728,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "too big archive",
+    "value": {
+      "version": "test-1",
+      "archive": {
+        "url": "https://example.org/a.zip",
+        "bytes": 5368709120,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "manifest": {
+        "url": "https://example.org/m.json",
+        "bytes": 42,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "trailing newline version",
+    "value": {
+      "version": "test-1\n",
+      "archive": {
+        "url": "https://example.org/a.zip",
+        "bytes": 42,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "manifest": {
+        "url": "https://example.org/m.json",
+        "bytes": 42,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "trailing newline SHA",
+    "value": {
+      "version": "test-1",
+      "archive": {
+        "url": "https://example.org/a.zip",
+        "bytes": 42,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+      },
+      "manifest": {
+        "url": "https://example.org/m.json",
+        "bytes": 42,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "valid": false
+  }
+]

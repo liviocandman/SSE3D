@@ -7,7 +7,10 @@ import spiceypy as spice
 from loguru import logger
 
 from app.core.config import settings
-from app.services.body_catalog import ALL_BODY_IDS, MOON_PARENTS
+from app.services.asset_contract import KERNEL_PATHS, PROFILE, VALIDATOR_VERSION, read_json, validate_lock
+from app.services.body_catalog import ALL_BODY_IDS
+from app.services.kernel_installation import effective_directory, verify_installation
+from app.services.spice_windows import resolve_target_observer
 
 
 @dataclass
@@ -16,6 +19,11 @@ class SpiceRuntimeStatus:
     ready: bool = False
     kernels_present: bool = False
     coverage_validated: bool = False
+    version: str | None = None
+    manifest_sha256: str | None = None
+    archive_sha256: str | None = None
+    validation_profile: str | None = None
+    validator_version: str | None = None
     loaded_files: list[str] = field(default_factory=list)
     covered_body_ids: list[str] = field(default_factory=list)
     missing_required_ids: list[str] = field(default_factory=list)
@@ -25,104 +33,51 @@ class SpiceRuntimeStatus:
 _status = SpiceRuntimeStatus()
 
 
-def _resolve_kernel_paths() -> list[Path]:
-    root = settings.spice_kernel_root
-    configured = [
-        settings.spice_lsk_file,
-        settings.spice_planetary_spk_file,
-        *settings.spice_moon_spk_files,
-    ]
-    return [(root / rel_path).resolve() for rel_path in configured]
-
-
-def get_missing_kernel_files() -> list[str]:
-    return [str(path) for path in _resolve_kernel_paths() if not path.exists()]
-
-
-def _check_body_coverage(body_id: str) -> bool:
-    if body_id == "10":
-        return True
-
-    observer = MOON_PARENTS.get(body_id, "10")
-    try:
-        spice.spkpos(body_id, 0.0, "ECLIPJ2000", "NONE", observer)
-        return True
-    except Exception:
-        return False
-
-
-def initialize_spice_kernels(*, validate_coverage: bool = True) -> SpiceRuntimeStatus:
+def initialize_spice_kernels(kernel_directory: Path | None = None, *, kernel_lock: dict | None = None, validate_coverage: bool = True) -> SpiceRuntimeStatus:
+    """Load once before HTTP startup. No downloader, background reload or hot swap."""
     global _status
-
+    if _status.ready:
+        raise RuntimeError("SPICE is already active; restart to activate another release")
     _status = SpiceRuntimeStatus(enabled=settings.spice_enabled)
     if not settings.spice_enabled:
-        logger.warning("[SPICE] Disabled via SPICE_ENABLED=false.")
         return _status
-
-    kernel_paths = _resolve_kernel_paths()
-    missing_files = get_missing_kernel_files()
-    _status.kernels_present = len(missing_files) == 0
-    if missing_files:
-        _status.errors.append(
-            "Missing kernel files: " + ", ".join(missing_files)
-        )
-        if settings.spice_strict_kernels:
-            raise RuntimeError(_status.errors[-1])
-
     try:
+        lock = validate_lock(kernel_lock if kernel_lock is not None else read_json(settings.spice_lock_path), "kernels")
+        directory = effective_directory(settings.spice_kernel_root, lock) if kernel_directory is None else kernel_directory
+        verify_installation(directory, lock)
+        descriptor = lock["current"]
+        _status.version = descriptor["version"]
+        _status.manifest_sha256 = descriptor["manifest"]["sha256"]
+        _status.archive_sha256 = descriptor["archive"]["sha256"]
+        _status.validation_profile = PROFILE
+        _status.validator_version = VALIDATOR_VERSION
+        _status.kernels_present = True
+        if not validate_coverage:
+            raise RuntimeError("runtime coverage validation is required before readiness")
         spice.kclear()
-        loaded_files: list[str] = []
-        for path in kernel_paths:
-            if not path.exists():
-                continue
+        for name in KERNEL_PATHS:
+            path = directory / name
             spice.furnsh(str(path))
-            loaded_files.append(str(path))
-
-        _status.loaded_files = loaded_files
-    except Exception as exc:
-        _status.errors.append(f"Failed to load kernels: {exc}")
-        if settings.spice_strict_kernels:
-            raise RuntimeError(_status.errors[-1]) from exc
-        return _status
-
-    if validate_coverage:
-        covered = [body_id for body_id in ALL_BODY_IDS if _check_body_coverage(body_id)]
-        missing = [body_id for body_id in ALL_BODY_IDS if body_id not in covered]
-        _status.covered_body_ids = covered
-        _status.missing_required_ids = missing
+            _status.loaded_files.append(str(path))
+        for body_id in ALL_BODY_IDS:
+            target, observer = resolve_target_observer(body_id)
+            try:
+                spice.spkpos(target, 0.0, "ECLIPJ2000", "NONE", observer)
+                _status.covered_body_ids.append(body_id)
+            except Exception:
+                _status.missing_required_ids.append(body_id)
+        if _status.missing_required_ids:
+            raise RuntimeError("Missing required relative-state coverage: " + ", ".join(_status.missing_required_ids))
+        if spice.ktotal("ALL") != 8:
+            raise RuntimeError("expected exactly eight loaded kernels")
         _status.coverage_validated = True
-
-        if missing:
-            msg = (
-                "[SPICE] Missing body coverage for IDs: " + ", ".join(missing)
-            )
-            _status.errors.append(msg)
-            if settings.spice_strict_kernels:
-                raise RuntimeError(msg)
-    else:
-        _status.covered_body_ids = []
-        _status.missing_required_ids = []
-        _status.coverage_validated = False
-
-    _status.ready = len(_status.errors) == 0 and len(_status.loaded_files) > 0
-
-    if _status.ready and _status.coverage_validated:
-        logger.info(
-            "[SPICE] Kernels loaded and coverage validated for {} bodies.",
-            len(_status.covered_body_ids),
-        )
-    elif _status.ready:
-        logger.info(
-            "[SPICE] Kernels loaded with fast-path startup validation. coverage_validated={}",
-            _status.coverage_validated,
-        )
-    else:
-        logger.warning(
-            "[SPICE] Partial readiness. Loaded files: {}. Errors: {}",
-            len(_status.loaded_files),
-            _status.errors,
-        )
-
+        _status.ready = len(_status.loaded_files) == 8
+        logger.info("[SPICE] version={} kernels=8 profile={} bodies={}", _status.version, PROFILE, len(ALL_BODY_IDS))
+    except Exception as exc:
+        _status.errors.append(str(exc))
+        spice.kclear()
+        _status.loaded_files = []
+        raise RuntimeError(f"SPICE installation not ready; run scripts/fetch_kernels.py --ensure: {exc}") from exc
     return _status
 
 
@@ -131,6 +86,7 @@ def shutdown_spice_kernels() -> None:
         spice.kclear()
     finally:
         _status.ready = False
+        _status.loaded_files = []
 
 
 def get_spice_runtime_status() -> SpiceRuntimeStatus:

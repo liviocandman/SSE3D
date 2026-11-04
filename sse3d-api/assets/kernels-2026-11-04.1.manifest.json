@@ -1,0 +1,1729 @@
+{
+  "coverage": {
+    "spk/de440.bsp": [
+      {
+        "bodyId": "1",
+        "windowsET": [
+          [
+            -14200747200.0,
+            20514081600.0
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1549-12-30T23:59:18.816",
+            "2650-01-24T23:58:50.816"
+          ]
+        ]
+      },
+      {
+        "bodyId": "2",
+        "windowsET": [
+          [
+            -14200747200.0,
+            20514081600.0
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1549-12-30T23:59:18.816",
+            "2650-01-24T23:58:50.816"
+          ]
+        ]
+      },
+      {
+        "bodyId": "3",
+        "windowsET": [
+          [
+            -14200747200.0,
+            20514081600.0
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1549-12-30T23:59:18.816",
+            "2650-01-24T23:58:50.816"
+          ]
+        ]
+      },
+      {
+        "bodyId": "4",
+        "windowsET": [
+          [
+            -14200747200.0,
+            20514081600.0
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1549-12-30T23:59:18.816",
+            "2650-01-24T23:58:50.816"
+          ]
+        ]
+      },
+      {
+        "bodyId": "5",
+        "windowsET": [
+          [
+            -14200747200.0,
+            20514081600.0
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1549-12-30T23:59:18.816",
+            "2650-01-24T23:58:50.816"
+          ]
+        ]
+      },
+      {
+        "bodyId": "6",
+        "windowsET": [
+          [
+            -14200747200.0,
+            20514081600.0
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1549-12-30T23:59:18.816",
+            "2650-01-24T23:58:50.816"
+          ]
+        ]
+      },
+      {
+        "bodyId": "7",
+        "windowsET": [
+          [
+            -14200747200.0,
+            20514081600.0
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1549-12-30T23:59:18.816",
+            "2650-01-24T23:58:50.816"
+          ]
+        ]
+      },
+      {
+        "bodyId": "8",
+        "windowsET": [
+          [
+            -14200747200.0,
+            20514081600.0
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1549-12-30T23:59:18.816",
+            "2650-01-24T23:58:50.816"
+          ]
+        ]
+      },
+      {
+        "bodyId": "9",
+        "windowsET": [
+          [
+            -14200747200.0,
+            20514081600.0
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1549-12-30T23:59:18.816",
+            "2650-01-24T23:58:50.816"
+          ]
+        ]
+      },
+      {
+        "bodyId": "10",
+        "windowsET": [
+          [
+            -14200747200.0,
+            20514081600.0
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1549-12-30T23:59:18.816",
+            "2650-01-24T23:58:50.816"
+          ]
+        ]
+      },
+      {
+        "bodyId": "199",
+        "windowsET": [
+          [
+            -14200747200.0,
+            20514081600.0
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1549-12-30T23:59:18.816",
+            "2650-01-24T23:58:50.816"
+          ]
+        ]
+      },
+      {
+        "bodyId": "299",
+        "windowsET": [
+          [
+            -14200747200.0,
+            20514081600.0
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1549-12-30T23:59:18.816",
+            "2650-01-24T23:58:50.816"
+          ]
+        ]
+      },
+      {
+        "bodyId": "301",
+        "windowsET": [
+          [
+            -14200747200.0,
+            20514081600.0
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1549-12-30T23:59:18.816",
+            "2650-01-24T23:58:50.816"
+          ]
+        ]
+      },
+      {
+        "bodyId": "399",
+        "windowsET": [
+          [
+            -14200747200.0,
+            20514081600.0
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1549-12-30T23:59:18.816",
+            "2650-01-24T23:58:50.816"
+          ]
+        ]
+      }
+    ],
+    "spk/jup365_min.bsp": [
+      {
+        "bodyId": "3",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "5",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "10",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "399",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "501",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "502",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "503",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "504",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "505",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "514",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "515",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "516",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "599",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      }
+    ],
+    "spk/mar099_min.bsp": [
+      {
+        "bodyId": "3",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "4",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "10",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "399",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "401",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "402",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "499",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      }
+    ],
+    "spk/nep081_min.bsp": [
+      {
+        "bodyId": "3",
+        "windowsET": [
+          [
+            -3155716758.8160305,
+            3155716867.183885
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1900-01-01T00:00:00.000",
+            "2099-12-31T23:59:58.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "8",
+        "windowsET": [
+          [
+            -3155716758.8160305,
+            3155716867.183885
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1900-01-01T00:00:00.000",
+            "2099-12-31T23:59:58.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "10",
+        "windowsET": [
+          [
+            -3155716758.8160305,
+            3155716867.183885
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1900-01-01T00:00:00.000",
+            "2099-12-31T23:59:58.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "399",
+        "windowsET": [
+          [
+            -3155716758.8160305,
+            3155716867.183885
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1900-01-01T00:00:00.000",
+            "2099-12-31T23:59:58.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "801",
+        "windowsET": [
+          [
+            -3155716758.8160305,
+            3155716867.183885
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1900-01-01T00:00:00.000",
+            "2099-12-31T23:59:58.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "802",
+        "windowsET": [
+          [
+            -3155716758.8160305,
+            3155716867.183885
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1900-01-01T00:00:00.000",
+            "2099-12-31T23:59:58.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "808",
+        "windowsET": [
+          [
+            -3155716758.8160305,
+            3155716867.183885
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1900-01-01T00:00:00.000",
+            "2099-12-31T23:59:58.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "899",
+        "windowsET": [
+          [
+            -3155716758.8160305,
+            3155716867.183885
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1900-01-01T00:00:00.000",
+            "2099-12-31T23:59:58.000"
+          ]
+        ]
+      }
+    ],
+    "spk/plu060_min.bsp": [
+      {
+        "bodyId": "3",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "9",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "10",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "399",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "901",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "902",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "903",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "904",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "905",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "999",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      }
+    ],
+    "spk/sat441_min.bsp": [
+      {
+        "bodyId": "3",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "6",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "10",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "399",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "601",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "602",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "603",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "604",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "605",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "606",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "607",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "608",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "609",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "612",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "613",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "614",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "632",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "634",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "699",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      }
+    ],
+    "spk/ura111_min.bsp": [
+      {
+        "bodyId": "3",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "7",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "10",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "399",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "701",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "702",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "703",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "704",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "705",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      },
+      {
+        "bodyId": "799",
+        "windowsET": [
+          [
+            -1577879958.8160586,
+            1577880069.1839132
+          ]
+        ],
+        "windowsUTC": [
+          [
+            "1950-01-01T00:00:00.000",
+            "2050-01-01T00:00:00.000"
+          ]
+        ]
+      }
+    ]
+  },
+  "files": [
+    {
+      "bytes": 5257,
+      "path": "lsk/naif0012.tls",
+      "sha256": "678e32bdb5a744117a467cd9601cd6b373f0e9bc9bbde1371d5eee39600a039b"
+    },
+    {
+      "bytes": 119799808,
+      "path": "spk/de440.bsp",
+      "sha256": "a4ce9bf9b3282becc9f4b2ac3cebe03a2ae7599981aabd7265fd8482fff7c4b5"
+    },
+    {
+      "bytes": 189428736,
+      "path": "spk/jup365_min.bsp",
+      "sha256": "0fa0929c36be359f8d1a5f78c6a954f8e6ea4e9e3a70dae6579f82b8973cb1be"
+    },
+    {
+      "bytes": 122758144,
+      "path": "spk/mar099_min.bsp",
+      "sha256": "58639cc8ef07841b0913c3141d3abb426fafed00a1f7a450cf8b61198e735aed"
+    },
+    {
+      "bytes": 157869056,
+      "path": "spk/nep081_min.bsp",
+      "sha256": "a304baf7e6d853d41a44bea80ea0fb9a0a7e11239d057f618f683602fa8e49cb"
+    },
+    {
+      "bytes": 33794048,
+      "path": "spk/plu060_min.bsp",
+      "sha256": "a6b06f2e7bfca0225092458ac71958384495bb49c4583d7b81c78004dba43a70"
+    },
+    {
+      "bytes": 132315136,
+      "path": "spk/sat441_min.bsp",
+      "sha256": "16ec2e60fcd68c79f44e0ebda2b164e25f313293f4c23c09a1bee72902a5d7c7"
+    },
+    {
+      "bytes": 84977664,
+      "path": "spk/ura111_min.bsp",
+      "sha256": "7657877552f5e6f8deed3f7f66a7fb787cf46ba583405e832bd434c7539eecaf"
+    }
+  ],
+  "kind": "kernels",
+  "originNotes": [
+    "Recovered NAIF-format LSK and SPK files: naif0012, de440, mar099_min, jup365_min, sat441_min, ura111_min, nep081_min, plu060_min.",
+    "NAIF/JPL scientific sources are identifiable by kernel names and comments. The original minimization commands and downloads are not recorded; do not claim a reproducible NASA upstream conversion.",
+    "Bytes are unchanged against the recovered 2026-11-02 inventory. Coverage and actual relative-state probes are recorded separately; arbitrary dates are not guaranteed.",
+    "Reference scientific distributor: https://naif.jpl.nasa.gov/naif/ ; retain original file comments and consult source terms."
+  ],
+  "packager": {
+    "compressionLevel": 9,
+    "python": "3.11.9",
+    "version": "1",
+    "zlib": "1.3.1",
+    "zlibRuntime": "1.3.1"
+  },
+  "schemaVersion": 1,
+  "validation": {
+    "knownBoundaryLimitations": [
+      {
+        "date": "1950-01-01",
+        "failures": [
+          {
+            "bodyId": "499",
+            "error": "SpiceSPKINSUFFDATA"
+          }
+        ],
+        "fullOrbit": false,
+        "spanDays": 1
+      },
+      {
+        "date": "1950-01-01",
+        "failures": [
+          {
+            "bodyId": "499",
+            "error": "SpiceSPKINSUFFDATA"
+          }
+        ],
+        "fullOrbit": false,
+        "spanDays": 30
+      },
+      {
+        "date": "1950-01-01",
+        "failures": [
+          {
+            "bodyId": "499",
+            "error": "SpiceSPKINSUFFDATA"
+          }
+        ],
+        "fullOrbit": false,
+        "spanDays": 1825
+      },
+      {
+        "date": "1950-01-01",
+        "failures": [],
+        "fullOrbit": true,
+        "spanDays": 30
+      },
+      {
+        "date": "2050-01-01",
+        "failures": [
+          {
+            "bodyId": "401",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "402",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "501",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "502",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "503",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "504",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "601",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "602",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "603",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "604",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "605",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "606",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "608",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "701",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "702",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "703",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "704",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "705",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "901",
+            "error": "SpiceSPKINSUFFDATA"
+          }
+        ],
+        "fullOrbit": false,
+        "spanDays": 1
+      },
+      {
+        "date": "2050-01-01",
+        "failures": [
+          {
+            "bodyId": "401",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "402",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "501",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "502",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "503",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "504",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "601",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "602",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "603",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "604",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "605",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "606",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "608",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "701",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "702",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "703",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "704",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "705",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "901",
+            "error": "SpiceSPKINSUFFDATA"
+          }
+        ],
+        "fullOrbit": false,
+        "spanDays": 30
+      },
+      {
+        "date": "2050-01-01",
+        "failures": [
+          {
+            "bodyId": "401",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "402",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "501",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "502",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "503",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "504",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "601",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "602",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "603",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "604",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "605",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "606",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "608",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "701",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "702",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "703",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "704",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "705",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "901",
+            "error": "SpiceSPKINSUFFDATA"
+          }
+        ],
+        "fullOrbit": false,
+        "spanDays": 1825
+      },
+      {
+        "date": "2050-01-01",
+        "failures": [
+          {
+            "bodyId": "499",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "401",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "402",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "501",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "502",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "503",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "504",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "601",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "602",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "603",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "604",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "605",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "606",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "608",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "701",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "702",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "703",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "704",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "705",
+            "error": "SpiceSPKINSUFFDATA"
+          },
+          {
+            "bodyId": "901",
+            "error": "SpiceSPKINSUFFDATA"
+          }
+        ],
+        "fullOrbit": true,
+        "spanDays": 30
+      }
+    ],
+    "probes": [
+      {
+        "date": "1960-01-01",
+        "positionBodies": 31,
+        "trajectoryWindows": 120
+      },
+      {
+        "date": "2000-01-01",
+        "positionBodies": 31,
+        "trajectoryWindows": 120
+      },
+      {
+        "date": "2026-11-02",
+        "positionBodies": 31,
+        "trajectoryWindows": 120
+      },
+      {
+        "date": "2040-01-01",
+        "positionBodies": 31,
+        "trajectoryWindows": 120
+      }
+    ],
+    "requiredBodyIds": [
+      "10",
+      "199",
+      "299",
+      "399",
+      "499",
+      "599",
+      "699",
+      "799",
+      "899",
+      "999",
+      "301",
+      "401",
+      "402",
+      "501",
+      "502",
+      "503",
+      "504",
+      "601",
+      "602",
+      "603",
+      "604",
+      "605",
+      "606",
+      "608",
+      "701",
+      "702",
+      "703",
+      "704",
+      "705",
+      "801",
+      "901"
+    ],
+    "spiceypyVersion": "6.0.0",
+    "validationProfile": "sse3d-spice-v1",
+    "validatorVersion": "1"
+  },
+  "validationProfile": "sse3d-spice-v1",
+  "version": "kernels-2026-11-04.1"
+}

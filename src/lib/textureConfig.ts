@@ -3,6 +3,7 @@
  * Maps bodyId to texture paths, visual properties, and orbital data
  */
 import { BodyClass } from './scales';
+import textureLock from '../../assets/textures.lock.json';
 
 // --- Types ---
 
@@ -41,16 +42,18 @@ export interface PlanetConfig {
 }
 
 // Helper to generate tiered texture paths
-const CDN_BASE = (
-  process.env.NEXT_PUBLIC_TEXTURE_CDN_URL ?? "/textures"
-).replace(/\/$/, "");
+export const TEXTURE_BASE = `/textures/${textureLock.current.version}`;
 
 function getTexturePaths(name: string): TexturePaths {
   return {
-    low: `${CDN_BASE}/${name}_low.ktx2`,
-    mid: `${CDN_BASE}/${name}_mid.ktx2`,
-    high: `${CDN_BASE}/${name}_high.ktx2`,
+    low: `${TEXTURE_BASE}/${name}_low.ktx2`,
+    mid: `${TEXTURE_BASE}/${name}_mid.ktx2`,
+    high: `${TEXTURE_BASE}/${name}_high.ktx2`,
   };
+}
+
+export function getGenericMoonTexture(tier: TextureTier = 'mid'): string {
+  return getTexturePaths('generic_moon')[tier];
 }
 
 // --- Texture Map ---

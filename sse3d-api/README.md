@@ -36,13 +36,13 @@
 
 The SSE3D API is the Python backend for the Solar Explorer 3D project. It serves as the data layer and business logic engine, handling:
 
-- **Ephemeris data retrieval** from NASA's JPL Horizons system (with Redis caching and JSON fallback)
+- **Ephemeris computation** from pinned SPICE kernels (with Redis caching and JSON fallback)
 - **AI-powered question answering** via Google Gemini for the Virtual Astronomer feature
 - **User authentication** with OAuth identity linking (Google/GitHub via BFF JWT)
 - **Favorites management** for saving and retrieving AI Q&A pairs
 - **Rate limiting** to prevent API abuse
 
-The API follows a **resilience-first design** — every external dependency has a fallback mechanism to ensure the application continues to function even when third-party services are unavailable.
+Orbital readiness requires the verified kernel release and loaded SPICE runtime. `/health` inspects the process; `/ready` returns 503 when orbital service is disabled or incomplete. The [kernel lock](assets/kernels.lock.json) pins the public Release, archive and manifest. Installation and rollback instructions are included in the Deployment section below.
 
 ---
 
@@ -67,14 +67,16 @@ venv\Scripts\activate        # Windows
 # source venv/bin/activate   # macOS/Linux
 
 # Install dependencies
-pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 
-# Configure environment
-cp .env.example .env
-# Edit .env with your credentials
+# Create .env using the configuration block below.
+# Environment templates are not tracked in this repository.
 
 # Run migrations (if using PostgreSQL)
 alembic upgrade head
+
+# Prepare the pinned release before starting the server
+python scripts/fetch_kernels.py --ensure
 
 # Start the server
 uvicorn app.main:app --reload --port 8000
@@ -106,8 +108,13 @@ All configuration is managed through environment variables, loaded via Pydantic 
 | `RATE_LIMIT_WINDOW_SECONDS` | ❌ | `3600` | Rate limit window duration (seconds) |
 | `NEXTAUTH_SECRET` | ❌ | — | NextAuth shared secret |
 | `BFF_JWT_SECRET` | ❌ | — | Secret for BFF ↔ API JWT signing |
+| `SPICE_ENABLED` | ❌ | `true` | Prepare and load the verified kernel release; disabled service is not orbitally ready |
+| `SPICE_KERNEL_DIR` | ❌ | `kernels` | Installation base; Docker/Fly use `/data/kernels` |
+| `SPICE_LOCK_FILE` | ❌ | `assets/kernels.lock.json` | Lock resolved relative to the backend root |
 
-### `.env.example`
+### Local `.env` configuration
+
+Create `sse3d-api/.env` with the settings needed for your environment. This local file is ignored by Git; no template file needs to be copied.
 
 ```env
 # AI
@@ -128,6 +135,12 @@ ALLOWED_ORIGINS=http://localhost:3000,https://solar-explorer.vercel.app
 # Rate Limit
 RATE_LIMIT_REQUESTS=10
 RATE_LIMIT_WINDOW_SECONDS=3600
+BFF_JWT_SECRET=shared_secret_between_bff_and_api
+
+# Verified orbital assets
+SPICE_ENABLED=true
+SPICE_KERNEL_DIR=kernels
+SPICE_LOCK_FILE=assets/kernels.lock.json
 ```
 
 > **Note**: The API is designed to function without a database. When `DATABASE_URL` is not configured, favorites and user features gracefully degrade (return empty results / 503 status).
@@ -140,12 +153,24 @@ RATE_LIMIT_WINDOW_SECONDS=3600
 
 #### `GET /health`
 
-Simple health check for monitoring and load balancers.
+Process and configuration inspection. It does not prove database connectivity or replace orbital readiness.
 
 **Response** `200 OK`:
 ```json
-{ "status": "ok" }
+{
+  "status": "ok",
+  "serverReady": true,
+  "dbConfigured": false,
+  "dbInitializationCompleted": true,
+  "spiceEnabled": true,
+  "spiceReady": true,
+  "loadedKernelCount": 8
+}
 ```
+
+#### `GET /ready`
+
+Returns 200 only when the pinned release is verified, the scientific validation profile is accepted and all eight kernels are loaded. The response includes the version, archive/manifest hashes and validation profile. A disabled or incomplete orbital service returns 503. During the CMD bootstrap, HTTP is not available until installation completes.
 
 ---
 
@@ -153,7 +178,7 @@ Simple health check for monitoring and load balancers.
 
 #### `GET /api/ephemeris`
 
-Fetches real-time positional data for Solar System bodies from NASA JPL Horizons.
+Computes positional data for Solar System bodies using the loaded SPICE release.
 
 **Query Parameters:**
 
@@ -198,7 +223,7 @@ Fetches real-time positional data for Solar System bodies from NASA JPL Horizons
     }
   ],
   "meta": {
-    "source": "NASA_LIVE",
+    "source": "SPICE_KERNELS",
     "timestamp": "2026-03-20",
     "requestedDate": "2026-03-20",
     "cacheHits": 7,
@@ -209,8 +234,8 @@ Fetches real-time positional data for Solar System bodies from NASA JPL Horizons
 
 **Data Flow:**
 1. Check Redis cache for each requested body ID + date
-2. If cache miss → fetch from NASA JPL Horizons API
-3. If NASA unavailable → load from local `fallback_planets.json`
+2. If cache miss → compute from the verified SPICE release
+3. If computation is unavailable → use the endpoint's existing JSON fallback policy
 4. Store fresh results in Redis with tiered TTLs
 5. Return combined cached + fresh results
 
@@ -370,27 +395,13 @@ Migrates anonymous favorites to the authenticated user's account. **Requires aut
 
 ## 🔌 External Integrations
 
-### NASA JPL Horizons
+### SPICE kernels and GitHub Releases
 
-The primary data source for ephemeris (planet position) data.
+The active ephemeris route computes locally from the image-pinned SPICE release. Redis caches the results; the existing JSON fallback remains in the route. `meta.source` is `SPICE_KERNELS` or `SPICE_AND_FALLBACK`.
 
-| Detail | Value |
-|---|---|
-| **Base URL** | `https://ssd.jpl.nasa.gov/api/horizons.api` |
-| **Request format** | JSON with CSV output |
-| **Coordinate system** | Heliocentric, Ecliptic plane |
-| **Units** | Astronomical Units (AU) and AU/day |
-| **Center** | `500@10` (Sun body center) |
-| **Retry strategy** | 2 retries with exponential backoff (2s, 4s) on 503 |
-| **Timeout** | 15 seconds per request |
-| **Sequential fetching** | 0.5s delay between bodies to avoid rate limiting |
+The runtime uses ECLIPJ2000/NONE states, existing outer-planet barycenters and moon-parent observers; it converts `(x, y, z)` to scene `(x, z, -y)`. No NASA network request is part of bootstrap. `nasa_client.py` remains a legacy utility outside the active route. Coverage and known 1950/2050 trajectory limitations are recorded in the pinned manifest.
 
-**Conversion applied:**
-- Position: AU → kilometers (`× 149,597,870.7`)
-- Velocity: AU/day → km/s (`÷ 86,400`)
-- Coordinate swap: NASA's Y/Z → Three.js Y-up (Y↔Z)
-
-**Fallback**: When NASA is unreachable, static positions from `app/data/fallback_planets.json` are used. The `meta.source` field in the response indicates `"CACHE_HIT"`, `"NASA_LIVE"`, or `"FALLBACK"`.
+The published [kernels-2026-11-04.1 Release](https://github.com/liviocandman/SSE3D/releases/tag/kernels-2026-11-04.1) includes the ZIP, manifest, checksums and attribution information. Its archive and manifest were downloaded anonymously and matched the pinned lock. Follow the Deployment section below for provisioning, readiness and rollback.
 
 ---
 
@@ -600,7 +611,9 @@ sse3d-api/
 │   │   ├── astronomer.py         # POST /api/ai, favorites CRUD
 │   │   └── users.py              # POST /api/users/merge-anonymous
 │   ├── services/
-│   │   ├── nasa_client.py        # NASA JPL Horizons HTTP client
+│   │   ├── spice_engine.py       # Active local SPICE ephemeris engine
+│   │   ├── kernel_installation.py # Pinned transactional installer
+│   │   ├── nasa_client.py        # Legacy HTTP utility
 │   │   ├── ai_service.py         # Google Gemini integration
 │   │   └── cache_service.py      # Upstash Redis cache operations
 │   ├── models/
@@ -612,7 +625,7 @@ sse3d-api/
 ├── alembic/                      # Database migration scripts
 │   └── versions/                 # Migration version files
 ├── tests/                        # Pytest test suite
-├── .env.example                  # Environment variable template
+├── .env                          # Local configuration; ignored by Git
 ├── requirements.txt              # Python dependencies
 ├── Dockerfile                    # Docker container definition
 ├── fly.toml                      # Fly.io deployment configuration
@@ -623,9 +636,15 @@ sse3d-api/
 
 ## 🧪 Testing
 
-The project uses **pytest** with **pytest-asyncio** for async test support.
+The project uses **pytest** with **pytest-asyncio** for async test support. Install `requirements-dev.txt` to use the same dependencies and Ruff version as CI. Production Docker builds continue to install `requirements.txt`.
 
 ```bash
+# Install the pinned development tools (from sse3d-api)
+python -m pip install -r requirements-dev.txt
+
+# Run the same lint check as CI
+python -m ruff check .
+
 # Run all tests
 pytest
 
@@ -636,7 +655,11 @@ pytest -v
 pytest tests/test_ephemeris.py
 ```
 
+`ruff.toml` requires Ruff `0.15.7` and explicitly selects `E4`, `E7`, `E9` and `F`, preserving the validated lint policy. Other Ruff versions fail with a version requirement error. Update the pin, configuration and local environment together when adopting a new version or rule set; handle that migration separately from unrelated feature changes.
+
 ### Test Dependencies
+
+- `ruff==0.15.7` — shared local/CI lint tool
 - `pytest` — test framework
 - `pytest-asyncio` — async test support
 - `httpx[test]` — async HTTP client test utilities
@@ -654,7 +677,7 @@ The API is containerized with a single-stage Dockerfile:
 FROM python:3.12-slim
 # Installs system deps (gcc, python3-dev for asyncpg)
 # Installs Python deps from requirements.txt
-# Runs: uvicorn app.main:app --host 0.0.0.0 --port 8080
+# CMD: python scripts/start_backend.py (ensure kernels, then exec uvicorn)
 ```
 
 ```bash
@@ -662,7 +685,29 @@ FROM python:3.12-slim
 docker build -t sse3d-api .
 
 # Run
-docker run -p 8080:8080 --env-file .env sse3d-api
+docker run -p 8080:8080 --env-file .env -v spice_data:/data sse3d-api
+```
+
+The image excludes kernels, download caches, ZIPs and local environment files. Its CMD runs `scripts/start_backend.py`, verifies or installs the pinned Release on the mounted volume, then starts Uvicorn. New installations use `/data/kernels/releases/<version>`; legacy files are preserved. No GitHub or AWS credentials are needed to download the public packages.
+
+For an isolated local acceptance run, use a separate volume and a 1 GiB memory limit:
+
+```bash
+docker volume create sse3d-validation-data
+docker run --name sse3d-validation --memory 1g --cpus 1 \
+  -p 127.0.0.1:8080:8080 -v sse3d-validation-data:/data \
+  -e DATABASE_URL= -e GEMINI_API_KEY= \
+  -e UPSTASH_REDIS_REST_URL= -e UPSTASH_REDIS_REST_TOKEN= \
+  sse3d-api
+```
+
+Wait for `GET /ready` to return 200, inspect its digests, then verify representative ephemeris and trajectory requests. Restart with the same volume to check warm startup. The scientific/API acceptance command can also run inside the container:
+
+```bash
+docker exec sse3d-validation python scripts/fetch_kernels.py \
+  --verify-only --kernel-root /data/kernels
+docker exec sse3d-validation python scripts/check_kernel_runtime.py \
+  --kernel-root /data/kernels --output /data/runtime-check.json
 ```
 
 ### Fly.io
@@ -672,11 +717,12 @@ Configured for the **`gru` (São Paulo, Brazil)** region with automated migratio
 | Config | Value |
 |---|---|
 | **Region** | `gru` (São Paulo) |
-| **Memory** | 256 MB |
+| **Memory** | 1024 MB |
 | **CPU** | 1 shared |
 | **Internal port** | 8080 |
-| **Health check** | `GET /health` every 15s |
+| **Readiness check** | `GET /ready` every 15s; 5s timeout; 180s grace |
 | **Release Command** | `alembic upgrade head` |
+| **Kernel volume** | `spice_data` mounted at `/data` |
 
 ```bash
 # Deploy (from sse3d-api folder)
@@ -688,6 +734,10 @@ fly secrets set GEMINI_API_KEY=... DATABASE_URL=... UPSTASH_REDIS_REST_URL=... N
 # View logs
 fly logs
 ```
+
+Before production rollout, inspect the existing Machines, volume capacity, mount and recoverable backups. The installer requires room for the complete archive, staged extraction and safety margin. Prepare the volume before starting consumers whenever possible. The current 180-second grace period is a warm/pre-provisioned policy; hydration of an empty Fly volume, including its time and 1 GiB memory limit, must be measured in a separate test environment.
+
+Retain the previous image, lock, kernel release and deployment configuration for rollback. Stop the consumer before switching kernels; never replace loaded files in place. Restore the previous compatible image/configuration, reuse its preserved versioned installation and confirm `/ready` and ephemeris again. An image rollback does not undo database migrations. When no previous verified version exists, first establish a validated baseline in the isolated environment rather than assuming the old deployment is a working recovery target.
 
 ---
 

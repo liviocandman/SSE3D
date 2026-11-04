@@ -1,0 +1,348 @@
+{
+  "textures": [
+    {
+      "path": "callisto_high.ktx2",
+      "bytes": 1245111,
+      "sha256": "389fcdac431b96c567eaa9e0af762d7a7158b4e86e0f1bd43b79f99a2d439215"
+    },
+    {
+      "path": "callisto_low.ktx2",
+      "bytes": 637885,
+      "sha256": "eb09053f14c680e2ba147b1759c5afb45c30c8ce1f71674a9d6bcbc471eb8868"
+    },
+    {
+      "path": "callisto_mid.ktx2",
+      "bytes": 1245111,
+      "sha256": "389fcdac431b96c567eaa9e0af762d7a7158b4e86e0f1bd43b79f99a2d439215"
+    },
+    {
+      "path": "earth_high.ktx2",
+      "bytes": 1257563,
+      "sha256": "64389dc7572145093cd3562d74d36371a35b2b825667131751f0be2cb218a414"
+    },
+    {
+      "path": "earth_low.ktx2",
+      "bytes": 354190,
+      "sha256": "80b1ca00f09977627c88a03f34eb02c0b9cb88420052da465fa0a0d0884c95e2"
+    },
+    {
+      "path": "earth_mid.ktx2",
+      "bytes": 1257563,
+      "sha256": "64389dc7572145093cd3562d74d36371a35b2b825667131751f0be2cb218a414"
+    },
+    {
+      "path": "enceladus_high.ktx2",
+      "bytes": 9959222,
+      "sha256": "bb002af99b3eed51814fcfc94dcfb01e697276f3bc18b9939e642635b1efa1c8"
+    },
+    {
+      "path": "enceladus_low.ktx2",
+      "bytes": 657722,
+      "sha256": "7fee469e57f0e74dc06373b68c6405b7550621fd672fe76602fb041ea32892e3"
+    },
+    {
+      "path": "enceladus_mid.ktx2",
+      "bytes": 2559665,
+      "sha256": "0c6e08506ac0cd0935b6194c010eaf136c61827873595006def8553ec6b9eb79"
+    },
+    {
+      "path": "europa_high.ktx2",
+      "bytes": 2761643,
+      "sha256": "4c64409c526a0cf8f670ec0e34fe163d3b6019d0904bcb7bcae6bc7574f5af0c"
+    },
+    {
+      "path": "europa_low.ktx2",
+      "bytes": 686839,
+      "sha256": "cebed5204e2f83bf427d791a51a4d449e0d9623cad149776f2a30685def5c1e4"
+    },
+    {
+      "path": "europa_mid.ktx2",
+      "bytes": 2761643,
+      "sha256": "4c64409c526a0cf8f670ec0e34fe163d3b6019d0904bcb7bcae6bc7574f5af0c"
+    },
+    {
+      "path": "ganymede_high.ktx2",
+      "bytes": 1241159,
+      "sha256": "b6d4abf3b4359180694676da4acab59429b653bb2bf94e277677e9f320b92f0c"
+    },
+    {
+      "path": "ganymede_low.ktx2",
+      "bytes": 639605,
+      "sha256": "e75662c70e781e115d3c32c93892d5c1ac4ea385533df197329c01b62aff8ec9"
+    },
+    {
+      "path": "ganymede_mid.ktx2",
+      "bytes": 1241159,
+      "sha256": "b6d4abf3b4359180694676da4acab59429b653bb2bf94e277677e9f320b92f0c"
+    },
+    {
+      "path": "generic_moon_high.ktx2",
+      "bytes": 10381993,
+      "sha256": "340c0bbc648f577d09b4f706816b88a125dfb352a7ee4b082c6b98be955a7ef4"
+    },
+    {
+      "path": "generic_moon_low.ktx2",
+      "bytes": 661973,
+      "sha256": "8ae44171ec2e444f5a6aec6da004050601e70616558e063dbc6cfb09f8664656"
+    },
+    {
+      "path": "generic_moon_mid.ktx2",
+      "bytes": 2639471,
+      "sha256": "0875bba38631edf301fafaaea32112c47f9f9d8d1ea7c0f44698f7fc1dfe35c8"
+    },
+    {
+      "path": "io_high.ktx2",
+      "bytes": 8025488,
+      "sha256": "d416dc4d38c096ac777107b83902e6d2cd105bc5011b6eb398d99f63f016339f"
+    },
+    {
+      "path": "io_low.ktx2",
+      "bytes": 837771,
+      "sha256": "6c3961de81fd127ff82302cd6f9f769214bb1c35d842ea50691ecde15d4d1004"
+    },
+    {
+      "path": "io_mid.ktx2",
+      "bytes": 3317881,
+      "sha256": "06f494153d5026fea43d83c2533ba60315ecf70a18a8cb9fbb49ed178a5bcce0"
+    },
+    {
+      "path": "jupiter_high.ktx2",
+      "bytes": 2546142,
+      "sha256": "5079c401fd27df4cd7cf5cc7ca87a64bac2adf8624bbd98b9e39e7231de03273"
+    },
+    {
+      "path": "jupiter_low.ktx2",
+      "bytes": 660695,
+      "sha256": "c23d34257009eba30eb454ec87e8ae1f2d2a0bfd025f184687379ba5c18e66af"
+    },
+    {
+      "path": "jupiter_mid.ktx2",
+      "bytes": 2546142,
+      "sha256": "5079c401fd27df4cd7cf5cc7ca87a64bac2adf8624bbd98b9e39e7231de03273"
+    },
+    {
+      "path": "mars_high.ktx2",
+      "bytes": 2676570,
+      "sha256": "1642aee8a946d376b45260e8231f269df5600a9ca05c9f52eb7f9ad564328481"
+    },
+    {
+      "path": "mars_low.ktx2",
+      "bytes": 680712,
+      "sha256": "e31a8398c0e5380cd67e2f1fe611ca782e01484aafa8c64793a42b2472e732ad"
+    },
+    {
+      "path": "mars_mid.ktx2",
+      "bytes": 2676570,
+      "sha256": "1642aee8a946d376b45260e8231f269df5600a9ca05c9f52eb7f9ad564328481"
+    },
+    {
+      "path": "mercury_high.ktx2",
+      "bytes": 2591073,
+      "sha256": "48d20ca0939126985ec905878018037ca898c811a81302ad9e32819a8193c821"
+    },
+    {
+      "path": "mercury_low.ktx2",
+      "bytes": 658916,
+      "sha256": "6914595ecbc4c2a940e0914ea09d3011c0130cd5464e419240a5eaddb81f14e3"
+    },
+    {
+      "path": "mercury_mid.ktx2",
+      "bytes": 2591073,
+      "sha256": "48d20ca0939126985ec905878018037ca898c811a81302ad9e32819a8193c821"
+    },
+    {
+      "path": "moon_high.ktx2",
+      "bytes": 11051530,
+      "sha256": "f707650d4e403ac1235b41d6e65960a0548aa937a4bd4e98cec449cd4c6950be"
+    },
+    {
+      "path": "moon_low.ktx2",
+      "bytes": 686613,
+      "sha256": "98215c3b11e54642f7c96fa166f9372ec4cfbac7952537de546cc8615d114426"
+    },
+    {
+      "path": "moon_mid.ktx2",
+      "bytes": 2760825,
+      "sha256": "5265b413d98b2b3d32f68323fdedf1a0d9f4be50f24c6f4f466989747be46421"
+    },
+    {
+      "path": "neptune_high.ktx2",
+      "bytes": 1427552,
+      "sha256": "b104fda12c2d135d9be8e65d1f48a61ef1664097f9fc611bd705d9a7eb50341b"
+    },
+    {
+      "path": "neptune_low.ktx2",
+      "bytes": 474796,
+      "sha256": "4610927689829b6b98c450f0fae1f732e3d05fc5a3cc52c1e2e44f41a2791c8a"
+    },
+    {
+      "path": "neptune_mid.ktx2",
+      "bytes": 1427552,
+      "sha256": "b104fda12c2d135d9be8e65d1f48a61ef1664097f9fc611bd705d9a7eb50341b"
+    },
+    {
+      "path": "saturn_high.ktx2",
+      "bytes": 1655689,
+      "sha256": "7349ce456b0d304d023b9e5a6f9a13dbb7cefe651b7325f223f28c899307f979"
+    },
+    {
+      "path": "saturn_low.ktx2",
+      "bytes": 530804,
+      "sha256": "1bf7e9f465ae9d203c9182942f8c2cea7a68fd799cafcc72ad2e642e7987b681"
+    },
+    {
+      "path": "saturn_mid.ktx2",
+      "bytes": 1655689,
+      "sha256": "7349ce456b0d304d023b9e5a6f9a13dbb7cefe651b7325f223f28c899307f979"
+    },
+    {
+      "path": "sun_high.ktx2",
+      "bytes": 2625927,
+      "sha256": "53fa6a8073850a7baf7ae6848da6f8a33e74523063a069125e7cd8ad3d76820e"
+    },
+    {
+      "path": "sun_low.ktx2",
+      "bytes": 671325,
+      "sha256": "1917b626f1ab4b21f7bf847c7c084c1faab1fb8dd5b2715502fad741b964524f"
+    },
+    {
+      "path": "sun_mid.ktx2",
+      "bytes": 2625927,
+      "sha256": "53fa6a8073850a7baf7ae6848da6f8a33e74523063a069125e7cd8ad3d76820e"
+    },
+    {
+      "path": "titan_high.ktx2",
+      "bytes": 2761643,
+      "sha256": "4c64409c526a0cf8f670ec0e34fe163d3b6019d0904bcb7bcae6bc7574f5af0c"
+    },
+    {
+      "path": "titan_low.ktx2",
+      "bytes": 686839,
+      "sha256": "cebed5204e2f83bf427d791a51a4d449e0d9623cad149776f2a30685def5c1e4"
+    },
+    {
+      "path": "titan_mid.ktx2",
+      "bytes": 2761643,
+      "sha256": "4c64409c526a0cf8f670ec0e34fe163d3b6019d0904bcb7bcae6bc7574f5af0c"
+    },
+    {
+      "path": "triton_high.ktx2",
+      "bytes": 5403036,
+      "sha256": "553da521c1b1dc9cdff1437b4d62bfab6867dcdcff1ac240773d22b5216a9047"
+    },
+    {
+      "path": "triton_low.ktx2",
+      "bytes": 422660,
+      "sha256": "4c7a012fd308886dadce4fda1d022461a104dffda0c1642181ca8665897192fb"
+    },
+    {
+      "path": "triton_mid.ktx2",
+      "bytes": 1576662,
+      "sha256": "88a82e5f368b46bb17bba8c2c2123239b0dca968cfaefdf726285a67c1083efd"
+    },
+    {
+      "path": "uranus_high.ktx2",
+      "bytes": 80966,
+      "sha256": "11ab356faa1cdfdbb3758f085d16933e5dd8a6793263259c4a69c96f210b3a8b"
+    },
+    {
+      "path": "uranus_low.ktx2",
+      "bytes": 41821,
+      "sha256": "3924a86624b9288c7930d0fa68f99423f80ce3d176210d758687c87e1125e906"
+    },
+    {
+      "path": "uranus_mid.ktx2",
+      "bytes": 80966,
+      "sha256": "11ab356faa1cdfdbb3758f085d16933e5dd8a6793263259c4a69c96f210b3a8b"
+    },
+    {
+      "path": "venus_high.ktx2",
+      "bytes": 2700574,
+      "sha256": "5a8ba363534c95e17846f1c1713c3439fdc8698525412a097b53d7060fe61188"
+    },
+    {
+      "path": "venus_low.ktx2",
+      "bytes": 674748,
+      "sha256": "26f02fc640910069a3bb80282bbc5e16315ba321407409d30fea33b9456aeebb"
+    },
+    {
+      "path": "venus_mid.ktx2",
+      "bytes": 2700574,
+      "sha256": "5a8ba363534c95e17846f1c1713c3439fdc8698525412a097b53d7060fe61188"
+    },
+    {
+      "path": "saturn_ring_high.ktx2",
+      "bytes": 39852,
+      "sha256": "26002d42f28a6a026cc46536ebbdb1d8e68b8eee7d025522cf8bc85cd7f579ae"
+    },
+    {
+      "path": "saturn_ring_low.ktx2",
+      "bytes": 20178,
+      "sha256": "418dbdc1d0641c79523f7d192d7699d4cbcd2e5ce5510c1dfc0af5b87b731430"
+    },
+    {
+      "path": "saturn_ring_mid.ktx2",
+      "bytes": 39852,
+      "sha256": "26002d42f28a6a026cc46536ebbdb1d8e68b8eee7d025522cf8bc85cd7f579ae"
+    }
+  ],
+  "kernels": [
+    {
+      "path": "lsk/naif0012.tls",
+      "bytes": 5257,
+      "sha256": "678e32bdb5a744117a467cd9601cd6b373f0e9bc9bbde1371d5eee39600a039b"
+    },
+    {
+      "path": "spk/de440.bsp",
+      "bytes": 119799808,
+      "sha256": "a4ce9bf9b3282becc9f4b2ac3cebe03a2ae7599981aabd7265fd8482fff7c4b5"
+    },
+    {
+      "path": "spk/mar099_min.bsp",
+      "bytes": 122758144,
+      "sha256": "58639cc8ef07841b0913c3141d3abb426fafed00a1f7a450cf8b61198e735aed"
+    },
+    {
+      "path": "spk/jup365_min.bsp",
+      "bytes": 189428736,
+      "sha256": "0fa0929c36be359f8d1a5f78c6a954f8e6ea4e9e3a70dae6579f82b8973cb1be"
+    },
+    {
+      "path": "spk/sat441_min.bsp",
+      "bytes": 132315136,
+      "sha256": "16ec2e60fcd68c79f44e0ebda2b164e25f313293f4c23c09a1bee72902a5d7c7"
+    },
+    {
+      "path": "spk/ura111_min.bsp",
+      "bytes": 84977664,
+      "sha256": "7657877552f5e6f8deed3f7f66a7fb787cf46ba583405e832bd434c7539eecaf"
+    },
+    {
+      "path": "spk/nep081_min.bsp",
+      "bytes": 157869056,
+      "sha256": "a304baf7e6d853d41a44bea80ea0fb9a0a7e11239d057f618f683602fa8e49cb"
+    },
+    {
+      "path": "spk/plu060_min.bsp",
+      "bytes": 33794048,
+      "sha256": "a6b06f2e7bfca0225092458ac71958384495bb49c4583d7b81c78004dba43a70"
+    }
+  ],
+  "basis": [
+    {
+      "path": "basis_transcoder.js",
+      "bytes": 57529,
+      "sha256": "8478b5b6d6b74e7d3082b89f6417321d8d1dc0307f2b30d4484bb11b441696a1"
+    },
+    {
+      "path": "basis_transcoder.wasm",
+      "bytes": 527333,
+      "sha256": "6cf17dc889352c42e9acf8897107978d127005fe3386c36a0e3845e27967630a"
+    }
+  ],
+  "sourceAudit": {
+    "date": "2026-11-02",
+    "head": "c2dc1d2aaba5772d9b47262f48f85ce510eeb6bb",
+    "note": "Recovered bytes; compared again on 2026-11-04. No scientific or image regeneration."
+  }
+}
