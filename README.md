@@ -244,7 +244,7 @@ venv\Scripts\activate      # Windows
 # source venv/bin/activate  # macOS/Linux
 
 # Install dependencies
-pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 
 # Create sse3d-api/.env using the configuration block below.
 # Run this from sse3d-api; the local filename is .env.

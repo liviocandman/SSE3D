@@ -78,16 +78,17 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
-          cache-dependency-path: './sse3d-api/requirements.txt'
+          cache-dependency-path: |
+            sse3d-api/requirements.txt
+            sse3d-api/requirements-dev.txt
 
       - name: Install dependencies (Python)
         run: |
           python -m pip install --upgrade pip
-          pip install ruff
-          pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
 
       - name: Run Code Linter (Ruff)
-        run: ruff check .
+        run: python -m ruff check .
 
       - name: Run Tests (Pytest)
         run: pytest tests/ -v

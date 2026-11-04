@@ -67,7 +67,7 @@ venv\Scripts\activate        # Windows
 # source venv/bin/activate   # macOS/Linux
 
 # Install dependencies
-pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 
 # Create .env using the configuration block below.
 # Environment templates are not tracked in this repository.
@@ -636,9 +636,15 @@ sse3d-api/
 
 ## 🧪 Testing
 
-The project uses **pytest** with **pytest-asyncio** for async test support.
+The project uses **pytest** with **pytest-asyncio** for async test support. Install `requirements-dev.txt` to use the same dependencies and Ruff version as CI. Production Docker builds continue to install `requirements.txt`.
 
 ```bash
+# Install the pinned development tools (from sse3d-api)
+python -m pip install -r requirements-dev.txt
+
+# Run the same lint check as CI
+python -m ruff check .
+
 # Run all tests
 pytest
 
@@ -649,7 +655,11 @@ pytest -v
 pytest tests/test_ephemeris.py
 ```
 
+`ruff.toml` requires Ruff `0.15.7` and explicitly selects `E4`, `E7`, `E9` and `F`, preserving the validated lint policy. Other Ruff versions fail with a version requirement error. Update the pin, configuration and local environment together when adopting a new version or rule set; handle that migration separately from unrelated feature changes.
+
 ### Test Dependencies
+
+- `ruff==0.15.7` — shared local/CI lint tool
 - `pytest` — test framework
 - `pytest-asyncio` — async test support
 - `httpx[test]` — async HTTP client test utilities
