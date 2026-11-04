@@ -25,7 +25,6 @@
 - [Overview](#-overview)
 - [Key Features](#-key-features)
 - [Architecture](#-architecture)
-- [Artemis II](#-artemis-ii)
 - [Tech Stack](#-tech-stack)
 - [Getting Started](#-getting-started)
 - [Product Walkthrough](#-product-walkthrough--usability-guide)
@@ -120,9 +119,9 @@ The application features a **heliocentric coordinate system** based on real ephe
          ┌────────────┼────────────┬────────────┐
          ▼            ▼            ▼            ▼
    ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────────┐
-   │  NASA    │ │  Google  │ │  Postgres│ │ AWS S3 +      │
-   │  JPL     │ │  Gemini  │ │  DB      │ │ CloudFront    │
-   │  Horizons│ │  API     │ │ (Fly/Neon)│ │ (Textures)    │
+   │  NAIF    │ │  Google  │ │  Postgres│ │ GitHub        │
+   │  SPICE   │ │  Gemini  │ │  DB      │ │ Releases      │
+   │  Kernels │ │  API     │ │ (Fly/Neon)│ │ (Assets)      │
    └──────────┘ └──────────┘ └──────────┘ └───────────────┘
 ```
 
@@ -131,29 +130,7 @@ The application features a **heliocentric coordinate system** based on real ephe
 1. **Ephemeris data**: Frontend requests planet positions → Next.js BFF → FastAPI → Redis cache check → SPICE kernel computation (if cache miss) → fallback JSON data (if SPICE is unavailable)
 2. **AI questions**: User sends question → Next.js BFF → FastAPI (rate limit check) → Google Gemini API → response with sentence completion post-processing
 3. **Authentication**: NextAuth (Google/GitHub) → JWT session → BFF signs server-to-server JWT → FastAPI validates and performs identity linking
-4. **Textures**: Client loads WebP textures from **AWS CloudFront CDN** (cached at edge) with fallback to local public directory.
-
----
-
-## 🚀 Artemis II
-
-Artemis II is implemented as a dedicated mission domain layered on top of the existing solar system domain. It does not reuse planetary contracts as a shortcut: mission state, trajectory, HUD, observability, Orion 3D rendering, and attitude all live in mission-specific code paths.
-
-Current production-oriented highlights:
-- dedicated FastAPI mission router plus Next.js BFF routes
-- OEM-first trajectory geometry with live AROW freshness and fallback semantics
-- Orion marker / proxy / detailed LOD rendering
-- guided mission HUD and live/replay modes
-- SPICE-backed geometry plus policy-estimated attitude pipeline
-- tiered Orion detailed models loaded from the same CDN base as textures under `models/orion`
-
-Current canonical documentation:
-- [Current State](docs/artemis2/CURRENT_STATE.md)
-- [Deployment](docs/artemis2/DEPLOYMENT.md)
-- [Environment](docs/artemis2/ENVIRONMENT.md)
-- [Merge Checklist](docs/artemis2/MERGE_CHECKLIST.md)
-
-Historical epic-by-epic plans remain under `docs/artemis2/*`, but the files above should be treated as the current operational truth for this branch.
+4. **Textures**: Client loads versioned KTX2 files from the application `/textures/<version>/` path. The published GitHub Release prepares all tiers at build time; [the texture lock](assets/textures.lock.json) pins the version, sizes and SHA-256 values. Basis stays in Git.
 
 ---
 
@@ -196,7 +173,7 @@ Historical epic-by-epic plans remain under `docs/artemis2/*`, but the files abov
 | **Fly.io** | Backend API hosting (Docker) |
 | **PostgreSQL (Fly/Neon)** | Serverless/Managed PostgreSQL database |
 | **Upstash** | Serverless Redis (caching + rate limiting) |
-| **AWS S3 + CloudFront** | High-performance CDN for 3D textures |
+| **GitHub Releases** | Pinned asset packages; Vercel serves KTX2, Fly stores kernels on its volume |
 
 ---
 
@@ -208,30 +185,27 @@ Historical epic-by-epic plans remain under `docs/artemis2/*`, but the files abov
 - **Python** ≥ 3.12
 - **npm** or **yarn**
 - **Flyctl** (for backend management)
-- API keys for: Google Gemini, Upstash Redis, AWS (for texture upload)
+- API keys for enabled application services (Google Gemini, Upstash Redis); no AWS key is needed for asset preparation
 
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/solar-explore-3d.git
-cd solar-explore-3d
+git clone https://github.com/liviocandman/SSE3D.git
+cd SSE3D
 ```
 
 ### 2. Frontend & Assets Setup
 
 ```bash
 # Install dependencies
-npm install
+npm ci
 
-# Set up tiered planet textures (generates low/mid/high tiers)
-npm run setup
+# Download and verify all pinned KTX2 tiers from the published Release
+npm run assets:prepare
+npm run assets:verify
 
-# (Optional) Upload textures to S3/CloudFront
-# Ensure AWS credentials are in .env.local
-npm run upload:textures
-
-# Create environment variables
-cp .env.local.example .env.local
+# Create .env.local using the configuration block below.
+# Environment templates are not tracked in this repository.
 ```
 
 Edit `.env.local` with your credentials:
@@ -249,8 +223,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 PYTHON_API_URL=http://localhost:8000
 BFF_JWT_SECRET=shared_secret_between_bff_and_api
 
-# Textures (CDN)
-NEXT_PUBLIC_TEXTURE_CDN_URL=https://your-id.cloudfront.net
+# KTX2 origin comes from assets/textures.lock.json; no CDN variable.
 ```
 
 ```bash
@@ -273,8 +246,8 @@ venv\Scripts\activate      # Windows
 # Install dependencies
 pip install -r requirements.txt
 
-# Configure environment
-cp .env.example .env
+# Create sse3d-api/.env using the configuration block below.
+# Run this from sse3d-api; the local filename is .env.
 ```
 
 Edit `.env` with your credentials:
@@ -287,13 +260,18 @@ DATABASE_URL=postgresql+asyncpg://user:pass@host/dbname
 ALLOWED_ORIGINS=http://localhost:3000
 RATE_LIMIT_REQUESTS=10
 RATE_LIMIT_WINDOW_SECONDS=3600
+BFF_JWT_SECRET=shared_secret_between_bff_and_api
+SPICE_ENABLED=true
+SPICE_KERNEL_DIR=kernels
+SPICE_LOCK_FILE=assets/kernels.lock.json
 ```
 
 ```bash
 # Run database migrations
 alembic upgrade head
 
-# Start the API server
+# Prepare the image-pinned kernels, then start the API
+python scripts/fetch_kernels.py --ensure
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -476,7 +454,8 @@ The backend API is fully documented in a separate README. See **[sse3d-api/READM
 | `GET` | `/api/ai/favorites` | List saved favorites |
 | `DELETE` | `/api/ai/favorites/{id}` | Delete a favorite |
 | `POST` | `/api/users/merge-anonymous` | Migrate anonymous favorites to authenticated user |
-| `GET` | `/health` | Health check endpoint |
+| `GET` | `/health` | Process/configuration inspection |
+| `GET` | `/ready` | Verified SPICE orbital readiness; 200 or 503 |
 
 ---
 
@@ -567,29 +546,28 @@ solar-explore-3d/
 
 ## 🌐 Deployment
 
-### Assets (S3 + CloudFront)
-Textures are served via AWS CloudFront for low latency. Use the provided script to upload:
-```bash
-# Set AWS credentials in .env.local first
-npm run upload:textures
-```
+### Assets (GitHub Releases → Vercel/Fly)
+The public asset packages are [textures-2026-11-04.1](https://github.com/liviocandman/SSE3D/releases/tag/textures-2026-11-04.1) and [kernels-2026-11-04.1](https://github.com/liviocandman/SSE3D/releases/tag/kernels-2026-11-04.1). Their ZIPs and manifests were downloaded anonymously and verified against the [texture lock](assets/textures.lock.json) and [kernel lock](sse3d-api/assets/kernels.lock.json). Each Release also includes checksums and attribution information.
+
+`npm run build` prepares and verifies pinned KTX2 through `prebuild`; configure this command in Vercel. A clean build downloads the packages without AWS credentials. `npm run assets:verify` checks the installed files. Basis is committed under `public/basis/`, while KTX2 files are served from `/textures/<version>/`. Existing AWS uploaders are historical tools outside this flow.
+
+New asset bytes require a new version, published packages and updated locks. Keep the previous texture descriptor in `retained` when upgrading. Asset publication does not complete application delivery: validate the Preview, Docker image and Fly startup/rollback before promoting a deployment.
 
 ### Frontend (Vercel)
-The Next.js frontend is deployed to **Vercel** with automatic deployments on push to `main`.
+Verify the connected branch and build command in Vercel before promoting a Preview. The repository workflow deploys Fly; it does not establish the Vercel integration.
 
 Required environment variables on Vercel:
 - `AUTH_SECRET`, `NEXTAUTH_URL`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`
 - `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET`
 - `NEXT_PUBLIC_API_URL`, `PYTHON_API_URL` (points to Fly.io backend)
 - `BFF_JWT_SECRET`
-- `NEXT_PUBLIC_TEXTURE_CDN_URL`
-
-Artemis II notes:
-- Orion detailed models are resolved from the same CDN base as textures, but under `models/orion`
-- see [docs/artemis2/DEPLOYMENT.md](docs/artemis2/DEPLOYMENT.md) for the exact model upload and mission runtime checklist
 
 ### Backend (Fly.io)
 The FastAPI backend is containerized with Docker and deployed to **Fly.io** in the `gru` (São Paulo) region.
+
+The image contains the kernel lock and validator, while kernels live on the `spice_data` volume mounted at `/data`. The CMD installs or verifies `/data/kernels/releases/<version>` before starting Uvicorn. Provision adequate free space for the archive, extraction and safety margin. Prefer preparing the volume before rollout: the configured 180-second grace period has not established that an empty Fly volume can hydrate in time.
+
+Use `/ready` for orbital readiness (200 only after verification and SPICE initialization); `/health` describes process state. For installation, verification and rollback commands, see [backend deployment](sse3d-api/README.md#-deployment).
 
 ```bash
 # Deploy
@@ -603,10 +581,6 @@ fly logs
 Required secrets on Fly.io:
 - `GEMINI_API_KEY`, `DATABASE_URL` (postgresql+asyncpg), `UPSTASH_REDIS_REST_URL`
 - `UPSTASH_REDIS_REST_TOKEN`, `ALLOWED_ORIGINS`, `BFF_JWT_SECRET`, `NEXTAUTH_SECRET`
-
-Artemis II backend adds SPICE kernel bootstrap and OEM mission runtime requirements. See:
-- [docs/artemis2/ENVIRONMENT.md](docs/artemis2/ENVIRONMENT.md)
-- [docs/artemis2/DEPLOYMENT.md](docs/artemis2/DEPLOYMENT.md)
 
 ---
 
