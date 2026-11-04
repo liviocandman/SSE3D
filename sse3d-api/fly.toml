@@ -2,7 +2,6 @@ app = "sse3d-api"
 primary_region = "gru"
 
 [env]
-  S3_KERNELS_URL = "https://sse3d-textures-prod.s3.us-east-1.amazonaws.com/kernels"
   ALLOWED_ORIGINS = "http://localhost:3000,https://sse3d.vercel.app"
   SPICE_KERNEL_DIR = "/data/kernels"
 
@@ -20,10 +19,11 @@ primary_region = "gru"
   min_machines_running = 0
 
 [[http_service.checks]]
+  # Warm/pre-provisioned volume policy. Test hydration separately before raising to 1200s.
   grace_period = "180s"
   interval = "15s"
   method = "get"
-  path = "/health"
+  path = "/ready"
   timeout = "5s"
 
 [[vm]]

@@ -17,3 +17,11 @@ test_*.py
 .git/
 .github/
 *.md
+
+# Assets are installed on the volume, never embedded by COPY . .
+kernels/
+.cache/
+.downloads/
+.staging/
+*.zip
+*.part

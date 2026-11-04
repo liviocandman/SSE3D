@@ -44,7 +44,9 @@ class Settings(BaseSettings):
     # SPICE kernel configuration
     spice_enabled: bool = True
     spice_strict_kernels: bool = False
+    # Installation base; releases/<lock version> is resolved once at startup.
     spice_kernel_dir: str = "kernels"
+    spice_lock_file: str = "assets/kernels.lock.json"
     spice_lsk_file: str = "lsk/naif0012.tls"
     spice_planetary_spk_file: str = "spk/de440.bsp"
     spice_moon_spk_files: Union[list[str], str] = [
@@ -90,6 +92,11 @@ class Settings(BaseSettings):
 
         project_root = Path(__file__).resolve().parents[2]
         return (project_root / root).resolve()
+
+    @property
+    def spice_lock_path(self) -> Path:
+        path = Path(self.spice_lock_file)
+        return path if path.is_absolute() else Path(__file__).resolve().parents[2] / path
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
