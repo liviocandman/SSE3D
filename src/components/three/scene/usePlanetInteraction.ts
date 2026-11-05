@@ -8,7 +8,6 @@ interface UsePlanetInteractionOptions {
   ephemerisById: Record<string, EphemerisData>;
   viewMode: ViewMode;
   setSelectedPlanet: (planet: SelectedPlanet | null) => void;
-  setSelectedMissionTargetId: (id: string | null) => void;
   resetTravel: () => void;
   setViewMode: (mode: ViewMode) => void;
   setTravelTarget: (position: { x: number; y: number; z: number }, radius: number) => void;
@@ -18,13 +17,11 @@ export function usePlanetInteraction({
   ephemerisById,
   viewMode,
   setSelectedPlanet,
-  setSelectedMissionTargetId,
   resetTravel,
   setViewMode,
   setTravelTarget,
 }: UsePlanetInteractionOptions) {
   const handlePlanetClick = (bodyId: string) => {
-    setSelectedMissionTargetId(null);
     resetTravel();
     const planet = ephemerisById[bodyId];
 
@@ -49,7 +46,6 @@ export function usePlanetInteraction({
   };
 
   const handlePlanetDoubleClick = (bodyId: string) => {
-    setSelectedMissionTargetId(null);
     const planet = ephemerisById[bodyId];
 
     if (planet) {

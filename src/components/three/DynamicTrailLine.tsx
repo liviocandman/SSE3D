@@ -28,9 +28,7 @@ type LineMesh = THREE.Mesh<THREE.BufferGeometry, THREE.Material> & {
 /**
  * DynamicTrailLine Component
  * 
- * SCOPE: Exclusive for planets and moons.
- * DO NOT use this for spacecraft or mission trajectories.
- * Spacecraft trajectories should use MissionTrajectoryLine.
+ * SCOPE: Planet and moon trajectories.
  * 
  * Provides a performant, GPU-accelerated trail line that fades based on simulation time.
  */

@@ -1,29 +1,23 @@
 import { StateCreator } from 'zustand';
 import { clockRuntime } from '@/lib/time/clockRuntime';
 import { temporalMetrics } from '@/lib/time/metrics';
-import { TimeAuthority as ClockAuthority } from '@/lib/time/clockTypes';
-
-export type TimeAuthority = ClockAuthority;
 
 export interface TimeState {
   currentDate: string; // YYYY-MM-DD
   trajectoryBaseDate: string; // Date used by initial ephemeris query window
   currentTime: Date;
-  timeAuthority: TimeAuthority;
   timeMultiplier: number; // Seconds simulated per real second (e.g. 60 = 1 min/s)
   isPlaying: boolean;
 }
 
 export interface TimeActions {
-  setTimeAuthority: (auth: TimeAuthority) => void;
   setCurrentDate: (date: string) => void;
   setCurrentTime: (time: Date) => void;
   stepCurrentTimeByMs: (deltaMs: number) => void;
   togglePlaybackIntent: () => void;
   stepByMsIntent: (deltaMs: number) => void;
   jumpToDateUtcIntent: (date: string) => void;
-  goLiveIntent: (liveTimestamp: string) => void;
-  resetToAnchorIntent: (liveTimestamp?: string) => void;
+  resetToAnchorIntent: () => void;
   syncTimeFromRuntime: (runtimeTimeMs: number) => void;
   ensureRuntimeInitialized: () => void;
   tickSimulation: (deltaSeconds: number) => number;
@@ -78,11 +72,8 @@ export const createTimeSlice: StateCreator<TimeSlice, [], [], TimeSlice> = (set,
   currentDate: getTodayString(),
   trajectoryBaseDate: getTodayString(),
   currentTime: new Date(),
-  timeAuthority: 'user',
   timeMultiplier: 60,
   isPlaying: false,
-
-  setTimeAuthority: (auth) => set(() => ({ timeAuthority: auth })),
 
   setCurrentDate: (date) => set((state) => {
     const newTimeMs = parseUTCDate(date, state.currentTime.getTime()).getTime();
@@ -104,7 +95,6 @@ export const createTimeSlice: StateCreator<TimeSlice, [], [], TimeSlice> = (set,
 
   togglePlaybackIntent: () =>
     set((state) => ({
-      timeAuthority: 'user',
       isPlaying: !state.isPlaying,
     })),
 
@@ -114,7 +104,6 @@ export const createTimeSlice: StateCreator<TimeSlice, [], [], TimeSlice> = (set,
       clockRuntime.setTimeMs(nextRuntimeMs);
       return {
         ...syncTimeSnapshot(state, nextRuntimeMs),
-        timeAuthority: 'user',
         isPlaying: false,
       };
     }),
@@ -125,32 +114,17 @@ export const createTimeSlice: StateCreator<TimeSlice, [], [], TimeSlice> = (set,
       clockRuntime.setTimeMs(nextTimeMs);
       return {
         ...syncTimeSnapshot(state, nextTimeMs),
-        timeAuthority: 'user',
       };
     }),
 
-  goLiveIntent: (liveTimestamp) =>
+  resetToAnchorIntent: () =>
     set((state) => {
-      const liveTime = new Date(liveTimestamp);
-      const liveTimeMs = liveTime.getTime();
-      if (!Number.isFinite(liveTimeMs)) return state as TimeSlice;
-      clockRuntime.setTimeMs(liveTimeMs);
-      return {
-        ...syncTimeSnapshot(state, liveTimeMs),
-        timeAuthority: 'mission_live',
-        isPlaying: false,
-      } as Partial<TimeSlice>;
-    }),
-
-  resetToAnchorIntent: (liveTimestamp) =>
-    set((state) => {
-      const anchor = liveTimestamp ? new Date(liveTimestamp) : new Date();
+      const anchor = new Date();
       const anchorMs = anchor.getTime();
       if (!Number.isFinite(anchorMs)) return state as TimeSlice;
       clockRuntime.setTimeMs(anchorMs);
       return {
         ...syncTimeSnapshot(state, anchorMs),
-        timeAuthority: 'user',
         isPlaying: false,
       } as Partial<TimeSlice>;
     }),
@@ -175,7 +149,7 @@ export const createTimeSlice: StateCreator<TimeSlice, [], [], TimeSlice> = (set,
 
   tickSimulation: (deltaSeconds) => {
     const state = get();
-    if (!state.isPlaying || state.timeAuthority !== 'user') {
+    if (!state.isPlaying) {
       return clockRuntime.getTimeMs();
     }
     return clockRuntime.tick(deltaSeconds, state.timeMultiplier);
@@ -186,7 +160,7 @@ export const createTimeSlice: StateCreator<TimeSlice, [], [], TimeSlice> = (set,
   setIsPlaying: (playing) => set(() => ({ isPlaying: playing })),
 
   advanceTime: (deltaSeconds) => set((state) => {
-    if (!state.isPlaying || state.timeAuthority !== 'user') {
+    if (!state.isPlaying) {
       return state as TimeSlice;
     }
 

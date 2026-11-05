@@ -6,7 +6,7 @@ export interface TravelTarget {
   z: number;
 }
 
-export type RenderOriginMode = 'global' | 'selected_body' | 'mission_vehicle' | 'custom';
+export type RenderOriginMode = 'global' | 'selected_body' | 'custom';
 
 export type CameraNavMode = 'idle' | 'travel' | 'follow';
 

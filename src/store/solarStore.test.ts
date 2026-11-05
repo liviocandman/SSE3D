@@ -44,7 +44,6 @@ describe('useSolarStore', () => {
       currentDate: '2026-03-26',
       trajectoryBaseDate: '2026-03-26',
       currentTime: new Date('2026-03-26T00:00:00Z'),
-      timeAuthority: 'user',
       timeMultiplier: 1,
       isPlaying: false,
       selectedPlanet: null,
@@ -124,28 +123,11 @@ describe('useSolarStore', () => {
     expect(state.trajectoryBaseDate).toBe('2026-05-01');
   });
 
-  it('should not advance time while mission live authority is active', () => {
-    setTestState({
-      currentTime: new Date('2026-03-26T00:00:00.000Z'),
-      currentDate: '2026-03-26',
-      isPlaying: true,
-      timeAuthority: 'mission_live',
-      timeMultiplier: 60,
-    });
-
-    useSolarStore.getState().advanceTime(1);
-
-    const state = useSolarStore.getState();
-    expect(state.currentTime.toISOString()).toBe('2026-03-26T00:00:00.000Z');
-    expect(state.currentDate).toBe('2026-03-26');
-  });
-
   it('should advance time using seconds simulated per real second', () => {
     setTestState({
       currentTime: new Date('2026-03-26T00:00:00.000Z'),
       currentDate: '2026-03-26',
       isPlaying: true,
-      timeAuthority: 'user',
       timeMultiplier: 60,
     });
 
@@ -198,7 +180,6 @@ describe('useSolarStore', () => {
       currentTime: new Date('2026-03-26T00:00:00.000Z'),
       currentDate: '2026-03-26',
       isPlaying: false,
-      timeAuthority: 'user',
       timeMultiplier: 60,
     });
 
@@ -213,7 +194,6 @@ describe('useSolarStore', () => {
       currentTime: new Date('2026-03-26T00:00:00.000Z'),
       currentDate: '2026-03-26',
       isPlaying: true,
-      timeAuthority: 'user',
       timeMultiplier: 3600, // 1 h/s
     });
 
@@ -282,25 +262,4 @@ describe('useSolarStore', () => {
     expect(state.currentDate).toBe('2026-03-27');
   });
 
-  it('timeAuthority transition to user allows playback', () => {
-    setTestState({
-      currentTime: new Date('2026-03-26T00:00:00.000Z'),
-      currentDate: '2026-03-26',
-      isPlaying: true,
-      timeAuthority: 'mission_live',
-      timeMultiplier: 60,
-    });
-
-    useSolarStore.getState().advanceTime(1);
-    let state = useSolarStore.getState();
-    // Still blocked by mission_live
-    expect(state.currentTime.toISOString()).toBe('2026-03-26T00:00:00.000Z');
-
-    // Transition to user authority
-    useSolarStore.getState().setTimeAuthority('user');
-    useSolarStore.getState().advanceTime(1);
-    state = useSolarStore.getState();
-    // Now advances by 1 * 60 * 1000 ms = 1 min
-    expect(state.currentTime.toISOString()).toBe('2026-03-26T00:01:00.000Z');
-  });
 });

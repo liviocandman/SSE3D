@@ -4,7 +4,6 @@ import { ReactNode } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { useQualityTier } from '@/contexts/QualityTierContext';
 import { useSolarStore } from '@/store/solarStore';
-import { useMissionStore } from '@/store/missionStore';
 import { useShallow } from 'zustand/react/shallow';
 import { KM_TO_UNIT } from '@/lib/scales';
 import { CameraController } from '@/hooks/useCameraAnimation';
@@ -52,20 +51,6 @@ export function SceneCanvas({ children, ephemerisData }: SceneCanvasProps) {
     }))
   );
 
-  const { selectedMissionTargetId, setSelectedMissionTargetId } = useMissionStore(
-    useShallow((state) => ({
-      selectedMissionTargetId: state.selectedMissionTargetId,
-      setSelectedMissionTargetId: state.setSelectedMissionTargetId,
-    }))
-  );
-
-  const isEarthMissionContextActive = selectedPlanet?.bodyId === '399';
-
-  const cameraTargetId =
-    selectedMissionTargetId ||
-    selectedPlanet?.bodyId ||
-    (isEarthMissionContextActive ? 'Orion' : undefined);
-
   return (
     <Canvas
       camera={CAMERA_CONFIG}
@@ -78,7 +63,6 @@ export function SceneCanvas({ children, ephemerisData }: SceneCanvasProps) {
       style={{ width: '100%', height: '100%' }}
       onPointerMissed={() => {
         setSelectedPlanet(null);
-        setSelectedMissionTargetId(null);
         resetTravel();
       }}
     >
@@ -90,7 +74,7 @@ export function SceneCanvas({ children, ephemerisData }: SceneCanvasProps) {
       <CameraController
         targetPositionKm={travelTarget}
         targetRadiusKm={travelTargetRadius ? travelTargetRadius / KM_TO_UNIT : undefined}
-        targetId={cameraTargetId}
+        targetId={selectedPlanet?.bodyId}
       />
       {children}
     </Canvas>

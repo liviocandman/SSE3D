@@ -1,60 +1,12 @@
 import * as THREE from 'three';
 import { useSolarStore } from '@/store/solarStore';
-import { useMissionStore } from '@/store/missionStore';
 import { samplePlanet } from './planetarySampler';
 import { sampleMoon } from './moonSampler';
-import { sampleMission } from './missionSampler';
-import type { SampleStatus, MissionSampleSource } from './types';
+import type { SampleStatus } from './types';
 import type { TemporalLookupCache } from '../temporalLookup';
-import { type TrajectorySegment, buildTrajectorySegment } from '../trajectoryEngine';
+import type { TrajectorySegment } from '../trajectoryEngine';
 import { PLANET_MOONS } from '@/lib/textureConfig';
 import { BODY_IDS } from '@/lib/types';
-
-import type { MissionTrajectory } from '@/lib/missionTypes';
-
-/**
- * Caching for mission trajectory segment to avoid reconstruction every frame.
- */
-let cachedMissionTrajectory: MissionTrajectory | null = null;
-let cachedMissionSegment: TrajectorySegment | null = null;
-
-function getCachedMissionSegment(missionTrajectory: MissionTrajectory | null): TrajectorySegment | null {
-  if (!missionTrajectory) {
-    cachedMissionTrajectory = null;
-    cachedMissionSegment = null;
-    return null;
-  }
-
-  if (missionTrajectory === cachedMissionTrajectory) {
-    return cachedMissionSegment;
-  }
-
-  const combinedPoints = [...missionTrajectory.past, ...missionTrajectory.planned];
-  if (combinedPoints.length >= 2) {
-    cachedMissionSegment = buildTrajectorySegment(
-      combinedPoints.map((point) => ({
-        timestamp: point.timestamp,
-        position: {
-          x: point.position.x,
-          y: point.position.y,
-          z: point.position.z,
-        },
-        velocity: point.velocity
-          ? {
-              x: point.velocity.x,
-              y: point.velocity.y,
-              z: point.velocity.z,
-            }
-          : undefined,
-      }))
-    );
-  } else {
-    cachedMissionSegment = null;
-  }
-
-  cachedMissionTrajectory = missionTrajectory;
-  return cachedMissionSegment;
-}
 
 /**
  * Static mapping of moons to parents for fast routing.
@@ -118,43 +70,9 @@ export function resolveMoonFrame(
 }
 
 /**
- * High-level resolver for the mission spacecraft.
- */
-export function resolveMissionFrame(
-  timeMs: number,
-  outAbsolutePositionKm: THREE.Vector3,
-  outEarthRelativePositionKm: THREE.Vector3,
-  outHeading: THREE.Quaternion,
-  previousEarthRelativePositionKm?: THREE.Vector3 | null
-): MissionSampleSource {
-  const solarState = useSolarStore.getState();
-  const missionStore = useMissionStore.getState();
-  
-  const missionState = missionStore.missionState;
-  const missionTrajectory = missionStore.missionTrajectory;
-  const earthSegments = solarState.masterTrajectorySegments[BODY_IDS.EARTH] ?? [];
-
-  const missionTrajectorySegment = getCachedMissionSegment(missionTrajectory);
-
-  return sampleMission(
-    timeMs,
-    missionState,
-    missionTrajectory,
-    missionTrajectorySegment,
-    earthSegments,
-    outAbsolutePositionKm,
-    outEarthRelativePositionKm,
-    outHeading,
-    previousEarthRelativePositionKm
-  );
-}
-
-/**
  * Domain-agnostic resolver for the camera follow system.
- * Centralizes the branching logic for Orion, moons, and planets.
+ * Centralizes the branching logic for moons and planets.
  */
-const tempEarthRelative = new THREE.Vector3();
-const tempHeading = new THREE.Quaternion();
 const tempLocal = new THREE.Vector3();
 
 export function resolveGeneralTargetFrame(
@@ -164,18 +82,7 @@ export function resolveGeneralTargetFrame(
   lookupCache: TemporalLookupCache,
   parentLookupCache: TemporalLookupCache
 ): boolean {
-  // 1) Mission Domain
-  if (targetId === 'Orion' || targetId === 'orion') {
-    const source = resolveMissionFrame(
-      timeMs,
-      outAbsPos,
-      tempEarthRelative,
-      tempHeading
-    );
-    return source !== 'none';
-  }
-
-  // 2) Moon Domain
+  // 1) Moon Domain
   const parentId = MOON_PARENT_BY_ID[targetId];
   if (parentId) {
     const status = resolveMoonFrame(
@@ -190,7 +97,7 @@ export function resolveGeneralTargetFrame(
     return status !== 'no-data';
   }
 
-  // 3) Planet Domain
+  // 2) Planet Domain
   const status = resolvePlanetFrame(
     targetId,
     timeMs,

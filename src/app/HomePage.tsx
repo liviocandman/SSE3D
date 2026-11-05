@@ -15,7 +15,6 @@ import { scalePositionFromKm } from '@/lib/scales';
 import type { AppError } from '@/components/ui/ErrorOverlay';
 import { useSolarStore } from '@/store/solarStore';
 import { StoreInitializer } from '@/components/three/StoreInitializer';
-import { MissionDataController } from '@/components/mission/MissionDataController';
 
 // Dynamically import SceneManager with SSR disabled
 const SceneManager = dynamic(
@@ -116,7 +115,6 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
 
   return (
     <>
-      <MissionDataController />
       {/* 1. Synchronous hydration runs first during initial render pass */}
       <StoreInitializer 
         initialFullOrbits={initialFullOrbits} 

@@ -22,8 +22,7 @@ export function GlobalTimeController() {
     }
 
     const isPlaying = solarStore.isPlaying;
-    const auth = solarStore.timeAuthority;
-    const canAdvance = isPlaying && auth === 'user';
+    const canAdvance = isPlaying;
     if (canAdvance) {
       tickSimulation(delta);
     }

@@ -12,7 +12,7 @@ vi.mock('@/hooks/useDisplayTime', () => ({
   useDisplayTime: () => new Date('2026-03-26T00:00:00.000Z'),
 }));
 
-const { solarState, missionState } = vi.hoisted(() => {
+const { solarState } = vi.hoisted(() => {
   return {
     solarState: {
       currentDate: '2026-03-26',
@@ -22,14 +22,8 @@ const { solarState, missionState } = vi.hoisted(() => {
       togglePlaybackIntent: vi.fn(),
       stepByMsIntent: vi.fn(),
       jumpToDateUtcIntent: vi.fn(),
-      goLiveIntent: vi.fn(),
       resetToAnchorIntent: vi.fn(),
       setTimeMultiplier: vi.fn(),
-    },
-    missionState: {
-      isLive: false,
-      liveTimestamp: '2026-04-04T12:00:00Z' as string | null,
-      setIsLive: vi.fn(),
     },
   };
 });
@@ -39,11 +33,6 @@ vi.mock('@/store/solarStore', () => {
   // @ts-expect-error Mocking the store object
   mock.getState = vi.fn(() => ({ currentTime: new Date('2026-03-26T00:00:00.000Z') }));
   return { useSolarStore: mock };
-});
-
-vi.mock('@/store/missionStore', () => {
-  const mock = vi.fn((selector) => (selector ? selector(missionState) : missionState));
-  return { useMissionStore: mock };
 });
 
 vi.mock('lucide-react', () => ({
@@ -58,18 +47,14 @@ vi.mock('lucide-react', () => ({
 describe('TimeTravelControls', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    missionState.isLive = false;
-    missionState.liveTimestamp = '2026-04-04T12:00:00Z';
   });
 
-  it('calls handleGoLive when Live button is clicked', () => {
+  it('resets to the current browser time from the Now button', () => {
     render(<TimeTravelControls />);
 
-    const liveButton = screen.getByText('Live');
-    fireEvent.click(liveButton);
+    fireEvent.click(screen.getByText('Now'));
 
-    expect(solarState.goLiveIntent).toHaveBeenCalledWith('2026-04-04T12:00:00Z');
-    expect(missionState.setIsLive).toHaveBeenCalledWith(true);
+    expect(solarState.resetToAnchorIntent).toHaveBeenCalledWith();
   });
 
   it('steps time backward with Back button', () => {
@@ -88,27 +73,21 @@ describe('TimeTravelControls', () => {
     expect(solarState.stepByMsIntent).toHaveBeenCalledWith(900000);
   });
 
-  it('exits live mode when manual time travel is triggered (Play)', () => {
-    missionState.isLive = true;
-
+  it('toggles playback when Play is clicked', () => {
     render(<TimeTravelControls />);
 
     const playButton = screen.getByTestId('play');
     fireEvent.click(playButton);
 
-    expect(missionState.setIsLive).toHaveBeenCalledWith(false);
     expect(solarState.togglePlaybackIntent).toHaveBeenCalled();
   });
 
-  it('exits live mode when jumping to a date', () => {
-    missionState.isLive = true;
-
+  it('jumps to a selected date', () => {
     render(<TimeTravelControls />);
 
     const jumpButton = screen.getByText('Jump');
     fireEvent.click(jumpButton);
 
-    expect(missionState.setIsLive).toHaveBeenCalledWith(false);
     expect(solarState.jumpToDateUtcIntent).toHaveBeenCalledWith('2026-03-26');
   });
 
@@ -121,25 +100,12 @@ describe('TimeTravelControls', () => {
     expect(solarState.setTimeMultiplier).toHaveBeenCalledWith(3600);
   });
 
-  it('reset uses the live timestamp when available', () => {
+  it('reset uses browser time', () => {
     render(<TimeTravelControls />);
 
     const resetButton = screen.getByTitle('Reset to Today');
     fireEvent.click(resetButton);
 
-    expect(solarState.resetToAnchorIntent).toHaveBeenCalledWith('2026-04-04T12:00:00Z');
-  });
-
-  it('reset falls back to browser time when no live timestamp is available', () => {
-    // Override liveTimestamp to null to exercise the browser-time fallback path.
-    // This is an explicitly documented UX exception in the time-travel plan.
-    missionState.liveTimestamp = null;
-
-    render(<TimeTravelControls />);
-
-    const resetButton = screen.getByTitle('Reset to Today');
-    fireEvent.click(resetButton);
-
-    expect(solarState.resetToAnchorIntent).toHaveBeenCalledWith(undefined);
+    expect(solarState.resetToAnchorIntent).toHaveBeenCalledWith();
   });
 });

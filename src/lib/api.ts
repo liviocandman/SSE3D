@@ -9,5 +9,4 @@ export const BFF_API_ROUTES = {
   EPHEMERIS: '/api/ephemeris',
   AI: '/api/ai',
   FAVORITES: '/api/favorites',
-  MISSIONS: '/api/missions/artemis2',
 } as const;

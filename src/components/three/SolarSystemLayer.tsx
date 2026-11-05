@@ -1,21 +1,19 @@
 'use client';
 
-import { useMemo, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useQualityTier } from '@/contexts/QualityTierContext';
 import { useSolarStore } from '@/store/solarStore';
-import { useMissionStore } from '@/store/missionStore';
 import { useShallow } from 'zustand/react/shallow';
 import { Sun } from './Sun';
 import { CelestialBody } from './CelestialBody';
 import { MoonSystem } from './MoonSystem';
 import { SelectionRing } from './SelectionRing';
 import { PlanetTrajectoryGroup } from './PlanetTrajectoryGroup';
-import { EarthMissionLayer } from './EarthMissionLayer';
-import { usePlanetsToRender, SUN_BODY_ID, calculateMillionKmFromSun } from './scene/usePlanetsToRender';
+import { usePlanetsToRender, SUN_BODY_ID } from './scene/usePlanetsToRender';
 import { usePlanetInteraction } from './scene/usePlanetInteraction';
 import { PLANET_MOONS } from '@/lib/textureConfig';
 import { BODY_IDS } from '@/lib/types';
-import type { EphemerisData, SelectedPlanet } from '@/lib/types';
+import type { EphemerisData } from '@/lib/types';
 
 const ALL_PLANET_IDS = [
   BODY_IDS.MERCURY, BODY_IDS.VENUS, BODY_IDS.EARTH, BODY_IDS.MARS,
@@ -51,12 +49,6 @@ export function SolarSystemLayer({ ephemerisData }: SolarSystemLayerProps) {
     }))
   );
 
-  const { setSelectedMissionTargetId } = useMissionStore(
-    useShallow((state) => ({
-      setSelectedMissionTargetId: state.setSelectedMissionTargetId,
-    }))
-  );
-
   // Load 100% accurate full-cycle NASA orbits on mount
   useEffect(() => {
     const fetchFullOrbits = async () => {
@@ -82,7 +74,6 @@ export function SolarSystemLayer({ ephemerisData }: SolarSystemLayerProps) {
     ephemerisById,
     viewMode,
     setSelectedPlanet,
-    setSelectedMissionTargetId,
     resetTravel,
     setViewMode,
     setTravelTarget,
@@ -92,8 +83,6 @@ export function SolarSystemLayer({ ephemerisData }: SolarSystemLayerProps) {
     ? planetsToRender.find(p => p?.bodyId === selectedPlanet.bodyId)
     : null;
 
-  const earthEphemeris = ephemerisById[BODY_IDS.EARTH] ?? null;
-  const earthPlanet = planetsToRender.find((planet) => planet?.bodyId === BODY_IDS.EARTH) ?? null;
   const sunEphemeris = ephemerisById[SUN_BODY_ID] ?? null;
   const sunAbsolutePositionKm = sunEphemeris
     ? {
@@ -102,30 +91,6 @@ export function SolarSystemLayer({ ephemerisData }: SolarSystemLayerProps) {
       z: sunEphemeris.position.z,
     }
     : { x: 0, y: 0, z: 0 };
-  const isEarthMissionContextActive = selectedPlanet?.bodyId === BODY_IDS.EARTH;
-
-  const earthSelectionContext = useMemo<SelectedPlanet | null>(() => {
-    if (!earthPlanet || !earthEphemeris) return null;
-
-    return {
-      bodyId: earthPlanet.bodyId,
-      name: earthPlanet.name,
-      englishName: earthPlanet.englishName,
-      position: {
-        x: earthEphemeris.position.x,
-        y: earthEphemeris.position.y,
-        z: earthEphemeris.position.z,
-      },
-      velocity: earthEphemeris.velocity,
-      radius: earthPlanet.radius,
-      distanceFromSun: calculateMillionKmFromSun([
-        earthEphemeris.position.x,
-        earthEphemeris.position.y,
-        earthEphemeris.position.z,
-      ]),
-      trajectory: earthEphemeris.trajectory,
-    };
-  }, [earthEphemeris, earthPlanet]);
 
   return (
     <>
@@ -183,16 +148,6 @@ export function SolarSystemLayer({ ephemerisData }: SolarSystemLayerProps) {
                 <SelectionRing
                   position={[0, 0, 0]}
                   radius={selectedPlanetData.radius}
-                />
-              )}
-              {planet.bodyId === BODY_IDS.EARTH && (
-                // Mission visuals are Earth-local children; Earth's CelestialBody
-                // transform applies renderOrigin for Orion, trajectory, and markers.
-                <EarthMissionLayer
-                  earthSelectionContext={earthSelectionContext}
-                  earthEphemeris={earthEphemeris}
-                  isEarthMissionContextActive={isEarthMissionContextActive}
-                  setSelectedPlanet={setSelectedPlanet}
                 />
               )}
             </CelestialBody>
