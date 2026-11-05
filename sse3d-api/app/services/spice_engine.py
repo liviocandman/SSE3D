@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from threading import Lock
 from typing import Optional
 
 import asyncio
@@ -15,6 +16,12 @@ from app.services.spice_windows import (
     calculate_trajectory_params as calculate_trajectory_params,
     _parse_target_datetime, _resolve_window, resolve_target_observer,
 )
+
+
+# CSPICE shares native process state and cannot compute in parallel threads.
+# Acquire inside the worker so cancellation of an HTTP task cannot release it
+# while that task's native computation is still running.
+_SPICE_COMPUTATION_LOCK = Lock()
 
 
 def _to_scene_coords(state_xyz: np.ndarray) -> dict[str, float]:
@@ -146,25 +153,26 @@ def _fetch_all_spice_sync(
     orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO,
     orbit_line_only: bool = False,
 ) -> list[EphemerisData]:
-    data: list[EphemerisData] = []
-    for body_id in body_ids:
-        try:
-            item = compute_ephemeris(
-                body_id,
-                target_date=target_date,
-                center_body=center_body,
-                span_days=span_days,
-                full_orbit=full_orbit,
-                orbit_ready=orbit_ready,
-                orbit_profile=orbit_profile,
-                orbit_line_only=orbit_line_only,
-            )
-            if item:
-                data.append(item)
-        except Exception as e:
-            logger.error(f"[fetch_all_spice] Failed to compute ephemeris for body {body_id}: {e}")
+    with _SPICE_COMPUTATION_LOCK:
+        data: list[EphemerisData] = []
+        for body_id in body_ids:
+            try:
+                item = compute_ephemeris(
+                    body_id,
+                    target_date=target_date,
+                    center_body=center_body,
+                    span_days=span_days,
+                    full_orbit=full_orbit,
+                    orbit_ready=orbit_ready,
+                    orbit_profile=orbit_profile,
+                    orbit_line_only=orbit_line_only,
+                )
+                if item:
+                    data.append(item)
+            except Exception as e:
+                logger.error(f"[fetch_all_spice] Failed to compute ephemeris for body {body_id}: {e}")
 
-    return data
+        return data
 
 
 async def fetch_all_spice(
