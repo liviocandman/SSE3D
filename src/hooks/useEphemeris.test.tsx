@@ -70,6 +70,14 @@ describe('useEphemeris', () => {
     expect(result.current.data.length).toBeGreaterThan(0);
   });
 
+  it('does not retry permanent HTTP errors', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 422 });
+    const { result } = renderHook(() => useEphemeris({ date: '2026-03-26' }), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.isFallback).toBe(true));
+    expect(mockFetch).toHaveBeenCalledOnce();
+    expect(result.current.error?.canRetry).toBe(false);
+  });
+
   it('should include spanDays in the URL even when not explicitly provided (default 30)', async () => {
     mockFetch.mockResolvedValue({
       ok: true,

@@ -42,6 +42,7 @@ describe('useSolarStore', () => {
   beforeEach(() => {
     setTestState({
       currentDate: '2026-03-26',
+      timeSeekRevision: 0,
       trajectoryBaseDate: '2026-03-26',
       currentTime: new Date('2026-03-26T00:00:00Z'),
       timeMultiplier: 1,
@@ -54,6 +55,9 @@ describe('useSolarStore', () => {
       masterTrajectory: {},
       masterTrajectorySegments: {},
       fullOrbits: {},
+      orbitLines: {},
+      fullOrbitStatus: {},
+      fullOrbitRetryAt: {},
     });
   });
 
@@ -173,6 +177,40 @@ describe('useSolarStore', () => {
     expect(state.masterTrajectorySegments['399']).toBeUndefined();
   });
 
+  it('does not notify subscribers for empty or fallback-only trajectory payloads', () => {
+    const before = useSolarStore.getState();
+    before.appendTrajectoryData([]);
+    before.appendTrajectoryData([{ bodyId: '399', name: 'Earth', timestamp: '2026-03-26', position: { x: 0, y: 0, z: 0 }, trajectory: [] }]);
+    before.appendFullOrbits([]);
+    before.appendFullOrbits([{ bodyId: '399', name: 'Earth', timestamp: '2026-03-26', position: { x: 0, y: 0, z: 0 } }]);
+    expect(useSolarStore.getState()).toBe(before);
+  });
+
+  it('preserves full-orbit references for identical data and ignores empty replacements', () => {
+    const payload = bodyPayload('399', makeTrajectory('2026-03-26', 4));
+    useSolarStore.getState().appendFullOrbits(payload);
+    const before = useSolarStore.getState();
+    before.appendFullOrbits(JSON.parse(JSON.stringify(payload)));
+    before.appendFullOrbits([{ ...payload[0], trajectory: [] }]);
+    expect(useSolarStore.getState()).toBe(before);
+  });
+
+  it('preserves orbit-line references for repeated responses', () => {
+    const payload = bodyPayload('301', makeTrajectory('2026-03-26', 4)).map((body) => ({
+      ...body,
+      orbitLine: {
+        points: body.trajectory!.map((point) => ({ ...point.position, timestamp: point.timestamp })),
+        isClosed: true, profile: 'regular' as const, algorithmVersion: 'test',
+        sourceWindowStart: '2026-03-26', sourceWindowEnd: '2026-03-27',
+        inputPointCount: 4, outputPointCount: 4, qualityFlags: [],
+      },
+    }));
+    useSolarStore.getState().appendFullOrbits(payload);
+    const before = useSolarStore.getState();
+    before.appendFullOrbits(JSON.parse(JSON.stringify(payload)));
+    expect(useSolarStore.getState()).toBe(before);
+  });
+
   // --- Phase 6: Temporal model correctness ---
 
   it('advanceTime does nothing when isPlaying is false', () => {
@@ -262,4 +300,38 @@ describe('useSolarStore', () => {
     expect(state.currentDate).toBe('2026-03-27');
   });
 
+});
+
+describe('explicit time seek revision', () => {
+  beforeEach(() => {
+    setTestState({
+      currentDate: '2026-04-15', trajectoryBaseDate: '2026-04-15',
+      currentTime: new Date('2026-04-15T12:00:00Z'), timeSeekRevision: 0,
+      isPlaying: true, timeMultiplier: 86400,
+    });
+  });
+  it('does not invalidate requests on playback, snapshot sync or automatic rebase', () => {
+    useSolarStore.getState().advanceTime(1);
+    expect(useSolarStore.getState().currentDate).toBe('2026-04-16');
+    expect(useSolarStore.getState().timeSeekRevision).toBe(0);
+    useSolarStore.getState().tickSimulation(30);
+    useSolarStore.getState().syncTimeFromRuntime(clockRuntime.getTimeMs());
+    expect(useSolarStore.getState().trajectoryBaseDate).toBe('2026-05-16');
+    expect(useSolarStore.getState().timeSeekRevision).toBe(0);
+  });
+  it('invalidates requests for all explicit time actions, including same-day steps', () => {
+    const state = useSolarStore.getState();
+    const actions = [
+      () => state.setCurrentDate('2026-04-16'),
+      () => state.setCurrentTime(new Date('2026-04-16T01:00:00Z')),
+      () => state.stepCurrentTimeByMs(60_000),
+      () => state.stepByMsIntent(60_000),
+      () => state.jumpToDateUtcIntent('2026-04-16'),
+      () => state.resetToAnchorIntent(),
+    ];
+    actions.forEach((action, index) => {
+      action();
+      expect(useSolarStore.getState().timeSeekRevision).toBe(index + 1);
+    });
+  });
 });

@@ -82,7 +82,7 @@ class EphemerisFetchError extends Error {
 // --- Constants ---
 
 const DEFAULT_TIMEOUT_MS = 15000;
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1000;
 const STALE_TIME_MS = 60 * 1000; // 1 minute
 
@@ -179,7 +179,7 @@ async function fetchEphemeris({
       throw new EphemerisFetchError(
         "NASA_API_ERROR",
         `API error: ${response.status} ${response.statusText}`,
-        true,
+        response.status === 408 || response.status === 429 || response.status >= 500,
       );
     }
 

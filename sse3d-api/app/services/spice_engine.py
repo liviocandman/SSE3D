@@ -23,6 +23,28 @@ from app.services.spice_windows import (
 # while that task's native computation is still running.
 _SPICE_COMPUTATION_LOCK = Lock()
 
+# Bound native work queued behind the process-wide lock. Equivalent callers
+# share a task and do not consume another slot. The loop is part of the key
+# because asyncio Tasks cannot be awaited by another event loop.
+MAX_SPICE_PENDING_REQUESTS = 8
+MAX_EPHEMERIS_BODY_IDS = 32
+_SPICE_REQUESTS_LOCK = Lock()
+_SPICE_REQUESTS: dict[tuple, asyncio.Task[list[EphemerisData]]] = {}
+
+
+class SpiceCapacityError(RuntimeError):
+    """The process already has its maximum number of distinct SPICE jobs."""
+
+
+def _finish_spice_request(key: tuple, task: asyncio.Task) -> None:
+    with _SPICE_REQUESTS_LOCK:
+        if _SPICE_REQUESTS.get(key) is task:
+            del _SPICE_REQUESTS[key]
+    # Observe errors even if every HTTP caller disconnected while native work
+    # was running. Other waiters still receive the original exception.
+    if not task.cancelled():
+        task.exception()
+
 
 def _to_scene_coords(state_xyz: np.ndarray) -> dict[str, float]:
     return {
@@ -185,9 +207,15 @@ async def fetch_all_spice(
     orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO,
     orbit_line_only: bool = False,
 ) -> list[EphemerisData]:
-    return await asyncio.to_thread(
-        _fetch_all_spice_sync,
-        body_ids,
+    if len(body_ids) > MAX_EPHEMERIS_BODY_IDS:
+        raise ValueError(f"At most {MAX_EPHEMERIS_BODY_IDS} bodies may be requested")
+    if not body_ids:
+        return []
+
+    normalized_ids = tuple(sorted(set(body_ids)))
+    key = (
+        asyncio.get_running_loop(),
+        normalized_ids,
         target_date,
         center_body,
         span_days,
@@ -196,4 +224,26 @@ async def fetch_all_spice(
         orbit_profile,
         orbit_line_only,
     )
+    with _SPICE_REQUESTS_LOCK:
+        task = _SPICE_REQUESTS.get(key)
+        if task is None:
+            if len(_SPICE_REQUESTS) >= MAX_SPICE_PENDING_REQUESTS:
+                raise SpiceCapacityError("SPICE computation queue is full")
+            task = asyncio.create_task(asyncio.to_thread(
+                _fetch_all_spice_sync,
+                list(normalized_ids),
+                target_date,
+                center_body,
+                span_days,
+                full_orbit,
+                orbit_ready,
+                orbit_profile,
+                orbit_line_only,
+            ))
+            _SPICE_REQUESTS[key] = task
+            task.add_done_callback(lambda done: _finish_spice_request(key, done))
+
+    # Cancelling one HTTP request must not cancel shared work or free a slot
+    # while CSPICE is still executing in its native thread.
+    return await asyncio.shield(task)
 

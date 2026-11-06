@@ -6,6 +6,7 @@ export interface TimeState {
   currentDate: string; // YYYY-MM-DD
   trajectoryBaseDate: string; // Date used by initial ephemeris query window
   currentTime: Date;
+  timeSeekRevision: number; // Changes only on explicit time actions, never playback snapshots.
   timeMultiplier: number; // Seconds simulated per real second (e.g. 60 = 1 min/s)
   isPlaying: boolean;
 }
@@ -72,25 +73,26 @@ export const createTimeSlice: StateCreator<TimeSlice, [], [], TimeSlice> = (set,
   currentDate: getTodayString(),
   trajectoryBaseDate: getTodayString(),
   currentTime: new Date(),
+  timeSeekRevision: 0,
   timeMultiplier: 60,
   isPlaying: false,
 
   setCurrentDate: (date) => set((state) => {
     const newTimeMs = parseUTCDate(date, state.currentTime.getTime()).getTime();
     clockRuntime.setTimeMs(newTimeMs);
-    return syncTimeSnapshot(state, newTimeMs);
+    return { ...syncTimeSnapshot(state, newTimeMs), timeSeekRevision: state.timeSeekRevision + 1 };
   }),
 
   setCurrentTime: (time) => set((state) => {
     const nextTimeMs = time.getTime();
     clockRuntime.setTimeMs(nextTimeMs);
-    return syncTimeSnapshot(state, nextTimeMs);
+    return { ...syncTimeSnapshot(state, nextTimeMs), timeSeekRevision: state.timeSeekRevision + 1 };
   }),
 
   stepCurrentTimeByMs: (deltaMs) => set((state) => {
     const nextRuntimeMs = clockRuntime.getTimeMs() + deltaMs;
     clockRuntime.setTimeMs(nextRuntimeMs);
-    return syncTimeSnapshot(state, nextRuntimeMs);
+    return { ...syncTimeSnapshot(state, nextRuntimeMs), timeSeekRevision: state.timeSeekRevision + 1 };
   }),
 
   togglePlaybackIntent: () =>
@@ -104,6 +106,7 @@ export const createTimeSlice: StateCreator<TimeSlice, [], [], TimeSlice> = (set,
       clockRuntime.setTimeMs(nextRuntimeMs);
       return {
         ...syncTimeSnapshot(state, nextRuntimeMs),
+        timeSeekRevision: state.timeSeekRevision + 1,
         isPlaying: false,
       };
     }),
@@ -114,6 +117,7 @@ export const createTimeSlice: StateCreator<TimeSlice, [], [], TimeSlice> = (set,
       clockRuntime.setTimeMs(nextTimeMs);
       return {
         ...syncTimeSnapshot(state, nextTimeMs),
+        timeSeekRevision: state.timeSeekRevision + 1,
       };
     }),
 
@@ -125,6 +129,7 @@ export const createTimeSlice: StateCreator<TimeSlice, [], [], TimeSlice> = (set,
       clockRuntime.setTimeMs(anchorMs);
       return {
         ...syncTimeSnapshot(state, anchorMs),
+        timeSeekRevision: state.timeSeekRevision + 1,
         isPlaying: false,
       } as Partial<TimeSlice>;
     }),

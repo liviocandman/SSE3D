@@ -10,103 +10,94 @@ if (!PYTHON_API_URL && process.env.NODE_ENV === 'production') {
 
 const upstreamBase = PYTHON_API_URL || 'http://localhost:8000';
 
-interface ProxyPostOptions {
-  wakeRetry?: boolean;
+interface ProxyOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
-/**
- * Proxy a GET request to the upstream Python API.
- * Uses wake-retry logic for handling cold starts.
- */
+interface ProxyGetOptions extends ProxyOptions {
+  /** Enable only when the caller does not already own a retry budget. */
+  wakeRetries?: number;
+  headOnly?: boolean;
+}
+
+function forwardResponse(response: Response, headOnly = false): NextResponse {
+  // Fetch can decompress the upstream body. Content-length, content-encoding
+  // and hop-by-hop headers must not be forwarded for the resulting stream.
+  const headers = new Headers();
+  for (const name of ['content-type', 'cache-control', 'retry-after']) {
+    const value = response.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  return new NextResponse(headOnly ? null : response.body, { status: response.status, headers });
+}
+
+function proxyError(error: unknown, signal?: AbortSignal): NextResponse {
+  if (signal?.aborted) {
+    return NextResponse.json({ error: 'REQUEST_ABORTED' }, { status: 499 });
+  }
+  if (error instanceof Error && error.name === 'TimeoutError') {
+    return NextResponse.json({ error: 'UPSTREAM_TIMEOUT' }, { status: 504 });
+  }
+  console.error('[BFF Proxy] Upstream request failed:', error);
+  return NextResponse.json({ error: 'UPSTREAM_ERROR' }, { status: 502 });
+}
+
 export async function proxyGet(
   path: string,
   params?: URLSearchParams,
   headers?: Record<string, string>,
+  options: ProxyGetOptions = {},
 ): Promise<NextResponse> {
   const qs = params?.toString();
   const url = qs ? `${upstreamBase}${path}?${qs}` : `${upstreamBase}${path}`;
-  
   try {
-    const response = await fetchUpstreamWithWakeRetry(url, { 
+    const response = await fetchUpstreamWithWakeRetry(url, {
       headers,
-      next: { revalidate: 0 },
-      cache: 'no-store'
-    });
-    
-    if (!response.ok) {
-      return NextResponse.json({ error: 'UPSTREAM_ERROR' }, { status: response.status });
-    }
-    
-    const data = await response.json();
-    return NextResponse.json(data);
+      signal: options.signal,
+      cache: 'no-store',
+    }, options.wakeRetries ?? 0, options.timeoutMs);
+    // Next reuses GET handlers for HEAD but never consumes their response body.
+    if (options.headOnly) await response.body?.cancel();
+    return forwardResponse(response, options.headOnly);
   } catch (error) {
-    console.error(`[BFF Proxy] GET ${path} failed:`, error);
-    return NextResponse.json({ error: 'NETWORK_ERROR' }, { status: 502 });
+    return proxyError(error, options.signal);
   }
 }
 
-/**
- * Proxy a POST request to the upstream Python API.
- */
 export async function proxyPost(
   path: string,
   body: unknown,
   headers?: Record<string, string>,
-  options?: ProxyPostOptions,
+  options: ProxyOptions = {},
 ): Promise<NextResponse> {
-  const url = `${upstreamBase}${path}`;
-  
   try {
-    const requestInit: RequestInit = {
+    return forwardResponse(await fetchUpstreamWithWakeRetry(`${upstreamBase}${path}`, {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        ...headers 
-      },
+      headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify(body),
-    };
-    const response = options?.wakeRetry
-      ? await fetchUpstreamWithWakeRetry(url, requestInit)
-      : await fetch(url, requestInit);
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return NextResponse.json(data, { status: response.status });
-    }
-    
-    return NextResponse.json(data);
+      signal: options.signal,
+    }, 0, options.timeoutMs));
   } catch (error) {
-    console.error(`[BFF Proxy] POST ${path} failed:`, error);
-    return NextResponse.json({ error: 'UPSTREAM_ERROR' }, { status: 502 });
+    return proxyError(error, options.signal);
   }
 }
 
-/**
- * Proxy a DELETE request to the upstream Python API.
- */
 export async function proxyDelete(
   path: string,
   params?: URLSearchParams,
   headers?: Record<string, string>,
+  options: ProxyOptions = {},
 ): Promise<NextResponse> {
   const qs = params?.toString();
   const url = qs ? `${upstreamBase}${path}?${qs}` : `${upstreamBase}${path}`;
-  
   try {
-    const response = await fetch(url, {
+    return forwardResponse(await fetchUpstreamWithWakeRetry(url, {
       method: 'DELETE',
       headers,
-    });
-    
-    if (response.status === 204) {
-      return new NextResponse(null, { status: 204 });
-    }
-    
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
+      signal: options.signal,
+    }, 0, options.timeoutMs));
   } catch (error) {
-    console.error(`[BFF Proxy] DELETE ${path} failed:`, error);
-    return NextResponse.json({ error: 'UPSTREAM_ERROR' }, { status: 502 });
+    return proxyError(error, options.signal);
   }
 }

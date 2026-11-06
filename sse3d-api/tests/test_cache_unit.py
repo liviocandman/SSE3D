@@ -1,7 +1,7 @@
 import pytest
 import json
 from app.models.schemas import EphemerisData
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, Mock, call
 from app.models.schemas import OrbitLineProfile
 
 def test_ephemeris_data_deserialization_with_alias():
@@ -133,3 +133,75 @@ async def test_get_bulk_cached_uses_single_mget_for_multiple_bodies():
         mock_redis.get.assert_not_called()
         assert cached == []
         assert missing == ["399", "499"]
+
+
+@pytest.mark.asyncio
+async def test_orbit_ready_cache_accepts_planets_and_sun_without_moon_geometry():
+    from app.services.cache_service import get_bulk_cached
+
+    bodies = ["10", "399", "401"]
+    payloads = [json.dumps({
+        "bodyId": body_id, "name": "Body", "position": {"x": 1, "y": 2, "z": 3},
+        "timestamp": "2024-01-01",
+    }) for body_id in bodies]
+    redis = AsyncMock()
+    redis.mget.return_value = payloads
+    with patch("app.services.cache_service.get_redis", return_value=redis):
+        cached, missing = await get_bulk_cached(bodies, "2024-01-01", orbit_ready=True)
+
+    assert [item.body_id for item in cached] == ["10", "399"]
+    assert missing == ["401"]
+
+
+def test_orbit_line_only_has_distinct_cache_key_without_orbit_ready():
+    from app.services.cache_service import _cache_key
+
+    ordinary = _cache_key("399", "2024-01-01")
+    line_only = _cache_key("399", "2024-01-01", orbit_line_only=True)
+    assert ordinary != line_only
+    assert line_only.endswith(":orbit_line_only")
+
+
+@pytest.mark.asyncio
+async def test_set_bulk_cached_uses_one_pipeline_and_preserves_each_ttl():
+    from app.services.cache_service import set_bulk_cached
+
+    items = [EphemerisData.model_validate({
+        "bodyId": body_id, "name": "Body", "position": {"x": 1, "y": 2, "z": 3},
+        "timestamp": "2024-01-01",
+    }) for body_id in ["399", "599", "401"]]
+    pipeline = Mock()
+    pipeline.exec = AsyncMock()
+    redis = Mock()
+    redis.pipeline.return_value = pipeline
+    with patch("app.services.cache_service.get_redis", return_value=redis):
+        await set_bulk_cached("2024-01-01", items, orbit_ready=True)
+
+    redis.pipeline.assert_called_once_with()
+    redis.set.assert_not_called()
+    pipeline.set.assert_has_calls([
+        call(
+            f"ephemeris:{item.body_id}:2024-01-01:span_30:orbit_ready_orbit-ready-v1",
+            item.model_dump_json(by_alias=True), ex=ttl,
+        ) for item, ttl in zip(items, [3600, 86400, 21600])
+    ])
+    pipeline.exec.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_pipeline_failure_is_fail_open_and_empty_batches_do_not_send():
+    from app.services.cache_service import set_bulk_cached
+
+    pipeline = Mock()
+    pipeline.exec = AsyncMock(side_effect=RuntimeError("redis unavailable"))
+    redis = Mock()
+    redis.pipeline.return_value = pipeline
+    item = EphemerisData.model_validate({
+        "bodyId": "399", "name": "Earth", "position": {"x": 1, "y": 2, "z": 3},
+        "timestamp": "2024-01-01",
+    })
+    with patch("app.services.cache_service.get_redis", return_value=redis):
+        await set_bulk_cached("2024-01-01", [])
+        redis.pipeline.assert_not_called()
+        await set_bulk_cached("2024-01-01", [item])
+    pipeline.exec.assert_awaited_once_with()

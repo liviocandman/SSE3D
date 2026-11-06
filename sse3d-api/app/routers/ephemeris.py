@@ -5,7 +5,11 @@ from loguru import logger
 
 from app.data.fallback import load_fallback
 from app.models.schemas import EphemerisData, EphemerisMeta, EphemerisResponse, OrbitLineProfile
-from app.services.spice_engine import fetch_all_spice
+from app.services.spice_engine import (
+    MAX_EPHEMERIS_BODY_IDS,
+    SpiceCapacityError,
+    fetch_all_spice,
+)
 from app.services.spice_kernel_manager import get_spice_runtime_status
 from app.services.cache_service import get_bulk_cached, set_bulk_cached
 from app.core.config import settings
@@ -18,8 +22,8 @@ DEFAULT_BODY_IDS = ["10", "199", "299", "399", "499", "599", "699", "799", "899"
 @router.get("", response_model=EphemerisResponse, response_model_by_alias=True)
 async def get_ephemeris(
     target_date: date = Query(default=None, alias="date"),
-    ids: str = Query(default=None),
-    center_body: str = Query(default="10"),
+    ids: str = Query(default=None, max_length=2048),
+    center_body: str = Query(default="10", min_length=1, max_length=64),
     span_days: int = Query(default=30, alias="spanDays", ge=1, le=1825),
     full_orbit: bool = Query(default=False, alias="fullOrbit"),
     orbit_ready: bool = Query(default=False, alias="orbitReady"),
@@ -37,7 +41,13 @@ async def get_ephemeris(
             actual_date = date(2000, 1, 1) + timedelta(days=rounded_days)
 
         date_str = actual_date.isoformat()
-        body_ids = [i.strip() for i in ids.split(",")] if ids else DEFAULT_BODY_IDS
+        body_ids = [i.strip() for i in ids.split(",")] if ids is not None else DEFAULT_BODY_IDS
+        if len(body_ids) > MAX_EPHEMERIS_BODY_IDS or any(not bid for bid in body_ids):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Request between 1 and {MAX_EPHEMERIS_BODY_IDS} non-empty body IDs.",
+            )
+        body_ids = list(dict.fromkeys(body_ids))
         orbit_ready_effective = bool(orbit_ready and settings.orbit_ready_enabled)
 
         if force:
@@ -128,6 +138,12 @@ async def get_ephemeris(
                 cache_misses=max(0, len(body_ids) - len(cached_data)),
             ),
         )
+    except SpiceCapacityError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="SPICE computation capacity is temporarily full.",
+            headers={"Retry-After": "1"},
+        ) from exc
     except HTTPException:
         raise
     except Exception as exc:

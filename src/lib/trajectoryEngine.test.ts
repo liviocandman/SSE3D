@@ -3,6 +3,9 @@ import type { EphemerisTrajectory } from '@/lib/types';
 import {
   buildTrajectorySegment,
   computeBufferPlan,
+  flattenTrajectorySegments,
+  MAX_TRAJECTORY_POINTS_PER_BODY,
+  TRAJECTORY_RETENTION_RADIUS_MS,
   sampleTrajectoryAtTime,
   upsertTrajectorySegments,
 } from './trajectoryEngine';
@@ -59,19 +62,21 @@ describe('trajectoryEngine', () => {
   });
 
   it('should keep at most 3 segments after upserts', () => {
-    let segments = upsertTrajectorySegments([], makeTrajectory('2026-01-01T00:00:00.000Z', 3), Date.now(), 3);
-    segments = upsertTrajectorySegments(segments, makeTrajectory('2026-02-01T00:00:00.000Z', 3), Date.now(), 3);
-    segments = upsertTrajectorySegments(segments, makeTrajectory('2026-03-01T00:00:00.000Z', 3), Date.now(), 3);
-    segments = upsertTrajectorySegments(segments, makeTrajectory('2026-04-01T00:00:00.000Z', 3), Date.now(), 3);
+    const anchor = Date.parse('2026-03-01T00:00:00Z');
+    let segments = upsertTrajectorySegments([], makeTrajectory('2026-01-01T00:00:00.000Z', 3), anchor, 3);
+    segments = upsertTrajectorySegments(segments, makeTrajectory('2026-02-01T00:00:00.000Z', 3), anchor, 3);
+    segments = upsertTrajectorySegments(segments, makeTrajectory('2026-03-01T00:00:00.000Z', 3), anchor, 3);
+    segments = upsertTrajectorySegments(segments, makeTrajectory('2026-04-01T00:00:00.000Z', 3), anchor, 3);
 
     expect(segments).toHaveLength(3);
   });
 
   it('should keep upserted segments sorted by start time', () => {
-    let segments = upsertTrajectorySegments([], makeTrajectory('2026-03-01T00:00:00.000Z', 3), Date.now(), 4);
-    segments = upsertTrajectorySegments(segments, makeTrajectory('2026-01-01T00:00:00.000Z', 3), Date.now(), 4);
-    segments = upsertTrajectorySegments(segments, makeTrajectory('2026-04-01T00:00:00.000Z', 3), Date.now(), 4);
-    segments = upsertTrajectorySegments(segments, makeTrajectory('2026-02-01T00:00:00.000Z', 3), Date.now(), 4);
+    const anchor = Date.parse('2026-03-01T00:00:00Z');
+    let segments = upsertTrajectorySegments([], makeTrajectory('2026-03-01T00:00:00.000Z', 3), anchor, 4);
+    segments = upsertTrajectorySegments(segments, makeTrajectory('2026-01-01T00:00:00.000Z', 3), anchor, 4);
+    segments = upsertTrajectorySegments(segments, makeTrajectory('2026-04-01T00:00:00.000Z', 3), anchor, 4);
+    segments = upsertTrajectorySegments(segments, makeTrajectory('2026-02-01T00:00:00.000Z', 3), anchor, 4);
 
     expect(segments.map((segment) => segment.startTime)).toEqual([
       '2026-01-01T00:00:00.000Z',
@@ -110,6 +115,73 @@ describe('trajectoryEngine', () => {
 
     expect(plan.pause).toBe(false);
     expect(plan.fetchDates.length).toBe(1);
+  });
+
+  it.each([1, -1])('bounds continuous sessions in direction %i without losing interpolation', (direction) => {
+    const start = Date.parse('2026-01-01T00:00:00Z');
+    const dayMs = 86400000;
+    let segments: ReturnType<typeof upsertTrajectorySegments> = [];
+    for (let block = 0; block < 80; block++) {
+      const blockStart = start + block * direction * 30 * dayMs;
+      const points = makeTrajectory(new Date(blockStart).toISOString(), 481, 1.5);
+      const anchor = blockStart + 15 * dayMs + 1234;
+      segments = upsertTrajectorySegments(segments, points, anchor);
+      const flat = flattenTrajectorySegments(segments);
+      expect(flat.length).toBeLessThanOrEqual(MAX_TRAJECTORY_POINTS_PER_BODY);
+      expect(segments[0].startTimeMs).toBeGreaterThanOrEqual(anchor - TRAJECTORY_RETENTION_RADIUS_MS - 1.5 * 3600000);
+      expect(segments.at(-1)!.endTimeMs).toBeLessThanOrEqual(anchor + TRAJECTORY_RETENTION_RADIUS_MS + 1.5 * 3600000);
+      expect(sampleTrajectoryAtTime(segments, anchor)?.position).toEqual(
+        sampleTrajectoryAtTime([buildTrajectorySegment(points)!], anchor)?.position,
+      );
+    }
+  });
+
+  it('preserves the two original interpolation neighbors even with a tiny point budget', () => {
+    const points = makeTrajectory('2026-01-01T00:00:00Z', 100, 1);
+    const anchor = Date.parse('2026-01-03T00:30:00Z');
+    const original = buildTrajectorySegment(points)!;
+    const segments = upsertTrajectorySegments([], points, anchor, 3, { maxPoints: 2, radiusMs: 86400000 });
+    expect(segments[0].points).toEqual([points[48], points[49]]);
+    expect(sampleTrajectoryAtTime(segments, anchor)).toMatchObject({
+      position: sampleTrajectoryAtTime([original], anchor)!.position,
+      clamped: false,
+    });
+  });
+
+  it('retains boundary neighbors and drops old data after a distant seek', () => {
+    const points = makeTrajectory('2026-01-01T00:00:00Z', 100, 24);
+    const anchor = Date.parse('2026-02-01T12:00:00Z');
+    const retention = { maxPoints: 4096, radiusMs: 2 * 86400000 };
+    let segments = upsertTrajectorySegments([], points, anchor, 3, retention);
+    expect(segments[0].startTime).toBe('2026-01-30T00:00:00.000Z');
+    expect(segments[0].endTime).toBe('2026-02-04T00:00:00.000Z');
+    const seekTime = Date.parse('2036-02-01T12:00:00Z');
+    segments = upsertTrajectorySegments(segments, makeTrajectory('2036-02-01T00:00:00Z', 100, 24), seekTime, 3, retention);
+    expect(segments).toHaveLength(1);
+    expect(segments[0].startTime).toBe('2036-02-01T00:00:00.000Z');
+    expect(sampleTrajectoryAtTime(segments, seekTime)?.status).toBe('covered');
+  });
+
+  it('reuses unchanged scientific data and accepts corrected overlap samples', () => {
+    const points = makeTrajectory('2026-01-01T00:00:00Z', 10);
+    const anchor = Date.parse(points[5].timestamp);
+    const original = upsertTrajectorySegments([], points, anchor);
+    const duplicate = points.map((point) => ({ ...point, position: { ...point.position } }));
+    expect(upsertTrajectorySegments(original, duplicate, anchor)).toBe(original);
+    expect(flattenTrajectorySegments(original)).toBe(original[0].points);
+    const correction = { ...points[5], position: { x: 999, y: 0, z: 0 } };
+    const corrected = upsertTrajectorySegments(original, [correction], anchor);
+    expect(corrected[0].points[5]).toBe(correction);
+    expect(corrected[0].points[4]).toBe(original[0].points[4]);
+  });
+
+  it('does not replace the retained window when an oversized download is repeated', () => {
+    const points = makeTrajectory('2026-01-01T00:00:00Z', 100, 1);
+    const anchor = Date.parse('2026-01-03T00:30:00Z');
+    const retention = { maxPoints: 8, radiusMs: 86400000 };
+    const original = upsertTrajectorySegments([], points, anchor, 3, retention);
+    const repeated = points.map((point) => ({ ...point, position: { ...point.position } }));
+    expect(upsertTrajectorySegments(original, repeated, anchor, 3, retention)).toBe(original);
   });
 });
 

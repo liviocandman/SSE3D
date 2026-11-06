@@ -32,6 +32,21 @@ import { parseTimestampMs } from './utils';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MERGE_GAP_MS = 36 * 60 * 60 * 1000; // 36h merges overlap/adjacent blocks
 
+// Retain scientific samples, not decimated approximations. These bounds also
+// apply when adjacent downloads have compacted into a single long segment.
+export const MAX_TRAJECTORY_POINTS_PER_BODY = 4096;
+export const TRAJECTORY_RETENTION_RADIUS_MS = 180 * DAY_MS;
+
+export interface TrajectoryRetention {
+  maxPoints: number;
+  radiusMs: number;
+}
+
+const DEFAULT_RETENTION: TrajectoryRetention = {
+  maxPoints: MAX_TRAJECTORY_POINTS_PER_BODY,
+  radiusMs: TRAJECTORY_RETENTION_RADIUS_MS,
+};
+
 function parseTimeMs(timestamp: string): number {
   return parseTimestampMs(timestamp);
 }
@@ -43,41 +58,72 @@ function toDateStringUTC(ms: number): string {
 }
 
 export function normalizeTrajectoryPoints(points: EphemerisTrajectory[]): EphemerisTrajectory[] {
-  const unique = new Map<string, EphemerisTrajectory>();
+  const unique = new Map<number, EphemerisTrajectory>();
+  let alreadySorted = true;
+  let previousTime = -Infinity;
   for (const point of points) {
-    unique.set(point.timestamp, point);
+    const time = parseTimeMs(point.timestamp);
+    if (!Number.isFinite(time) || !Number.isFinite(point.position.x)
+      || !Number.isFinite(point.position.y) || !Number.isFinite(point.position.z)) {
+      alreadySorted = false;
+      continue;
+    }
+    if (time <= previousTime) alreadySorted = false;
+    previousTime = time;
+    unique.set(time, point);
   }
-  return Array.from(unique.values()).sort(
-    (a, b) => parseTimeMs(a.timestamp) - parseTimeMs(b.timestamp)
-  );
+  if (alreadySorted) return points;
+  return Array.from(unique.entries()).sort(([a], [b]) => a - b).map(([, point]) => point);
+}
+
+function segmentFromSortedPoints(points: EphemerisTrajectory[], pointTimesMs: number[]): TrajectorySegment {
+  return {
+    startTime: points[0].timestamp,
+    endTime: points[points.length - 1].timestamp,
+    startTimeMs: pointTimesMs[0],
+    endTimeMs: pointTimesMs[pointTimesMs.length - 1],
+    pointTimesMs,
+    points,
+  };
 }
 
 export function buildTrajectorySegment(points: EphemerisTrajectory[]): TrajectorySegment | null {
   const normalized = normalizeTrajectoryPoints(points);
   if (normalized.length === 0) return null;
-
-  const pointTimesMs = normalized.map((point) => parseTimeMs(point.timestamp));
-  return {
-    startTime: normalized[0].timestamp,
-    endTime: normalized[normalized.length - 1].timestamp,
-    startTimeMs: pointTimesMs[0],
-    endTimeMs: pointTimesMs[pointTimesMs.length - 1],
-    pointTimesMs,
-    points: normalized,
-  };
+  return segmentFromSortedPoints(normalized, normalized.map((point) => parseTimeMs(point.timestamp)));
 }
 
 function canMergeSegments(a: TrajectorySegment, b: TrajectorySegment): boolean {
   return !(a.endTimeMs + MERGE_GAP_MS < b.startTimeMs || b.endTimeMs + MERGE_GAP_MS < a.startTimeMs);
 }
 
-function mergeManySegments(segments: TrajectorySegment[]): TrajectorySegment {
-  const points = segments.flatMap((segment) => segment.points);
-  const merged = buildTrajectorySegment(points);
-  if (!merged) {
-    throw new Error('Unable to merge empty trajectory segments');
+function samePoint(a: EphemerisTrajectory, b: EphemerisTrajectory): boolean {
+  return a === b || (a.position.x === b.position.x && a.position.y === b.position.y
+    && a.position.z === b.position.z && a.velocity?.x === b.velocity?.x
+    && a.velocity?.y === b.velocity?.y && a.velocity?.z === b.velocity?.z);
+}
+
+function mergeSegments(a: TrajectorySegment, b: TrajectorySegment): TrajectorySegment {
+  const points: EphemerisTrajectory[] = [];
+  const times: number[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.points.length || j < b.points.length) {
+    if (j === b.points.length || (i < a.points.length && a.pointTimesMs[i] < b.pointTimesMs[j])) {
+      points.push(a.points[i]);
+      times.push(a.pointTimesMs[i++]);
+    } else if (i === a.points.length || b.pointTimesMs[j] < a.pointTimesMs[i]) {
+      points.push(b.points[j]);
+      times.push(b.pointTimesMs[j++]);
+    } else {
+      // New downloads are authoritative, but reuse identical scientific samples.
+      points.push(samePoint(a.points[i], b.points[j]) ? a.points[i] : b.points[j]);
+      times.push(a.pointTimesMs[i++]);
+      j++;
+    }
   }
-  return merged;
+  if (points.length === a.points.length && points.every((point, index) => point === a.points[index])) return a;
+  return segmentFromSortedPoints(points, times);
 }
 
 function sortSegments(segments: TrajectorySegment[]): TrajectorySegment[] {
@@ -96,7 +142,7 @@ function compactMergeableSegments(segments: TrajectorySegment[]): TrajectorySegm
       continue;
     }
     if (canMergeSegments(last, segment)) {
-      compacted[compacted.length - 1] = mergeManySegments([last, segment]);
+      compacted[compacted.length - 1] = mergeSegments(last, segment);
     } else {
       compacted.push(segment);
     }
@@ -145,29 +191,114 @@ export function upsertTrajectorySegments(
   existing: TrajectorySegment[],
   incomingPoints: EphemerisTrajectory[],
   anchorTimeMs: number,
-  maxSegments = 3
+  maxSegments = 3,
+  retention: TrajectoryRetention = DEFAULT_RETENTION,
 ): TrajectorySegment[] {
   const incoming = buildTrajectorySegment(incomingPoints);
   if (!incoming) return existing;
 
-  const mergeCandidates: TrajectorySegment[] = [incoming];
+  let merged = incoming;
   const kept: TrajectorySegment[] = [];
 
   for (const segment of existing) {
     if (canMergeSegments(segment, incoming)) {
-      mergeCandidates.push(segment);
+      merged = mergeSegments(segment, merged);
     } else {
       kept.push(segment);
     }
   }
 
-  const merged = mergeManySegments(mergeCandidates);
   const compacted = compactMergeableSegments([...kept, merged]);
-  return trimSegmentsAroundTime(compacted, anchorTimeMs, maxSegments);
+  const limited = retainTrajectoryWindow(
+    trimSegmentsAroundTime(compacted, anchorTimeMs, Math.max(1, maxSegments)),
+    anchorTimeMs,
+    retention,
+  );
+  // Repeated downloads may include samples already evicted by retention. Reuse
+  // the retained window when none of its scientific values actually changed.
+  for (let i = 0; i < limited.length; i++) {
+    const candidate = limited[i];
+    const previous = existing.find((segment) => segment.startTimeMs === candidate.startTimeMs
+      && segment.endTimeMs === candidate.endTimeMs && segment.points.length === candidate.points.length);
+    if (previous && previous !== candidate && candidate.points.every((point, index) =>
+      candidate.pointTimesMs[index] === previous.pointTimesMs[index] && samePoint(point, previous.points[index]))) {
+      limited[i] = previous;
+    }
+  }
+  return limited.length === existing.length && limited.every((segment, index) => segment === existing[index])
+    ? existing
+    : limited;
+}
+
+function lowerBound(times: number[], target: number): number {
+  let lo = 0;
+  let hi = times.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (times[mid] < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function sliceSegment(segment: TrajectorySegment, start: number, end: number): TrajectorySegment {
+  if (start === 0 && end === segment.points.length) return segment;
+  return segmentFromSortedPoints(segment.points.slice(start, end), segment.pointTimesMs.slice(start, end));
+}
+
+function retainTrajectoryWindow(
+  segments: TrajectorySegment[],
+  anchorTimeMs: number,
+  { maxPoints, radiusMs }: TrajectoryRetention,
+): TrajectorySegment[] {
+  if (segments.length === 0) return segments;
+  const radius = Math.max(0, radiusMs);
+  const budget = Math.max(2, Math.floor(maxPoints));
+  let anchor = Number.isFinite(anchorTimeMs) ? anchorTimeMs : segments[0].startTimeMs;
+
+  // Keep a bounded nearest fallback while a distant seek is still loading.
+  if (!segments.some((segment) => segment.endTimeMs >= anchor - radius && segment.startTimeMs <= anchor + radius)) {
+    let nearest = segments[0].startTimeMs;
+    for (const segment of segments) {
+      for (const endpoint of [segment.startTimeMs, segment.endTimeMs]) {
+        if (Math.abs(endpoint - anchor) < Math.abs(nearest - anchor)) nearest = endpoint;
+      }
+    }
+    anchor = nearest;
+  }
+
+  const clipped: TrajectorySegment[] = [];
+  for (const segment of segments) {
+    if (segment.endTimeMs < anchor - radius || segment.startTimeMs > anchor + radius) continue;
+    // One original sample on either side preserves interpolation at the window edges.
+    const start = Math.max(0, lowerBound(segment.pointTimesMs, anchor - radius) - 1);
+    const end = Math.min(segment.points.length, lowerBound(segment.pointTimesMs, anchor + radius) + 1);
+    clipped.push(sliceSegment(segment, start, end));
+  }
+
+  const total = clipped.reduce((sum, segment) => sum + segment.points.length, 0);
+  if (total <= budget) return clipped;
+
+  let pivot = 0;
+  for (const segment of clipped) pivot += lowerBound(segment.pointTimesMs, anchor);
+  // Select a contiguous sample window around the anchor, never decimating it.
+  const first = Math.max(0, Math.min(pivot - Math.floor(budget / 2), total - budget));
+  const last = first + budget;
+  const result: TrajectorySegment[] = [];
+  let offset = 0;
+  for (const segment of clipped) {
+    const start = Math.max(0, first - offset);
+    const end = Math.min(segment.points.length, last - offset);
+    if (start < end) result.push(sliceSegment(segment, start, end));
+    offset += segment.points.length;
+  }
+  return result;
 }
 
 export function flattenTrajectorySegments(segments: TrajectorySegment[]): EphemerisTrajectory[] {
-  return normalizeTrajectoryPoints(segments.flatMap((segment) => segment.points));
+  // Upserted segments are already sorted, normalized, and disjoint.
+  if (segments.length === 1) return segments[0].points;
+  return segments.flatMap((segment) => segment.points);
 }
 
 export function findSegmentIndexForTime(

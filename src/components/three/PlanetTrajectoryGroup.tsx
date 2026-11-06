@@ -3,17 +3,14 @@
 import { useMemo } from 'react';
 import { useQualityTier } from '@/contexts/QualityTierContext';
 import { useSolarStore } from '@/store/solarStore';
-import {
-  type TrajectorySegment,
-  flattenTrajectorySegments,
-} from '@/lib/trajectoryEngine';
+import type { EphemerisTrajectory } from '@/lib/types';
+import type { TrailSample } from '@/lib/dynamicTrailBuffers';
 import { parseTimestampMs } from '@/lib/utils';
 import StaticOrbitLine from './StaticOrbitLine';
 import DynamicTrailLine from './DynamicTrailLine';
-import * as THREE from 'three';
 
 const TRAIL_GRACE_MS = 12 * 60 * 60 * 1000;
-const EMPTY_TRAJECTORY_SEGMENTS: TrajectorySegment[] = [];
+const EMPTY_TRAJECTORY: EphemerisTrajectory[] = [];
 
 interface PlanetTrajectoryGroupProps {
   bodyId: string;
@@ -21,29 +18,27 @@ interface PlanetTrajectoryGroupProps {
 
 export function PlanetTrajectoryGroup({ bodyId }: PlanetTrajectoryGroupProps) {
   const { tier } = useQualityTier();
-  const selectedSegments = useSolarStore((state) => state.masterTrajectorySegments[bodyId]);
+  const selectedTrajectory = useSolarStore((state) => state.masterTrajectory[bodyId]);
   const fullOrbitData = useSolarStore((state) => state.fullOrbits[bodyId]);
-  const segments = selectedSegments ?? EMPTY_TRAJECTORY_SEGMENTS;
+  const allPoints = selectedTrajectory ?? EMPTY_TRAJECTORY;
   const maxTrailPoints = tier === 'high' ? 240 : tier === 'mid' ? 120 : 60;
-  const allPoints = useMemo(() => flattenTrajectorySegments(segments), [segments]);
-
+  // SPICE supplies 200 samples per block; the old worker subdivided those
+  // only on high quality. Preserve that density in the visible GPU window.
+  const subdivisions = tier === 'high' ? 8 : 1;
   const samples = useMemo(() => {
-    return allPoints.map((p) => {
-      // Pass absolute KM positions
-      return {
-        timestampMs: parseTimestampMs(p.timestamp),
-        point: new THREE.Vector3(p.position.x, p.position.y, p.position.z),
-      };
-    }).filter((s, i, arr) => {
-      // Anti-NaN & Duplicate Shield (from TrailLine logic)
-      if (!Number.isFinite(s.point.x) || !Number.isFinite(s.point.y) || !Number.isFinite(s.point.z)) {
-        return false;
-      }
-      if (i > 0 && s.point.distanceToSquared(arr[i - 1].point) < 0.000001) {
-        return false;
-      }
-      return true;
-    });
+    const result: TrailSample[] = [];
+    for (const sample of allPoints) {
+      const point = sample.position;
+      const timestampMs = parseTimestampMs(sample.timestamp);
+      if (!Number.isFinite(timestampMs) || !Number.isFinite(point.x)
+        || !Number.isFinite(point.y) || !Number.isFinite(point.z)) continue;
+      const previous = result[result.length - 1]?.point;
+      if (previous && (point.x - previous.x) ** 2 + (point.y - previous.y) ** 2
+        + (point.z - previous.z) ** 2 < 0.000001) continue;
+      // Share the scientific position object; rendering only needs x/y/z.
+      result.push({ timestampMs, point });
+    }
+    return result;
   }, [allPoints]);
 
   return (
@@ -61,6 +56,7 @@ export function PlanetTrajectoryGroup({ bodyId }: PlanetTrajectoryGroupProps) {
         <DynamicTrailLine
           samples={samples}
           maxTrailPoints={maxTrailPoints}
+          subdivisions={subdivisions}
           graceMs={TRAIL_GRACE_MS}
           color="#a3cffe"
           opacity={0.8}

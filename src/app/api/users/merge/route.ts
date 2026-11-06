@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
       'Authorization': `Bearer ${bffToken}`,
     };
 
-    return proxyPost('/api/users/merge-anonymous', body, headers);
+    return proxyPost('/api/users/merge-anonymous', body, headers, { signal: req.signal });
   } catch (error) {
     console.error('[User Merge Proxy Route] Error:', error);
     return NextResponse.json({ error: 'INVALID_REQUEST' }, { status: 400 });

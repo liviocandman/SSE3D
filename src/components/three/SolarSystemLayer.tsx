@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useFullOrbits } from '@/hooks/useFullOrbits';
 import { useQualityTier } from '@/contexts/QualityTierContext';
 import { useSolarStore } from '@/store/solarStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -34,8 +34,6 @@ export function SolarSystemLayer({ ephemerisData }: SolarSystemLayerProps) {
     setViewMode,
     setTravelTarget,
     resetTravel,
-    fullOrbits,
-    appendFullOrbits,
   } = useSolarStore(
     useShallow((state) => ({
       selectedPlanet: state.selectedPlanet,
@@ -44,29 +42,10 @@ export function SolarSystemLayer({ ephemerisData }: SolarSystemLayerProps) {
       setViewMode: state.setViewMode,
       setTravelTarget: state.setTravelTarget,
       resetTravel: state.resetTravel,
-      fullOrbits: state.fullOrbits,
-      appendFullOrbits: state.appendFullOrbits,
     }))
   );
 
-  // Load 100% accurate full-cycle NASA orbits on mount
-  useEffect(() => {
-    const fetchFullOrbits = async () => {
-      const missingIds = ALL_PLANET_IDS.filter((id) => !fullOrbits[id]);
-      if (missingIds.length === 0) return;
-
-      try {
-        const resp = await fetch(`/api/ephemeris?ids=${missingIds.join(',')}&fullOrbit=true`);
-        if (!resp.ok) throw new Error('Failed to fetch full orbits');
-        const result = await resp.json();
-        appendFullOrbits(result.data);
-      } catch (err) {
-        console.error('Error fetching full orbits:', err);
-      }
-    };
-
-    fetchFullOrbits();
-  }, [appendFullOrbits, fullOrbits]);
+  useFullOrbits(ALL_PLANET_IDS);
 
   const { planetsToRender, ephemerisById } = usePlanetsToRender(ephemerisData, tier, viewMode);
 

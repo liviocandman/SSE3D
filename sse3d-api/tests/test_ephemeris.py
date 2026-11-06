@@ -117,3 +117,38 @@ async def test_ephemeris_force_true_bypasses_cache(client):
     # Fetch SHOULD be called for the ID
     mock_fetch.assert_called_once()
     assert mock_fetch.call_args[0][0] == ["399"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ids", [",".join(["399"] * 33), "399,,499", ""])
+async def test_ephemeris_rejects_invalid_or_oversized_batches(client, ids):
+    with patch("app.routers.ephemeris.fetch_all_spice", new_callable=AsyncMock) as compute:
+        response = await client.get("/api/ephemeris", params={"ids": ids})
+    assert response.status_code == 422
+    compute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_ephemeris_deduplicates_body_ids_before_cache_and_computation(client):
+    with patch("app.routers.ephemeris.get_bulk_cached", new_callable=AsyncMock,
+               return_value=([], ["399"])) as cache:
+        with patch("app.routers.ephemeris.fetch_all_spice", new_callable=AsyncMock,
+                   return_value=[_mock_planet("399")]) as compute:
+            response = await client.get("/api/ephemeris?date=2024-01-01&ids=399,399")
+    assert response.status_code == 200
+    assert cache.call_args.args[0] == ["399"]
+    assert compute.call_args.args[0] == ["399"]
+    assert len(response.json()["data"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_ephemeris_returns_retryable_overload_when_spice_queue_is_full(client):
+    from app.services.spice_engine import SpiceCapacityError
+
+    with patch("app.routers.ephemeris.get_bulk_cached", new_callable=AsyncMock,
+               return_value=([], ["399"])):
+        with patch("app.routers.ephemeris.fetch_all_spice", new_callable=AsyncMock,
+                   side_effect=SpiceCapacityError("full")):
+            response = await client.get("/api/ephemeris?date=2024-01-01&ids=399")
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "1"

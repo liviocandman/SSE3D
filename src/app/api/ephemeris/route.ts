@@ -3,5 +3,8 @@ import { proxyGet } from '@/lib/server/upstream';
 
 export async function GET(request: NextRequest) {
   const params = new URL(request.url).searchParams;
-  return proxyGet('/api/ephemeris', params);
+  return proxyGet('/api/ephemeris', params, undefined, {
+    signal: request.signal,
+    headOnly: request.method === 'HEAD',
+  });
 }
