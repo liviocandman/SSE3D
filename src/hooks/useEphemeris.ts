@@ -10,6 +10,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { EphemerisData, EphemerisResponse, DataSource, OrbitLineProfile } from "@/lib/types";
 import { USE_BACKEND_ORBIT_READY } from "@/lib/types";
 import { isFallbackSource } from "@/lib/ephemerisStatus";
+import { parseRetryAfter } from "@/lib/trajectoryRequestErrors";
 import { toast } from "sonner";
 
 // --- Types ---
@@ -64,6 +65,7 @@ class EphemerisFetchError extends Error {
   readonly canRetry: boolean;
   readonly technicalDetails?: string;
   readonly isAbort: boolean;
+  readonly retryAt?: number;
 
   constructor(
     type: EphemerisErrorType,
@@ -71,12 +73,14 @@ class EphemerisFetchError extends Error {
     canRetry: boolean,
     technicalDetails?: string,
     isAbort = false,
+    retryAt?: number,
   ) {
     super(message);
     this.type = type;
     this.canRetry = canRetry;
     this.technicalDetails = technicalDetails;
     this.isAbort = isAbort;
+    this.retryAt = retryAt;
   }
 }
 
@@ -181,6 +185,9 @@ async function fetchEphemeris({
         "NASA_API_ERROR",
         `API error: ${response.status} ${response.statusText}`,
         response.status === 408 || response.status === 429 || response.status >= 500,
+        undefined,
+        false,
+        parseRetryAfter(response.headers?.get('Retry-After') ?? null),
       );
     }
 
@@ -284,7 +291,10 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
     enabled: autoFetch,
     retry: (failureCount, error) =>
       error.canRetry && failureCount < MAX_RETRIES,
-    retryDelay: (attempt) => RETRY_DELAY_MS * attempt,
+    retryDelay: (attempt, error) => Math.max(
+      RETRY_DELAY_MS * (attempt + 1),
+      (error.retryAt ?? 0) - Date.now(),
+    ),
     staleTime: STALE_TIME_MS,
     networkMode: "always",
   });

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { useEphemeris } from './useEphemeris';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
@@ -30,6 +30,7 @@ const createWrapper = () => {
     defaultOptions: {
       queries: {
         retry: false,
+        gcTime: Infinity,
       },
     },
   });
@@ -170,5 +171,129 @@ describe('useEphemeris', () => {
     expect(result.current.data).toEqual(mixed.data);
     expect(result.current.source).toBe('SPICE_AND_FALLBACK');
     expect(result.current.isFallback).toBe(true);
+  });
+});
+
+describe('useEphemeris Retry-After', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-12T12:00:00Z'));
+    mockFetch.mockReset();
+  });
+  afterEach(() => { cleanup(); vi.useRealTimers(); });
+
+  function unavailable(header: string | null, status = 503) {
+    return {
+      ok: false, status,
+      headers: new Headers(header === null ? {} : { 'Retry-After': header }),
+    };
+  }
+
+  it.each(['seconds', 'http-date'])('waits for the %s header and recovers without fallback', async (format) => {
+    const start = Date.now();
+    const attempts: number[] = [];
+    mockFetch.mockImplementation(async () => {
+      attempts.push(Date.now() - start);
+      return attempts.length === 1
+        ? unavailable(format === 'seconds' ? '10' : new Date(start + 10_000).toUTCString())
+        : success(payload('SPICE_KERNELS'));
+    });
+    const { result } = renderHook(() => useEphemeris({ date: '2026-03-26' }), { wrapper: createWrapper() });
+    await act(async () => { await vi.advanceTimersByTimeAsync(9999); });
+    expect(attempts).toEqual([0]);
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.isFallback).toBe(false);
+    expect(result.current.source).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(2); });
+    expect(attempts).toEqual([0, 10_000]);
+    expect(result.current.source).toBe('SPICE_KERNELS');
+    expect(result.current.isFallback).toBe(false);
+    expect(result.current.error).toBeNull();
+  });
+
+  it.each([null, 'invalid', '0'])('keeps a nonzero local delay for header %s', async (header) => {
+    const start = Date.now();
+    const attempts: number[] = [];
+    mockFetch.mockImplementation(async () => {
+      attempts.push(Date.now() - start);
+      return attempts.length === 1 ? unavailable(header) : success(payload('SPICE_KERNELS'));
+    });
+    renderHook(() => useEphemeris({ date: '2026-03-26' }), { wrapper: createWrapper() });
+    await act(async () => { await vi.advanceTimersByTimeAsync(999); });
+    expect(attempts).toEqual([0]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(attempts).toEqual([0, 1000]);
+  });
+
+  it('uses the new recovery deadline from each HTTP error, including rate limiting', async () => {
+    const start = Date.now();
+    const attempts: number[] = [];
+    mockFetch.mockImplementation(async () => {
+      attempts.push(Date.now() - start);
+      if (attempts.length === 1) return unavailable('2', 429);
+      if (attempts.length === 2) return unavailable('5', 503);
+      return success(payload('SPICE_KERNELS'));
+    });
+    const { result } = renderHook(() => useEphemeris({ date: '2026-03-26' }), { wrapper: createWrapper() });
+    await act(async () => { await vi.advanceTimersByTimeAsync(6999); });
+    expect(attempts).toEqual([0, 2000]);
+    expect(result.current.isFallback).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2); });
+    expect(attempts).toEqual([0, 2000, 7000]);
+    expect(result.current.source).toBe('SPICE_KERNELS');
+  });
+
+  it('keeps the three-attempt limit and enters fallback only after the final eligible attempt', async () => {
+    const start = Date.now();
+    const attempts: number[] = [];
+    mockFetch.mockImplementation(async () => {
+      attempts.push(Date.now() - start);
+      return unavailable('2');
+    });
+    const { result } = renderHook(() => useEphemeris({ date: '2026-03-26' }), { wrapper: createWrapper() });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3999); });
+    expect(attempts).toEqual([0, 2000]);
+    expect(result.current.isFallback).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(attempts).toEqual([0, 2000, 4000]);
+    expect(result.current.isFallback).toBe(true);
+    expect(result.current.error?.canRetry).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not retry a permanent HTTP error even when Retry-After is present', async () => {
+    mockFetch.mockResolvedValue(unavailable('60', 422));
+    const { result } = renderHook(() => useEphemeris({ date: '2026-03-26' }), { wrapper: createWrapper() });
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_001); });
+    expect(mockFetch).toHaveBeenCalledOnce();
+    expect(result.current.isFallback).toBe(true);
+    expect(result.current.error?.canRetry).toBe(false);
+  });
+
+  it('does not shorten a server wait to fit the per-request timeout', async () => {
+    const start = Date.now();
+    const attempts: number[] = [];
+    mockFetch.mockImplementation(async () => {
+      attempts.push(Date.now() - start);
+      return attempts.length === 1 ? unavailable('60') : success(payload('SPICE_KERNELS'));
+    });
+    const { result } = renderHook(() => useEphemeris({ date: '2026-03-26', timeoutMs: 15000 }), { wrapper: createWrapper() });
+    await act(async () => { await vi.advanceTimersByTimeAsync(59_999); });
+    expect(attempts).toEqual([0]);
+    expect(result.current.isFallback).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2); });
+    expect(attempts).toEqual([0, 60_000]);
+    expect(result.current.source).toBe('SPICE_KERNELS');
+  });
+
+  it('does not send a scheduled retry after unmount', async () => {
+    mockFetch.mockResolvedValue(unavailable('10'));
+    const { unmount } = renderHook(() => useEphemeris({ date: '2026-03-26' }), { wrapper: createWrapper() });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(mockFetch).toHaveBeenCalledOnce();
+    unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(mockFetch).toHaveBeenCalledOnce();
   });
 });
