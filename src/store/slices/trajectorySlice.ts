@@ -72,7 +72,9 @@ export const createTrajectorySlice: StateCreator<
           existingSegments,
           body.trajectory,
           state.currentTime.getTime(),
-          MAX_SEGMENTS_PER_BODY
+          MAX_SEGMENTS_PER_BODY,
+          undefined,
+          body.bodyId,
         );
 
         if (nextSegments === existingSegments) return;

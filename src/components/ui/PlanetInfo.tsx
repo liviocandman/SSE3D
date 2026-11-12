@@ -8,9 +8,9 @@ import { REAL_RADII_KM } from '@/lib/scales';
 interface PlanetData {
   bodyId: string;
   englishName: string;
-  position: { x: number; y: number; z: number };
-  velocity?: { x: number; y: number; z: number }; // km/s from NASA API
-  distanceFromSun: number; // million km
+  position?: { x: number; y: number; z: number }; // km
+  velocity?: { x: number; y: number; z: number }; // km/s in the body's orbital frame
+  distanceFromSun?: number; // million km
   // Moon-specific fields
   parentName?: string;
   distanceToParentKm?: number;
@@ -31,7 +31,7 @@ function calculateMillionKmDistance(
   const dx = pos1.x - pos2.x;
   const dy = pos1.y - pos2.y;
   const dz = pos1.z - pos2.z;
-  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  return Math.sqrt(dx * dx + dy * dy + dz * dz) / 1e6;
 }
 
 function formatNumber(num: number, decimals = 1): string {
@@ -92,8 +92,8 @@ export function PlanetInfo({ planet, earthPosition, onAskAstronomer }: PlanetInf
   const realRadiusKm = REAL_RADII_KM[planet.bodyId] || 0;
   const diameterKm = realRadiusKm * 2;
 
-  // Orbital velocity from NASA API velocity vector
-  const orbitalVelocity = (planet.velocity && !isMoon && !isStar)
+  // Sampled orbital velocity (heliocentric for planets, parent-relative for moons).
+  const orbitalVelocity = (planet.velocity && !isStar)
     ? calculateVelocityMagnitude(planet.velocity)
     : null;
 
@@ -102,9 +102,11 @@ export function PlanetInfo({ planet, earthPosition, onAskAstronomer }: PlanetInf
     if (isStar) return null;
     
     let orbitalRadius: number;
-    if (isMoon && planet.distanceToParentKm != null) {
+    if (isMoon) {
+      if (planet.distanceToParentKm == null) return null;
       orbitalRadius = planet.distanceToParentKm;
     } else {
+      if (planet.distanceFromSun == null) return null;
       orbitalRadius = planet.distanceFromSun * 1e6;
     }
     
@@ -116,7 +118,7 @@ export function PlanetInfo({ planet, earthPosition, onAskAstronomer }: PlanetInf
 
   const displayVelocity = orbitalVelocity ?? fallbackVelocity;
 
-  const distanceFromEarth = earthPosition
+  const distanceFromEarth = earthPosition && planet.position
     ? calculateMillionKmDistance(planet.position, earthPosition)
     : null;
 
@@ -239,7 +241,7 @@ export function PlanetInfo({ planet, earthPosition, onAskAstronomer }: PlanetInf
           <>
             <StatCard
               label="Distance from Sun"
-              value={formatNumber(planet.distanceFromSun)}
+              value={planet.distanceFromSun != null ? formatNumber(planet.distanceFromSun) : '—'}
               unit="M km"
             />
             <StatCard

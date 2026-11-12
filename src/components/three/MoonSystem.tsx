@@ -31,7 +31,7 @@ import { SPHERE_MID, HITBOX_SPHERE } from '@/lib/geometryPool';
 import { clockRuntime } from '@/lib/time/clockRuntime';
 import type { EphemerisTrajectory } from '@/lib/types';
 import { USE_BACKEND_ORBIT_READY } from '@/lib/types';
-import { resolveMoonFrame } from '@/lib/simulation/frameResolvers';
+import { resolveCoveredTargetPosition, resolveMoonFrame } from '@/lib/simulation/frameResolvers';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -147,20 +147,19 @@ function MoonMesh({
   const absPositionKmRef = useRef(new THREE.Vector3());
   const localPositionKmRef = useRef(new THREE.Vector3());
 
-  const { setSelectedPlanet, setViewMode, setTravelTarget } = useSolarStore(
+  const { setSelectedPlanet, setViewMode, setTravelTarget, resetTravel } = useSolarStore(
     useShallow((s) => ({
       setSelectedPlanet: s.setSelectedPlanet,
       setViewMode: s.setViewMode,
       setTravelTarget: s.setTravelTarget,
+      resetTravel: s.resetTravel,
     }))
   );
 
   const config = useMemo(() => getPlanetConfig(bodyId), [bodyId]);
 
   // Reactive subscription: This component only re-renders if this specific moon's data changes.
-  const selectedMoonTrajectory = useSolarStore(useShallow((s) => s.masterTrajectory[bodyId]));
   const selectedMasterSegments = useSolarStore(useShallow((s) => s.masterTrajectorySegments[bodyId]));
-  const moonTrajectory = selectedMoonTrajectory ?? EMPTY_TRAJECTORY;
   const masterSegments = selectedMasterSegments ?? EMPTY_SEGMENTS;
 
   // Pre-calculate properties for hooks safely
@@ -242,40 +241,21 @@ function MoonMesh({
   const name = config.englishName;
 
   const handleClick = () => {
-    const currentPos = localPositionKmRef.current;
-    const absolutePosKm = absPositionKmRef.current;
-    
-    const absolutePos = {
-      x: absolutePosKm.x,
-      y: absolutePosKm.y,
-      z: absolutePosKm.z,
-    };
-    const distanceToParentKm = Math.sqrt(currentPos.x ** 2 + currentPos.y ** 2 + currentPos.z ** 2);
-
     setSelectedPlanet({
       bodyId,
       name: config.name,
       englishName: config.englishName,
-      position: absolutePos,
-      velocity: moonTrajectory[0]?.velocity ?? { x: 0, y: 0, z: 0 },
-      trajectory: moonTrajectory,
-      radius: radius,
-      distanceFromSun: 0,
       parentId,
       parentName,
-      distanceToParentKm,
     });
   };
 
   const handleDoubleClick = () => {
-    const absolutePosKm = absPositionKmRef.current;
-    const absolutePos = {
-      x: absolutePosKm.x,
-      y: absolutePosKm.y,
-      z: absolutePosKm.z,
-    };
-
     handleClick(); // Set selected state
+    resetTravel();
+    const absolutePos = resolveCoveredTargetPosition(bodyId, clockRuntime.getTimeMs());
+    if (!absolutePos) return;
+
     setViewMode('realistic');
     const realisticRadius = getRadius(bodyId, 'MOON', 'realistic');
     setTravelTarget(absolutePos, realisticRadius * MOON_CLOSEUP_TRAVEL_RADIUS_MULTIPLIER);

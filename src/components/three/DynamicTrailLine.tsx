@@ -80,7 +80,8 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
       } else {
         const interval = findTemporalInterval(pointTimesMs, cutoffMs, lookupCache.current);
         lastVisibleIndex = interval
-          ? interval.leftIndex * subdivisions + Math.floor(interval.alpha * subdivisions)
+          ? interval.leftIndex * subdivisions + (samples[interval.rightIndex].breakBefore && interval.alpha < 1
+            ? 0 : Math.floor(interval.alpha * subdivisions))
           : cutoffMs >= pointTimesMs[0] ? 0 : -1;
       }
     }
@@ -92,8 +93,6 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
       lastUpload.current.lastVisibleIndex = -1;
       return;
     }
-    line.visible = true;
-
     const origin = useSolarStore.getState().renderOrigin;
     const previous = lastUpload.current;
     // Time changes only affect geometry when the visible sample changes.
@@ -103,6 +102,7 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
       && previous.originY === origin.y && previous.originZ === origin.z) return;
 
     updateDynamicTrailBuffers(buffers, samples, lastVisibleIndex, count, origin, KM_TO_UNIT, baseColor, subdivisions);
+    line.visible = buffers.geometry.instanceCount > 0;
     previous.buffers = buffers;
     previous.samples = samples;
     previous.color = baseColor;

@@ -1,6 +1,6 @@
 import { trajectoryRequestWindow } from './trajectoryRequestWindow';
 import { describe, expect, it } from "vitest";
-import { buildTrajectorySegment, type TrajectorySegment } from "@/lib/trajectoryEngine";
+import { buildTrajectorySegment, buildTrajectorySegments, type TrajectorySegment } from "@/lib/trajectoryEngine";
 import type { OrbitLineData } from "@/lib/types";
 import {
   buildBackgroundPaginationDemands,
@@ -51,6 +51,25 @@ function createOrbitLine(pointCount: number): OrbitLineData {
 }
 
 describe("trajectoryAvailabilityPolicy", () => {
+  it.each(['399', '501', '401'])('requests a real internal gap for %s even at high playback speed', (bodyId) => {
+    const start = Date.parse('2026-04-15T00:00:00Z');
+    const segments = buildTrajectorySegments([0, 5, 10, 20, 25, 30].map((minutes) => ({
+      timestamp: new Date(start + minutes * 60_000).toISOString(),
+      position: { x: minutes, y: 0, z: 0 },
+    })), bodyId);
+    const input = {
+      bodyIds: [bodyId], segmentsByBody: { [bodyId]: segments },
+      timeMs: start + 15 * 60_000, date: '2026-04-15', runtimeDate: '2026-04-15', timeMultiplier: 86400,
+    };
+    const demands = buildCoverageDemands(input);
+    expect(demands).toHaveLength(1);
+    expect(demands[0].ids).toEqual([bodyId]);
+    const window = trajectoryRequestWindow(bodyId, demands[0].date, demands[0].fetchSpanDays);
+    expect(window.startMs).toBeLessThan(input.timeMs);
+    expect(window.endMs).toBeGreaterThan(input.timeMs);
+    expect(buildBackgroundPaginationDemands(input)).toEqual(demands);
+  });
+
   it("includes core planets by default", () => {
     const ids = buildFetchBodyIds([]);
     expect(ids).toEqual([

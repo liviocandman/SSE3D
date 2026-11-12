@@ -11,6 +11,21 @@ vi.mock('lucide-react', () => ({
 const mockEarthPosition = { x: 0, y: 0, z: 0 };
 
 describe('PlanetInfo', () => {
+  it('converts both absolute positions from km into a distance in million km', () => {
+    render(<PlanetInfo
+      planet={{ bodyId: '499', englishName: 'Mars', position: { x: 200_000_000, y: 0, z: 0 }, distanceFromSun: 200 }}
+      earthPosition={{ x: 50_000_000, y: 0, z: 0 }}
+    />);
+    expect(screen.getByText('150.0')).toBeInTheDocument();
+  });
+
+  it('keeps metadata visible and shows placeholders when current telemetry is unavailable', () => {
+    render(<PlanetInfo planet={{ bodyId: '499', englishName: 'Mars' }} />);
+    expect(screen.getByText('Mars')).toBeInTheDocument();
+    expect(screen.getAllByText('—')).toHaveLength(3);
+    expect(screen.queryByText('NaN')).not.toBeInTheDocument();
+  });
+
   it('renders standard planet info correctly', () => {
     const mockPlanet: SelectedPlanet = {
       bodyId: '399', // Earth
@@ -67,6 +82,7 @@ describe('PlanetInfo', () => {
     // Moon specific stats
     expect(screen.getByText('Distance to Jupiter')).toBeInTheDocument();
     expect(screen.getByText('670,900')).toBeInTheDocument(); // Formatted distance
+    expect(screen.getByText('13.7')).toBeInTheDocument(); // Current parent-relative velocity
     
     // Moon metadata (from textureConfig mock/actual data)
     expect(screen.getByText('Surface / Composition')).toBeInTheDocument();

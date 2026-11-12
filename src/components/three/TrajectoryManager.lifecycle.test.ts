@@ -20,8 +20,9 @@ type Request = { date: string; spanDays: number; ids: string[]; signal: AbortSig
 function responseFor(request: Request): EphemerisData[] {
   return request.ids.map((bodyId) => {
     const window = trajectoryRequestWindow(bodyId, request.date, request.spanDays);
-    const trajectory = [window.startMs, window.endMs].map((time, index) => ({
-      timestamp: new Date(time).toISOString(), position: { x: index + 1, y: 0, z: 0 },
+    const trajectory = Array.from({ length: 200 }, (_, index) => ({
+      timestamp: new Date(window.startMs + index * (window.endMs - window.startMs) / 199).toISOString(),
+      position: { x: index + 1, y: 0, z: 0 },
     }));
     return { bodyId, name: bodyId, timestamp: trajectory[0].timestamp, position: trajectory[0].position, trajectory };
   });
@@ -104,7 +105,7 @@ describe('TrajectoryManager request lifecycle', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(250); });
     const next: Request = mocks.requestTrajectoryBlock.mock.calls[1][0];
     await act(async () => finishes[1](responseFor(next)));
-    expect(useSolarStore.getState().masterTrajectory['399']).toHaveLength(2);
+    expect(useSolarStore.getState().masterTrajectory['399']).toHaveLength(200);
   });
 
   it('does not duplicate pending baseline coverage when a new moon is hovered', async () => {

@@ -1,13 +1,14 @@
-import type { EphemerisData, SelectedPlanet } from '@/lib/types';
+import type { EphemerisData, PlanetSelection } from '@/lib/types';
 import type { ViewMode } from '@/lib/scales';
+import { resolveCoveredTargetPosition } from '@/lib/simulation/frameResolvers';
+import { buildTrajectorySegments } from '@/lib/trajectoryEngine';
+import { clockRuntime } from '@/lib/time/clockRuntime';
 import { getRadius } from '@/lib/scales';
 import { getPlanetConfig, PLANET_MOONS } from '@/lib/textureConfig';
-import { calculateMillionKmFromSun } from './usePlanetsToRender';
 
 interface UsePlanetInteractionOptions {
   ephemerisById: Record<string, EphemerisData>;
-  viewMode: ViewMode;
-  setSelectedPlanet: (planet: SelectedPlanet | null) => void;
+  setSelectedPlanet: (planet: PlanetSelection | null) => void;
   resetTravel: () => void;
   setViewMode: (mode: ViewMode) => void;
   setTravelTarget: (position: { x: number; y: number; z: number }, radius: number) => void;
@@ -15,7 +16,6 @@ interface UsePlanetInteractionOptions {
 
 export function usePlanetInteraction({
   ephemerisById,
-  viewMode,
   setSelectedPlanet,
   resetTravel,
   setViewMode,
@@ -27,21 +27,11 @@ export function usePlanetInteraction({
 
     if (planet) {
       const config = getPlanetConfig(planet.bodyId);
-      const selected: SelectedPlanet = {
+      setSelectedPlanet({
         bodyId: planet.bodyId,
         name: config?.name || planet.name,
         englishName: config?.englishName || planet.name,
-        position: {
-          x: planet.position.x,
-          y: planet.position.y,
-          z: planet.position.z,
-        },
-        velocity: planet.velocity,
-        radius: getRadius(planet.bodyId, config?.bodyClass || 'ROCKY_PLANET', viewMode),
-        distanceFromSun: calculateMillionKmFromSun([planet.position.x, planet.position.y, planet.position.z]),
-        trajectory: planet.trajectory,
-      };
-      setSelectedPlanet(selected);
+      });
     }
   };
 
@@ -49,28 +39,18 @@ export function usePlanetInteraction({
     const planet = ephemerisById[bodyId];
 
     if (planet) {
+      handlePlanetClick(bodyId);
+      const fallback = buildTrajectorySegments(planet.trajectory ?? [], bodyId);
+      const position = resolveCoveredTargetPosition(bodyId, clockRuntime.getTimeMs(), fallback);
+      if (!position) return;
+
       const config = getPlanetConfig(planet.bodyId);
       const realisticRadius = getRadius(planet.bodyId, config?.bodyClass || 'ROCKY_PLANET', 'realistic');
       const moonSystemMultiplier = PLANET_MOONS[planet.bodyId] ? 5 : 1;
       const cameraRadius = realisticRadius * moonSystemMultiplier;
 
-      const selected: SelectedPlanet = {
-        bodyId: planet.bodyId,
-        name: config?.name || planet.name,
-        englishName: config?.englishName || planet.name,
-        position: {
-          x: planet.position.x,
-          y: planet.position.y,
-          z: planet.position.z,
-        },
-        velocity: planet.velocity,
-        radius: cameraRadius,
-        distanceFromSun: calculateMillionKmFromSun([planet.position.x, planet.position.y, planet.position.z]),
-        trajectory: planet.trajectory,
-      };
-      setSelectedPlanet(selected);
       setViewMode('realistic');
-      setTravelTarget(selected.position, selected.radius);
+      setTravelTarget(position, cameraRadius);
     }
   };
 

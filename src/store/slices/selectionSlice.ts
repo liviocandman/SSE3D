@@ -1,15 +1,15 @@
 import { StateCreator } from 'zustand';
-import type { SelectedPlanet } from '@/lib/types';
+import type { PlanetSelection } from '@/lib/types';
 import type { ViewMode } from '@/lib/scales';
 
 export interface SelectionState {
-  selectedPlanet: SelectedPlanet | null;
+  selectedPlanet: PlanetSelection | null;
   hoveredPlanetId: string | null;
   viewMode: ViewMode;
 }
 
 export interface SelectionActions {
-  setSelectedPlanet: (planet: SelectedPlanet | null) => void;
+  setSelectedPlanet: (planet: PlanetSelection | null) => void;
   setHoveredPlanetId: (id: string | null) => void;
   setViewMode: (mode: ViewMode) => void;
   toggleViewMode: () => void;

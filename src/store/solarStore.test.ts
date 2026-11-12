@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { useSolarStore } from './solarStore';
 import type { EphemerisData, EphemerisTrajectory } from '@/lib/types';
 import { clockRuntime } from '@/lib/time/clockRuntime';
+import { hasCoverageAtTime, sampleTrajectoryAtTime } from '@/lib/trajectoryEngine';
 
 function makeTrajectory(startIso: string, points: number, stepHours = 6): EphemerisTrajectory[] {
   const startMs = new Date(startIso).getTime();
@@ -164,6 +165,23 @@ describe('useSolarStore', () => {
     const state = useSolarStore.getState();
     expect(state.masterTrajectorySegments['399']).toHaveLength(1);
     expect(state.masterTrajectory['399'].length).toBeGreaterThan(4);
+  });
+
+  it('preserves missing rapid-moon samples and fills the gap only with new scientific data', () => {
+    const start = Date.parse('2026-03-26T00:00:00Z');
+    const points = [0, 5, 10, 15, 20, 25, 30].map((minutes) => ({
+      timestamp: new Date(start + minutes * 60_000).toISOString(),
+      position: { x: minutes, y: 0, z: 0 },
+    }));
+    const state = useSolarStore.getState();
+    state.appendTrajectoryData(bodyPayload('401', points.filter((_, index) => index !== 3)));
+    const segments = useSolarStore.getState().masterTrajectorySegments['401'];
+    expect(segments).toHaveLength(2);
+    expect(hasCoverageAtTime(segments, start + 15 * 60_000)).toBe(false);
+    expect(sampleTrajectoryAtTime(segments, start + 15 * 60_000)?.status).toBe('gap');
+    state.appendTrajectoryData(bodyPayload('401', points.slice(2, 5)));
+    expect(useSolarStore.getState().masterTrajectorySegments['401']).toHaveLength(1);
+    expect(hasCoverageAtTime(useSolarStore.getState().masterTrajectorySegments['401'], start + 15 * 60_000)).toBe(true);
   });
 
   it('clearTrajectoryBuffer should clear both flattened and segmented pools', () => {

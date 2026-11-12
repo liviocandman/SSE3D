@@ -46,6 +46,7 @@ const { solarState } = vi.hoisted(() => {
       selectedPlanet: { bodyId: '399', englishName: 'Earth' } as { bodyId: string; englishName: string } | null,
       currentDate: '2026-03-26',
       currentTime: new Date('2026-03-26T00:00:00.000Z'),
+      masterTrajectorySegments: {},
       viewMode: 'didactic' as const,
       isPlaying: false,
       toggleViewMode: vi.fn(),

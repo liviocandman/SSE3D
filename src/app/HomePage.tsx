@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { Toaster, toast } from 'sonner';
 import { useEphemeris } from '@/hooks/useEphemeris';
@@ -10,8 +10,7 @@ import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { ErrorOverlay } from '@/components/ui/ErrorOverlay';
 import { HUD } from '@/components/ui/HUD';
 import { useSessionMerge } from '@/hooks/useSessionMerge';
-import { BODY_IDS, type EphemerisData } from '@/lib/types';
-import { scalePositionFromKm } from '@/lib/scales';
+import type { EphemerisData } from '@/lib/types';
 import type { AppError } from '@/components/ui/ErrorOverlay';
 import { useSolarStore } from '@/store/solarStore';
 import { StoreInitializer } from '@/components/three/StoreInitializer';
@@ -59,20 +58,6 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
     isApiLoading: isLoading,
     hasApiData: ephemerisData.length > 0,
   });
-
-  // Get Earth position for distance calculations
-  const earthPosition = useMemo(() => {
-    const earth = ephemerisData.find(body => body.bodyId === BODY_IDS.EARTH);
-    if (earth) {
-      const scaledEarth = scalePositionFromKm(earth.position.x, earth.position.y, earth.position.z);
-      return {
-        x: scaledEarth[0],
-        y: scaledEarth[1],
-        z: scaledEarth[2],
-      };
-    }
-    return undefined;
-  }, [ephemerisData]);
 
   const activeError: AppError | null = webglError ?? (ephemerisError ? {
     type: ephemerisError.type,
@@ -156,7 +141,6 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
 
       {!showLoadingScreen && !showErrorOverlay && (
         <HUD
-          earthPosition={earthPosition}
           onDateChange={handleDateChange}
           onRefresh={refresh}
           isFallback={isFallback}

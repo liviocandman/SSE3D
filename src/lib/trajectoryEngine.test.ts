@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest';
 import type { EphemerisTrajectory } from '@/lib/types';
 import {
   buildTrajectorySegment,
+  buildTrajectorySegments,
   computeBufferPlan,
   flattenTrajectorySegments,
+  hasCoverageAtTime,
+  hasCoverageNearTime,
   MAX_TRAJECTORY_POINTS_PER_BODY,
   TRAJECTORY_RETENTION_RADIUS_MS,
   sampleTrajectoryAtTime,
+  sampleTrajectoryStateAtTime,
   upsertTrajectorySegments,
 } from './trajectoryEngine';
 
@@ -69,6 +73,33 @@ describe('trajectoryEngine', () => {
     segments = upsertTrajectorySegments(segments, makeTrajectory('2026-04-01T00:00:00.000Z', 3), anchor, 3);
 
     expect(segments).toHaveLength(3);
+  });
+
+  it('samples velocity as the derivative of the same Hermite curve used for position', () => {
+    const startMs = Date.parse('2026-01-01T00:00:00Z');
+    const segment = buildTrajectorySegment([
+      { timestamp: new Date(startMs).toISOString(), position: { x: 0, y: 0, z: 0 }, velocity: { x: 50, y: 2, z: -3 } },
+      { timestamp: new Date(startMs + 10_000).toISOString(), position: { x: 100, y: 20, z: -30 }, velocity: { x: -10, y: 2, z: -3 } },
+    ])!;
+    const state = sampleTrajectoryStateAtTime([segment], startMs + 5000)!;
+    expect(state.position).toEqual(sampleTrajectoryAtTime([segment], startMs + 5000)?.position);
+    expect(state.velocity).toEqual({ x: 5, y: 2, z: -3 });
+    expect(sampleTrajectoryStateAtTime([segment], startMs)?.velocity).toEqual(segment.points[0].velocity);
+    expect(sampleTrajectoryStateAtTime([segment], startMs + 10_000)?.velocity).toEqual(segment.points[1].velocity);
+  });
+
+  it('derives velocity from the linear path when velocity vectors are absent', () => {
+    const segment = buildTrajectorySegment(makeTrajectory('2026-01-01T00:00:00Z', 2, 1, false))!;
+    expect(sampleTrajectoryStateAtTime([segment], segment.startTimeMs + 1_800_000)?.velocity?.x).toBeCloseTo(100 / 3600);
+  });
+
+  it('does not report clamped endpoints as current telemetry outside coverage or in gaps', () => {
+    const a = buildTrajectorySegment(makeTrajectory('2026-01-01T00:00:00Z', 2))!;
+    const b = buildTrajectorySegment(makeTrajectory('2026-03-01T00:00:00Z', 2))!;
+    for (const time of [a.startTimeMs - 1, b.endTimeMs + 1, (a.endTimeMs + b.startTimeMs) / 2, NaN]) {
+      expect(sampleTrajectoryStateAtTime([a, b], time)).toBeNull();
+    }
+    expect(sampleTrajectoryStateAtTime([], a.startTimeMs)).toBeNull();
   });
 
   it('should keep upserted segments sorted by start time', () => {
@@ -182,6 +213,111 @@ describe('trajectoryEngine', () => {
     const original = upsertTrajectorySegments([], points, anchor, 3, retention);
     const repeated = points.map((point) => ({ ...point, position: { ...point.position } }));
     expect(upsertTrajectorySegments(original, repeated, anchor, 3, retention)).toBe(original);
+  });
+});
+
+describe('trajectory continuity', () => {
+  const start = Date.parse('2026-01-01T00:00:00Z');
+  const hour = 3_600_000;
+  function atMinutes(minutes: number[]): EphemerisTrajectory[] {
+    return minutes.map((minute) => ({
+      timestamp: new Date(start + minute * 60_000).toISOString(),
+      position: { x: minute, y: 0, z: 0 },
+    }));
+  }
+
+  it.each([1, -1])('preserves a sub-36-hour hole between downloads in direction %i', (direction) => {
+    const blocks = [makeTrajectory(new Date(start).toISOString(), 3), makeTrajectory(new Date(start + 24 * hour).toISOString(), 3)];
+    if (direction < 0) blocks.reverse();
+    const timeMs = start + 18 * hour;
+    let segments: ReturnType<typeof upsertTrajectorySegments> = [];
+    for (const block of blocks) segments = upsertTrajectorySegments(segments, block, timeMs, 3, undefined, '399');
+    expect(segments).toHaveLength(2);
+    expect(hasCoverageAtTime(segments, timeMs)).toBe(false);
+    expect(hasCoverageNearTime(segments, timeMs, 24 * hour)).toBe(false);
+    expect(sampleTrajectoryAtTime(segments, timeMs)).toMatchObject({ status: 'gap', clamped: true });
+    expect(sampleTrajectoryStateAtTime(segments, timeMs)).toBeNull();
+    expect(computeBufferPlan({ segments, timeMs, thresholdDays: 1, fetchSpanDays: 45,
+      timeMultiplier: direction, currentDate: '2026-01-01' })).toEqual({ pause: true, fetchDates: ['2026-01-01'] });
+  });
+
+  it('splits an internal missing sample and restores coverage only after it arrives', () => {
+    const points = atMinutes([0, 5, 10, 20, 25, 30]);
+    const timeMs = start + 15 * 60_000;
+    const segments = upsertTrajectorySegments([], points, timeMs, 3, undefined, '401');
+    expect(segments).toHaveLength(2);
+    expect(hasCoverageAtTime(segments, timeMs)).toBe(false);
+    const filled = upsertTrajectorySegments(segments, atMinutes([10, 15, 20]), timeMs, 3, undefined, '401');
+    expect(filled).toHaveLength(1);
+    expect(hasCoverageAtTime(filled, timeMs)).toBe(true);
+    expect(sampleTrajectoryAtTime(filled, timeMs)?.position.x).toBe(15);
+  });
+
+  it('detects an internal hole even in a single segment and holds the nearest actual sample', () => {
+    const points = atMinutes([0, 5, 10, 60, 65, 70]);
+    const segment = buildTrajectorySegment(points, '401')!;
+    const timeMs = start + 20 * 60_000;
+    expect(hasCoverageAtTime([segment], timeMs)).toBe(false);
+    expect(sampleTrajectoryAtTime([segment], timeMs)).toMatchObject({
+      status: 'gap', position: points[2].position, pointIndex: 2,
+    });
+  });
+
+  it('does not interpolate a rapid moon across cadence that is valid for a regular moon', () => {
+    const points = atMinutes([0, 45, 90, 135]);
+    const rapid = buildTrajectorySegments(points, '401');
+    const regular = buildTrajectorySegments(points, '501');
+    expect(hasCoverageAtTime(rapid, start + 30 * 60_000)).toBe(false);
+    expect(hasCoverageAtTime(regular, start + 30 * 60_000)).toBe(true);
+    // A two-point payload cannot establish continuity beyond the body's bound.
+    expect(hasCoverageAtTime(buildTrajectorySegments([points[0], points[1]], '401'), start + 30 * 60_000)).toBe(false);
+  });
+
+  it('keeps normal cadence contiguous across rounded timestamps and shared endpoints', () => {
+    const step = 2 * 24 * hour / 199;
+    const block = (offset: number) => Array.from({ length: 200 }, (_, index) => ({
+      timestamp: new Date(Math.round(start + offset + index * step)).toISOString(),
+      position: { x: offset + index, y: 0, z: 0 },
+    }));
+    let segments = upsertTrajectorySegments([], block(0), start, 3, undefined, '401');
+    segments = upsertTrajectorySegments(segments, block(2 * 24 * hour), start + 2 * 24 * hour, 3, undefined, '401');
+    expect(segments).toHaveLength(1);
+    expect(hasCoverageAtTime(segments, start + 2 * 24 * hour)).toBe(true);
+    expect(hasCoverageAtTime(segments, start + 3 * 24 * hour)).toBe(true);
+  });
+
+  it('uses the local edge cadence after merging downloads with different sampling rates', () => {
+    let segments = upsertTrajectorySegments([], atMinutes([0, 30, 60]), start + hour, 3, undefined, '399');
+    segments = upsertTrajectorySegments(segments, atMinutes([60, 61, 62]), start + hour, 3, undefined, '399');
+    segments = upsertTrajectorySegments(segments, atMinutes([65, 66, 67]), start + hour, 3, undefined, '399');
+    expect(segments).toHaveLength(2);
+    expect(hasCoverageAtTime(segments, start + 64 * 60_000)).toBe(false);
+  });
+
+  it('preserves gaps and reference identity across retention and repeated downloads', () => {
+    const points = atMinutes([0, 5, 10, 20, 25, 30]);
+    const anchor = start + 15 * 60_000;
+    const retention = { maxPoints: 2, radiusMs: hour };
+    const segments = upsertTrajectorySegments([], points, anchor, 3, retention, '401');
+    expect(flattenTrajectorySegments(segments)).toHaveLength(2);
+    expect(hasCoverageAtTime(segments, anchor)).toBe(false);
+    expect(upsertTrajectorySegments(segments, points, anchor, 3, retention, '401')).toBe(segments);
+  });
+
+  it('does not bridge a sample removed by normalization', () => {
+    const points = atMinutes([0, 5, 10, 15, 20]);
+    points[2] = { ...points[2], position: { x: NaN, y: 0, z: 0 } };
+    const segments = buildTrajectorySegments(points, '401');
+    expect(segments).toHaveLength(2);
+    expect(hasCoverageAtTime(segments, start + 10 * 60_000)).toBe(false);
+  });
+
+  it('allows fetch tolerance outside the buffer without expanding internal coverage', () => {
+    const segments = buildTrajectorySegments(atMinutes([0, 5, 10, 20, 25, 30]), '401');
+    expect(hasCoverageNearTime(segments, start - 60_000, 120_000)).toBe(true);
+    expect(hasCoverageNearTime(segments, start + 31 * 60_000, 120_000)).toBe(true);
+    expect(hasCoverageNearTime(segments, start - 180_000, 120_000)).toBe(false);
+    expect(hasCoverageNearTime(segments, start + 15 * 60_000, hour)).toBe(false);
   });
 });
 

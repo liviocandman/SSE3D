@@ -51,7 +51,6 @@ export function SolarSystemLayer({ ephemerisData }: SolarSystemLayerProps) {
 
   const { handlePlanetClick, handlePlanetDoubleClick } = usePlanetInteraction({
     ephemerisById,
-    viewMode,
     setSelectedPlanet,
     resetTravel,
     setViewMode,

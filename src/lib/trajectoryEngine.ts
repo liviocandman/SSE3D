@@ -1,9 +1,10 @@
-import type { EphemerisTrajectory } from '@/lib/types';
+import type { EphemerisPosition, EphemerisTrajectory } from '@/lib/types';
 import {
   findTemporalInterval,
   resetCacheIfDataChanged,
   type TemporalLookupCache,
 } from './temporalLookup';
+import { getMaxInterpolationGapMs, TRAJECTORY_CADENCE_GAP_FACTOR } from './trajectoryPolicy';
 
 export interface TrajectorySegment {
   startTime: string;
@@ -12,6 +13,8 @@ export interface TrajectorySegment {
   endTimeMs: number;
   pointTimesMs: number[];
   points: EphemerisTrajectory[];
+  /** Preserve the continuity bound through merges and retention slices. */
+  maxGapMs: number;
 }
 
 export interface SampledTrajectoryPoint {
@@ -30,7 +33,7 @@ export interface BufferPlan {
 import { parseTimestampMs } from './utils';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const MERGE_GAP_MS = 36 * 60 * 60 * 1000; // 36h merges overlap/adjacent blocks
+const TIMESTAMP_ROUNDING_MS = 2;
 
 // Retain scientific samples, not decimated approximations. These bounds also
 // apply when adjacent downloads have compacted into a single long segment.
@@ -76,7 +79,9 @@ export function normalizeTrajectoryPoints(points: EphemerisTrajectory[]): Epheme
   return Array.from(unique.entries()).sort(([a], [b]) => a - b).map(([, point]) => point);
 }
 
-function segmentFromSortedPoints(points: EphemerisTrajectory[], pointTimesMs: number[]): TrajectorySegment {
+function segmentFromSortedPoints(
+  points: EphemerisTrajectory[], pointTimesMs: number[], maxGapMs: number,
+): TrajectorySegment {
   return {
     startTime: points[0].timestamp,
     endTime: points[points.length - 1].timestamp,
@@ -84,17 +89,58 @@ function segmentFromSortedPoints(points: EphemerisTrajectory[], pointTimesMs: nu
     endTimeMs: pointTimesMs[pointTimesMs.length - 1],
     pointTimesMs,
     points,
+    maxGapMs,
   };
 }
 
-export function buildTrajectorySegment(points: EphemerisTrajectory[]): TrajectorySegment | null {
+export function buildTrajectorySegment(points: EphemerisTrajectory[], bodyId?: string): TrajectorySegment | null {
   const normalized = normalizeTrajectoryPoints(points);
   if (normalized.length === 0) return null;
-  return segmentFromSortedPoints(normalized, normalized.map((point) => parseTimeMs(point.timestamp)));
+  const times = normalized.map((point) => parseTimeMs(point.timestamp));
+  const intervals = times.slice(1).map((time, index) => time - times[index]).sort((a, b) => a - b);
+  // The lower median tolerates timestamp rounding without allowing a few large
+  // holes to redefine the sample cadence. Body policy also bounds sparse inputs.
+  const cadenceMs = intervals[Math.floor((intervals.length - 1) / 2)];
+  const maxGapMs = Math.min(
+    cadenceMs === undefined ? 0 : cadenceMs * TRAJECTORY_CADENCE_GAP_FACTOR + TIMESTAMP_ROUNDING_MS,
+    bodyId ? getMaxInterpolationGapMs(bodyId) + TIMESTAMP_ROUNDING_MS : Infinity,
+  );
+  return segmentFromSortedPoints(normalized, times, maxGapMs);
+}
+
+function splitSegmentAtGaps(segment: TrajectorySegment): TrajectorySegment[] {
+  const result: TrajectorySegment[] = [];
+  let start = 0;
+  for (let index = 1; index < segment.points.length; index++) {
+    if (segment.pointTimesMs[index] - segment.pointTimesMs[index - 1] > segment.maxGapMs) {
+      result.push(sliceSegment(segment, start, index));
+      start = index;
+    }
+  }
+  result.push(sliceSegment(segment, start, segment.points.length));
+  return result;
+}
+
+/** Build continuous runs, including when one download contains missing samples. */
+export function buildTrajectorySegments(points: EphemerisTrajectory[], bodyId?: string): TrajectorySegment[] {
+  const segment = buildTrajectorySegment(points, bodyId);
+  return segment ? splitSegmentAtGaps(segment) : [];
 }
 
 function canMergeSegments(a: TrajectorySegment, b: TrajectorySegment): boolean {
-  return !(a.endTimeMs + MERGE_GAP_MS < b.startTimeMs || b.endTimeMs + MERGE_GAP_MS < a.startTimeMs);
+  const [left, right] = a.startTimeMs <= b.startTimeMs ? [a, b] : [b, a];
+  if (left.endTimeMs >= right.startTimeMs) return true;
+  const leftTimes = left.pointTimesMs;
+  const rightTimes = right.pointTimesMs;
+  const leftCadence = leftTimes.length > 1 ? leftTimes.at(-1)! - leftTimes.at(-2)! : 0;
+  const rightCadence = rightTimes.length > 1 ? rightTimes[1] - rightTimes[0] : 0;
+  const boundaryLimit = Math.min(
+    leftCadence * TRAJECTORY_CADENCE_GAP_FACTOR + TIMESTAMP_ROUNDING_MS,
+    rightCadence * TRAJECTORY_CADENCE_GAP_FACTOR + TIMESTAMP_ROUNDING_MS,
+    left.maxGapMs,
+    right.maxGapMs,
+  );
+  return right.startTimeMs - left.endTimeMs <= boundaryLimit;
 }
 
 function samePoint(a: EphemerisTrajectory, b: EphemerisTrajectory): boolean {
@@ -123,7 +169,9 @@ function mergeSegments(a: TrajectorySegment, b: TrajectorySegment): TrajectorySe
     }
   }
   if (points.length === a.points.length && points.every((point, index) => point === a.points[index])) return a;
-  return segmentFromSortedPoints(points, times);
+  // Each input is continuous; overlap or a validated boundary preserves that
+  // coverage even when the two downloads have different sample cadences.
+  return segmentFromSortedPoints(points, times, Math.max(a.maxGapMs, b.maxGapMs));
 }
 
 function sortSegments(segments: TrajectorySegment[]): TrajectorySegment[] {
@@ -193,22 +241,24 @@ export function upsertTrajectorySegments(
   anchorTimeMs: number,
   maxSegments = 3,
   retention: TrajectoryRetention = DEFAULT_RETENTION,
+  bodyId?: string,
 ): TrajectorySegment[] {
-  const incoming = buildTrajectorySegment(incomingPoints);
-  if (!incoming) return existing;
+  const incoming = buildTrajectorySegments(incomingPoints, bodyId);
+  if (!incoming.length) return existing;
 
-  let merged = incoming;
-  const kept: TrajectorySegment[] = [];
-
-  for (const segment of existing) {
-    if (canMergeSegments(segment, incoming)) {
-      merged = mergeSegments(segment, merged);
-    } else {
-      kept.push(segment);
+  let compacted = existing.flatMap(splitSegmentAtGaps);
+  for (const part of incoming) {
+    let merged = part;
+    const kept: TrajectorySegment[] = [];
+    for (const segment of compacted) {
+      if (canMergeSegments(segment, merged)) {
+        merged = mergeSegments(segment, merged);
+      } else {
+        kept.push(segment);
+      }
     }
+    compacted = compactMergeableSegments([...kept, merged]);
   }
-
-  const compacted = compactMergeableSegments([...kept, merged]);
   const limited = retainTrajectoryWindow(
     trimSegmentsAroundTime(compacted, anchorTimeMs, Math.max(1, maxSegments)),
     anchorTimeMs,
@@ -243,7 +293,9 @@ function lowerBound(times: number[], target: number): number {
 
 function sliceSegment(segment: TrajectorySegment, start: number, end: number): TrajectorySegment {
   if (start === 0 && end === segment.points.length) return segment;
-  return segmentFromSortedPoints(segment.points.slice(start, end), segment.pointTimesMs.slice(start, end));
+  return segmentFromSortedPoints(
+    segment.points.slice(start, end), segment.pointTimesMs.slice(start, end), segment.maxGapMs,
+  );
 }
 
 function retainTrajectoryWindow(
@@ -305,7 +357,12 @@ export function findSegmentIndexForTime(
   segments: TrajectorySegment[],
   timeMs: number
 ): number {
-  return segments.findIndex((segment) => timeMs >= segment.startTimeMs && timeMs <= segment.endTimeMs);
+  return segments.findIndex((segment) => {
+    if (timeMs < segment.startTimeMs || timeMs > segment.endTimeMs || !Number.isFinite(timeMs)) return false;
+    const right = lowerBound(segment.pointTimesMs, timeMs);
+    return segment.pointTimesMs[right] === timeMs || (right > 0 && right < segment.pointTimesMs.length
+      && segment.pointTimesMs[right] - segment.pointTimesMs[right - 1] <= segment.maxGapMs);
+  });
 }
 
 export function hasCoverageAtTime(segments: TrajectorySegment[], timeMs: number): boolean {
@@ -317,9 +374,14 @@ export function hasCoverageNearTime(
   timeMs: number,
   toleranceMs: number
 ): boolean {
-  return segments.some(
-    (segment) => timeMs >= segment.startTimeMs - toleranceMs && timeMs <= segment.endTimeMs + toleranceMs
-  );
+  if (hasCoverageAtTime(segments, timeMs)) return true;
+  if (!segments.length) return false;
+  // Fetch tolerance applies only beyond the outer buffer edges. Expanding each
+  // run would hide genuine internal gaps, especially for rapid moons.
+  const start = segments[0].startTimeMs;
+  const end = segments[segments.length - 1].endTimeMs;
+  return (timeMs < start && timeMs >= start - toleranceMs)
+    || (timeMs > end && timeMs <= end + toleranceMs);
 }
 
 
@@ -386,21 +448,14 @@ function clampToNearestGapEndpoint(
 
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i];
-
-    const startDistance = Math.abs(timeMs - segment.startTimeMs);
-    if (startDistance < bestDistance) {
-      bestDistance = startDistance;
-      best = { position: segment.points[0].position, segmentIndex: i, pointIndex: 0 };
-    }
-
-    const endDistance = Math.abs(timeMs - segment.endTimeMs);
-    if (endDistance < bestDistance) {
-      bestDistance = endDistance;
-      best = {
-        position: segment.points[segment.points.length - 1].position,
-        segmentIndex: i,
-        pointIndex: segment.points.length - 1,
-      };
+    const right = lowerBound(segment.pointTimesMs, timeMs);
+    for (const pointIndex of [right - 1, right]) {
+      if (pointIndex < 0 || pointIndex >= segment.points.length) continue;
+      const distance = Math.abs(timeMs - segment.pointTimesMs[pointIndex]);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = { position: segment.points[pointIndex].position, segmentIndex: i, pointIndex };
+      }
     }
   }
 
@@ -412,7 +467,7 @@ export function sampleTrajectoryAtTime(
   timeMs: number,
   lookupCache?: TemporalLookupCache | null
 ): SampledTrajectoryPoint | null {
-  if (segments.length === 0) return null;
+  if (segments.length === 0 || !Number.isFinite(timeMs)) return null;
 
   const first = segments[0];
   const last = segments[segments.length - 1];
@@ -520,6 +575,44 @@ export function sampleTrajectoryAtTime(
     pointIndex: leftIndex,
     clamped: false,
     status: 'covered',
+  };
+}
+
+/**
+ * UI telemetry uses the same position interpolation as the scene, with its
+ * derivative in km/s. Uncovered instants have no telemetry, even while the
+ * renderer holds a nearby endpoint waiting for another block.
+ */
+export function sampleTrajectoryStateAtTime(
+  segments: TrajectorySegment[],
+  timeMs: number,
+): { position: EphemerisPosition; velocity?: EphemerisPosition } | null {
+  if (!Number.isFinite(timeMs) || !hasCoverageAtTime(segments, timeMs)) return null;
+  const sample = sampleTrajectoryAtTime(segments, timeMs);
+  if (!sample) return null;
+
+  const segment = segments[sample.segmentIndex];
+  const point = segment.points[sample.pointIndex];
+  if (sample.clamped) return { position: sample.position, velocity: point.velocity };
+
+  const next = segment.points[sample.pointIndex + 1];
+  const startMs = segment.pointTimesMs[sample.pointIndex];
+  const deltaSeconds = (segment.pointTimesMs[sample.pointIndex + 1] - startMs) / 1000;
+  const alpha = (timeMs - startMs) / (deltaSeconds * 1000);
+  const a2 = alpha * alpha;
+  const velocity: EphemerisPosition = { x: 0, y: 0, z: 0 };
+  for (const axis of ['x', 'y', 'z'] as const) {
+    velocity[axis] = point.velocity && next.velocity
+      ? ((6 * a2 - 6 * alpha) * point.position[axis]
+        + (-6 * a2 + 6 * alpha) * next.position[axis]) / deltaSeconds
+        + (3 * a2 - 4 * alpha + 1) * point.velocity[axis]
+        + (3 * a2 - 2 * alpha) * next.velocity[axis]
+      : (next.position[axis] - point.position[axis]) / deltaSeconds;
+  }
+
+  return {
+    position: sample.position,
+    velocity: Object.values(velocity).every(Number.isFinite) ? velocity : undefined,
   };
 }
 

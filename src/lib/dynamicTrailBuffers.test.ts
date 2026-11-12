@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { Color, DynamicDrawUsage, InterleavedBufferAttribute } from 'three';
 import { LineGeometry } from 'three-stdlib';
-import { createDynamicTrailBuffers, updateDynamicTrailBuffers, type TrailSample } from './dynamicTrailBuffers';
+import { buildTrailSamples, createDynamicTrailBuffers, updateDynamicTrailBuffers, type TrailSample } from './dynamicTrailBuffers';
 import { densifyWithCatmullRom } from './catmullRom';
+import { buildTrajectorySegments } from './trajectoryEngine';
 
 const samples: TrailSample[] = Array.from({ length: 10 }, (_, index) => ({
   timestampMs: index,
@@ -80,6 +81,93 @@ describe('dynamic trail GPU buffers', () => {
     }
     expect(buffers.positions.array.length).toBe(30);
     expect(raw).toHaveLength(10);
+    geometry.dispose();
+  });
+});
+
+describe('trail discontinuities', () => {
+  const origin = { x: 0, y: 0, z: 0 };
+  const color = new Color('white');
+  const trajectory = [0, 1, 2, 100, 101, 102].map((second, index) => ({
+    timestamp: new Date(second * 1000).toISOString(),
+    position: { x: index < 3 ? index * 10 : 1000 + (index - 3) * 10, y: index ** 2, z: 0 },
+  }));
+  const runs = buildTrajectorySegments(trajectory, '399');
+
+  it('preserves segment boundaries and scientific position identity in the rendering input', () => {
+    const raw = buildTrailSamples(runs);
+    expect(raw.map((sample) => sample.breakBefore)).toEqual([true, false, false, true, false, false]);
+    expect(raw.map((sample) => sample.timestampMs)).toEqual([0, 1000, 2000, 100_000, 101_000, 102_000]);
+    expect(raw[3].point).toBe(trajectory[3].position);
+  });
+
+  it.each([1, 8])('draws and smooths each run independently with %i subdivisions', (subdivisions) => {
+    const raw = buildTrailSamples(runs);
+    const last = (raw.length - 1) * subdivisions;
+    const geometry = new LineGeometry();
+    const buffers = createDynamicTrailBuffers(geometry, last + 1);
+    updateDynamicTrailBuffers(buffers, raw, last, last + 1, origin, 1, color, subdivisions);
+    const start = geometry.getAttribute('instanceStart') as InterleavedBufferAttribute;
+    const end = geometry.getAttribute('instanceEnd') as InterleavedBufferAttribute;
+    const expected = [...runs].reverse().flatMap((run) => {
+      const points = subdivisions === 1 ? run.points : densifyWithCatmullRom(run.points, subdivisions);
+      return points.slice(1).map((_, index) => ({
+        start: points[points.length - index - 1].position,
+        end: points[points.length - index - 2].position,
+      }));
+    });
+    expect(geometry.instanceCount).toBe(4 * subdivisions);
+    expect(buffers.positions.updateRanges).toEqual([{ start: 0, count: expected.length * 6 }]);
+    expected.forEach((pair, index) => {
+      expect(start.getX(index)).toBeCloseTo(pair.start.x);
+      expect(start.getY(index)).toBeCloseTo(pair.start.y);
+      expect(end.getX(index)).toBeCloseTo(pair.end.x);
+      expect(end.getY(index)).toBeCloseTo(pair.end.y);
+    });
+    geometry.dispose();
+  });
+
+  it('draws no synthetic portion of a gap when the visible cutoff is inside it', () => {
+    const raw = buildTrailSamples(runs);
+    const geometry = new LineGeometry();
+    const buffers = createDynamicTrailBuffers(geometry, 48);
+    const array = buffers.positions.array;
+    updateDynamicTrailBuffers(buffers, raw, 40, 41, origin, 1, color, 8);
+    expect(geometry.instanceCount).toBe(32);
+    updateDynamicTrailBuffers(buffers, raw, 20, 21, origin, 1, color, 8);
+    expect(geometry.instanceCount).toBe(16);
+    const start = geometry.getAttribute('instanceStart') as InterleavedBufferAttribute;
+    const end = geometry.getAttribute('instanceEnd') as InterleavedBufferAttribute;
+    for (let index = 0; index < geometry.instanceCount; index++) {
+      expect(start.getX(index)).toBeLessThanOrEqual(20);
+      expect(end.getX(index)).toBeLessThanOrEqual(20);
+    }
+    expect(buffers.positions.array).toBe(array);
+    expect(buffers.positions.updateRanges).toEqual([{ start: 0, count: 96 }]);
+    geometry.dispose();
+  });
+
+  it('hides stale geometry when all visible samples are isolated', () => {
+    const geometry = new LineGeometry();
+    const buffers = createDynamicTrailBuffers(geometry, 6);
+    updateDynamicTrailBuffers(buffers, samples, 5, 6, origin, 1, color, 1);
+    expect(geometry.instanceCount).toBe(5);
+    const isolated = samples.map((sample) => ({ ...sample, breakBefore: true }));
+    updateDynamicTrailBuffers(buffers, isolated, 5, 6, origin, 1, color, 1);
+    expect(geometry.instanceCount).toBe(0);
+    geometry.dispose();
+  });
+
+  it('keeps a break even when the positions on both sides are identical', () => {
+    const matching = trajectory.map((point, index) => index === 3
+      ? { ...point, position: trajectory[2].position } : point);
+    const raw = buildTrailSamples(buildTrajectorySegments(matching, '399'));
+    expect(raw).toHaveLength(6);
+    expect(raw[3].breakBefore).toBe(true);
+    const geometry = new LineGeometry();
+    const buffers = createDynamicTrailBuffers(geometry, 6);
+    updateDynamicTrailBuffers(buffers, raw, 5, 6, origin, 1, color);
+    expect(geometry.instanceCount).toBe(4);
     geometry.dispose();
   });
 });

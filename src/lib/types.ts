@@ -49,19 +49,22 @@ export interface EphemerisData {
   orbitLine?: OrbitLineData;
 }
 
-export interface SelectedPlanet {
+/** Stable selection metadata; orbital values belong to a sampled instant. */
+export interface PlanetSelection {
   bodyId: string;
   name: string;
   englishName: string;
-  position: EphemerisPosition;
-  velocity?: EphemerisPosition; // km/s from NASA API
+  parentId?: string;
+  parentName?: string;
+}
+
+/** UI snapshot. Positions are km, distances from the Sun are million km. */
+export interface SelectedPlanet extends PlanetSelection {
+  position?: EphemerisPosition;
+  velocity?: EphemerisPosition; // km/s sampled from the trajectory
   radius: number;
-  distanceFromSun: number;
-  // Moon-specific fields (only set when body is a moon)
-  parentId?: string;           // NASA ID of parent planet
-  parentName?: string;         // Human-readable parent planet name (e.g. 'Jupiter')
+  distanceFromSun?: number;
   distanceToParentKm?: number; // Live distance to parent computed from API position vector
-  trajectory?: EphemerisTrajectory[];
 }
 
 export type DataSource =

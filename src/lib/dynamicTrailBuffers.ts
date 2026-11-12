@@ -6,10 +6,36 @@ import {
   type InstancedBufferGeometry,
 } from 'three';
 import type { Vector3Like } from './renderFrame';
+import type { TrajectorySegment } from './trajectoryEngine';
 
 export interface TrailSample {
   timestampMs: number;
   point: Vector3Like;
+  /** No edge or smoothing tangent may connect this sample to its predecessor. */
+  breakBefore?: boolean;
+}
+
+export function buildTrailSamples(segments: readonly TrajectorySegment[]): TrailSample[] {
+  const result: TrailSample[] = [];
+  for (const segment of segments) {
+    let breakBefore = true;
+    for (let index = 0; index < segment.points.length; index++) {
+      const point = segment.points[index].position;
+      const timestampMs = segment.pointTimesMs[index];
+      if (!Number.isFinite(timestampMs) || !Number.isFinite(point.x)
+        || !Number.isFinite(point.y) || !Number.isFinite(point.z)) {
+        breakBefore = true;
+        continue;
+      }
+      result.push({
+        timestampMs, point,
+        breakBefore: breakBefore || (index > 0
+          && timestampMs - segment.pointTimesMs[index - 1] > segment.maxGapMs),
+      });
+      breakBefore = false;
+    }
+  }
+  return result;
 }
 
 /** Persistent endpoint pairs: Line2 renders one instance per adjacent pair. */
@@ -48,10 +74,12 @@ function visualPositionInto(
   const index = Math.floor(visualIndex / subdivisions);
   const alpha = (visualIndex % subdivisions) / subdivisions;
   if (alpha === 0) return samples[index].point;
-  const p0 = samples[Math.max(0, index - 1)].point;
   const p1 = samples[index].point;
   const p2 = samples[Math.min(samples.length - 1, index + 1)].point;
-  const p3 = samples[Math.min(samples.length - 1, index + 2)].point;
+  // Repeat endpoints at each continuous run's boundaries, just as an isolated
+  // Catmull-Rom curve would. Remote samples must not bend a neighboring run.
+  const p0 = index > 0 && !samples[index].breakBefore ? samples[index - 1].point : p1;
+  const p3 = index + 2 < samples.length && !samples[index + 2].breakBefore ? samples[index + 2].point : p2;
   const a2 = alpha * alpha;
   const a3 = a2 * alpha;
   const q0 = -a3 + 2 * a2 - alpha;
@@ -75,15 +103,18 @@ export function updateDynamicTrailBuffers(
   subdivisions = 1,
 ): void {
   const count = Math.min(buffers.capacity, Math.max(0, pointCount - 1), lastVisibleIndex);
-  buffers.geometry.instanceCount = count;
+  buffers.geometry.instanceCount = 0;
   if (count === 0) return;
 
   const positions = buffers.positions.array;
   const colors = buffers.colors.array;
+  let written = 0;
   for (let i = 0; i < count; i++) {
+    const leftSampleIndex = Math.floor((lastVisibleIndex - i - 1) / subdivisions);
+    if (samples[leftSampleIndex + 1]?.breakBefore) continue;
     const start = visualPositionInto(buffers.scratchStart, samples, lastVisibleIndex - i, subdivisions);
     const end = visualPositionInto(buffers.scratchEnd, samples, lastVisibleIndex - i - 1, subdivisions);
-    const offset = i * 6;
+    const offset = written++ * 6;
     positions[offset] = (start.x - origin.x) * kmToUnit;
     positions[offset + 1] = (start.y - origin.y) * kmToUnit;
     positions[offset + 2] = (start.z - origin.z) * kmToUnit;
@@ -100,11 +131,13 @@ export function updateDynamicTrailBuffers(
     colors[offset + 4] = color.g * endAlpha;
     colors[offset + 5] = color.b * endAlpha;
   }
+  buffers.geometry.instanceCount = written;
+  if (written === 0) return;
 
   // WebGL clears updateRanges after uploading. Reuse our range objects even
   // when a line was not rendered on the preceding frame.
-  buffers.positionRange.count = count * 6;
-  buffers.colorRange.count = count * 6;
+  buffers.positionRange.count = written * 6;
+  buffers.colorRange.count = written * 6;
   buffers.positions.updateRanges.length = 1;
   buffers.positions.updateRanges[0] = buffers.positionRange;
   buffers.colors.updateRanges.length = 1;

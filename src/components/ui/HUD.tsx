@@ -12,11 +12,11 @@ import { useShallow } from "zustand/react/shallow";
 import { ChevronLeft, ChevronRight, Heart } from "lucide-react";
 import { useFavorites } from "@/hooks/useFavorites";
 import { TimeTravelControls } from "./TimeTravelControls";
+import { useSelectedPlanet } from "@/hooks/useSelectedPlanet";
 
 // --- Types ---
 
 interface HUDProps {
-  earthPosition?: { x: number; y: number; z: number };
   onDateChange: (date: string) => void;
   onRefresh?: () => void;
   isFallback?: boolean;
@@ -61,10 +61,10 @@ function getPlanetAccentClass(bodyId: string): string {
 // --- Component ---
 
 export function HUD({
-  earthPosition,
   isFallback = false,
 }: HUDProps) {
   const isMobile = useIsMobile();
+  const { planet, earthPosition } = useSelectedPlanet();
   
   const { selectedPlanet, viewMode, toggleViewMode } = useSolarStore(
     useShallow((state) => ({
@@ -141,7 +141,7 @@ export function HUD({
       </div>
 
       <PlanetInfo
-        planet={selectedPlanet}
+        planet={planet}
         earthPosition={earthPosition}
         onAskAstronomer={() => setIsAstronomerOpen(true)}
       />
