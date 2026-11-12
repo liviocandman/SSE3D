@@ -139,6 +139,19 @@ describe('HUD', () => {
     expect(screen.getByTestId('planet-info')).toBeInTheDocument();
   });
 
+  it.each([390, 1024])('shows the degraded data notice and clears it after recovery at width %i', (width) => {
+    window.innerWidth = width;
+    const { rerender } = render(<HUD onDateChange={vi.fn()} isFallback />);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Algumas posições usam dados de referência e podem não representar a data selecionada.',
+    );
+    expect(screen.getAllByText(/Dados degradados/).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Offline')).not.toBeInTheDocument();
+    rerender(<HUD onDateChange={vi.fn()} isFallback={false} />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Dados degradados/)).not.toBeInTheDocument();
+  });
+
   it('reopens the minimized drawer when a different planet is selected', async () => {
     const { rerender } = render(<HUD onDateChange={vi.fn()} />);
     fireEvent.click(screen.getByTitle('Hide panel'));

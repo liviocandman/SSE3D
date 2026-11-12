@@ -14,6 +14,7 @@ import type { EphemerisData } from '@/lib/types';
 import type { AppError } from '@/components/ui/ErrorOverlay';
 import { useSolarStore } from '@/store/solarStore';
 import { StoreInitializer } from '@/components/three/StoreInitializer';
+import { DEGRADED_EPHEMERIS_MESSAGE } from '@/lib/ephemerisStatus';
 
 // Dynamically import SceneManager with SSR disabled
 const SceneManager = dynamic(
@@ -76,11 +77,13 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
   };
 
   useEffect(() => {
+    if (!isFallback) toast.dismiss('degraded-ephemeris');
     if (isLoading || !source) return;
 
-    if (source === 'FALLBACK_DATASET') {
-      toast.warning('Modo Offline: Posições aproximadas', {
-        description: 'Usando dados de fallback. API NASA indisponível.',
+    if (isFallback) {
+      toast.warning('Dados degradados', {
+        id: 'degraded-ephemeris',
+        description: DEGRADED_EPHEMERIS_MESSAGE,
         duration: 5000,
       });
     } else if (source === 'CACHE_HIT') {
@@ -94,7 +97,7 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
     }
 
     console.log(`[HomePage] Ephemeris loaded - Source: ${source}, Bodies: ${ephemerisData.length}, Date: ${currentDate}`);
-  }, [source, isLoading, ephemerisData.length, currentDate]);
+  }, [source, isFallback, isLoading, ephemerisData.length, currentDate]);
 
   const showLoadingScreen = loadingProgress.stage !== 'ready' && !showErrorOverlay;
 

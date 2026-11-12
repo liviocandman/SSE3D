@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { EphemerisData, EphemerisResponse, DataSource, OrbitLineProfile } from "@/lib/types";
 import { USE_BACKEND_ORBIT_READY } from "@/lib/types";
+import { isFallbackSource } from "@/lib/ephemerisStatus";
 import { toast } from "sonner";
 
 // --- Types ---
@@ -274,8 +275,6 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
   const [fallbackError, setFallbackError] = useState<EphemerisError | null>(
     null,
   );
-  const [source, setSource] = useState<DataSource | null>(null);
-  const [isFallback, setIsFallback] = useState(false);
   const [isFallbackLoading, setIsFallbackLoading] = useState(false);
 
   const query = useQuery<EphemerisResponse, EphemerisFetchError>({
@@ -316,8 +315,7 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
     const timeoutId = setTimeout(() => {
       setFallbackData(null);
       setFallbackError(null);
-      setIsFallback(false);
-      setSource(query.data.meta.source);
+      setIsFallbackLoading(false);
     }, 0);
 
     return () => clearTimeout(timeoutId);
@@ -336,8 +334,6 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
         .then((data) => {
           if (cancelled) return;
           setFallbackData(data);
-          setIsFallback(true);
-          setSource("FALLBACK_DATASET");
           setFallbackError(toEphemerisError(query.error));
         })
         .finally(() => {
@@ -354,23 +350,25 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
   }, [query.error]);
 
   const data = query.data?.data ?? fallbackData ?? [];
+  // Status follows the displayed payload, including successful mixed responses.
+  // Keep it during retries until another response actually replaces these data.
+  const source: DataSource | null = query.data
+    ? query.data.meta.source : fallbackData !== null ? "FALLBACK_DATASET" : null;
+  const isFallback = isFallbackSource(source);
   const isLoading = query.isFetching || isFallbackLoading;
 
   const retry = () => {
-    setFallbackData(null);
     setFallbackError(null);
-    setIsFallback(false);
     query.refetch();
   };
 
   const refresh = async () => {
-    setFallbackData(null);
     setFallbackError(null);
-    setIsFallback(false);
 
     try {
       await queryClient.fetchQuery({
         queryKey: ["ephemeris", date, spanDays, orbitReady, orbitProfile, orbitLineOnly],
+        staleTime: 0,
         queryFn: ({ signal }) =>
           fetchEphemeris({
             date,
@@ -392,7 +390,7 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
   return {
     data,
     isLoading,
-    error: fallbackError,
+    error: query.error ? fallbackError : null,
     source,
     isFallback,
     retry,

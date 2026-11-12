@@ -13,6 +13,7 @@ import { ChevronLeft, ChevronRight, Heart } from "lucide-react";
 import { useFavorites } from "@/hooks/useFavorites";
 import { TimeTravelControls } from "./TimeTravelControls";
 import { useSelectedPlanet } from "@/hooks/useSelectedPlanet";
+import { DEGRADED_EPHEMERIS_MESSAGE } from "@/lib/ephemerisStatus";
 
 // --- Types ---
 
@@ -132,13 +133,19 @@ export function HUD({
             </span>
           </button>
         </div>
-        {isFallback && (
+        {isFallback && isMobile && (
           <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded-md text-[10px] font-bold text-yellow-500 uppercase">
             <span>⚠️</span>
-            <span>Offline</span>
+            <span>Dados degradados</span>
           </div>
         )}
       </div>
+
+      {isFallback && (
+        <div role="status" className="rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-3 text-xs leading-relaxed text-yellow-200">
+          {DEGRADED_EPHEMERIS_MESSAGE}
+        </div>
+      )}
 
       <PlanetInfo
         planet={planet}
@@ -182,7 +189,7 @@ export function HUD({
                 {selectedPlanet ? selectedPlanet.englishName : "Solar Explorer"}
               </span>
               <span className="text-xs font-medium text-white/50 uppercase tracking-widest">
-                Tap to explore
+                {isFallback ? "⚠️ Dados degradados" : "Tap to explore"}
               </span>
             </div>
           )}
@@ -264,7 +271,7 @@ export function HUD({
             {isFallback && (
               <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded-md text-[10px] font-bold text-yellow-500 uppercase">
                 <span>⚠️</span>
-                <span>Offline</span>
+                <span>Dados degradados</span>
               </div>
             )}
           </div>
