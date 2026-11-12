@@ -528,11 +528,13 @@ solar-explore-3d/
 | Metric | Target | Strategy |
 |---|---|---|
 | **Desktop FPS** | 60 FPS | WebGL with optimized Three.js scene graph, React Compiler |
-| **Mobile FPS** | 30 FPS | Adaptive quality tiers, texture downsizing |
+| **Mobile FPS** | 30 FPS | Detected quality tiers, texture downsizing |
 | **API Response (cached)** | < 50ms | Upstash Redis with tiered TTLs (1h–24h based on planet) |
 | **API Response (fresh)** | < 3s | SPICE-based ephemeris computation with Redis caching |
 | **JS Heap Memory** | < 100MB | Texture disposal, geometry pooling, memory optimization |
 | **Resilience** | Graceful degradation | Fallback JSON when SPICE data is unavailable |
+
+These are targets, not measured results. See [trajectory performance and request lifecycle](docs/performance.md) for buffer limits, retry/deadline ownership, cache/concurrency behavior and regression coverage.
 
 ### Cache Strategy (TTL by Planet)
 

@@ -536,16 +536,20 @@ Planet position data is cached in Redis with **tiered TTLs** based on orbital sp
 | Outer planets (`599`–`899`) | 24 hours (86,400s) | Slow orbits — minimal daily movement |
 | All others | 6 hours (21,600s) | Balanced default |
 
-**Cache Key Format**: `ephemeris:{body_id}:{date}` (e.g., `ephemeris:399:2026-03-20`)
+**Cache Key Format**: `ephemeris:{body_id}:{date}:span_{days}` for the default Sun observer. A different observer, full-orbit mode, orbit-ready algorithm/profile and line-only response add separate key components. `orbitLineOnly` remains distinct even when `orbitReady` is disabled. Orbit-ready cache reads require `orbitLine` for moons; planets and the Sun retain their ordinary ephemeris payloads.
 
 ### Cache Miss Flow
 
 ```
-Request → Redis GET (bulk) → missing IDs → NASA fetch (sequential)
-                                          → fallback JSON (if NASA fails)
-                                          → Redis SET (with TTL)
-                                          → return combined results
+Request → Redis MGET → missing IDs → shared SPICE job (native process lock)
+                                    → fallback JSON (if computation unavailable)
+                                    → Redis pipeline SET (individual TTLs)
+                                    → return combined results
 ```
+
+Equivalent concurrent jobs share one computation per process/event loop. Their key includes the deduplicated body set, date, observer, span and every geometry/response option. At most eight distinct jobs may be running or queued per process; excess work returns `503` with `Retry-After: 1`. Each HTTP query accepts at most 32 non-empty body IDs (duplicates are removed after validation); `spanDays` remains bounded to 1–1825 days.
+
+Cancelling a caller does not cancel a shared job or release its capacity before native computation ends. The existing process lock continues to protect CSPICE. This is in-process coordination: separate API processes still share results through Redis, and overlapping batches with different body sets remain separate jobs. Redis reads and writes continue to fail open.
 
 ---
 
