@@ -1,4 +1,5 @@
-import { computeBufferPlan, hasCoverageNearTime, type TrajectorySegment } from "@/lib/trajectoryEngine";
+import { findSegmentIndexForTime, hasCoverageNearTime, type TrajectorySegment } from "@/lib/trajectoryEngine";
+import { TRAJECTORY_DAY_MS as DAY_MS, trajectoryRequestDate } from "./trajectoryRequestWindow";
 import { PLANET_MOONS } from "@/lib/textureConfig";
 import type { OrbitLineData } from "@/lib/types";
 import {
@@ -45,20 +46,23 @@ function uniqueSortedIds(ids: Iterable<string>): string[] {
   return Array.from(new Set(ids)).sort();
 }
 
-function groupIdsByFetchSpan(ids: string[]): Map<number, string[]> {
-  const grouped = new Map<number, string[]>();
-
-  for (const id of ids) {
-    const { fetchSpanDays } = getBodyFetchWindow(id);
-    const existing = grouped.get(fetchSpanDays);
-    if (existing) {
-      existing.push(id);
-    } else {
-      grouped.set(fetchSpanDays, [id]);
-    }
+function groupDemands(demands: TrajectoryCoverageDemand[]): TrajectoryCoverageDemand[] {
+  const groups = new Map<string, TrajectoryCoverageDemand>();
+  for (const demand of demands) {
+    const key = `${demand.date}|${demand.fetchSpanDays}`;
+    const group = groups.get(key);
+    if (group) group.ids.push(...demand.ids);
+    else groups.set(key, { ...demand, ids: [...demand.ids] });
   }
+  return Array.from(groups.values(), (group) => ({ ...group, ids: uniqueSortedIds(group.ids) }));
+}
 
-  return grouped;
+function coverageDemand(bodyId: string, date: string): TrajectoryCoverageDemand {
+  const { fetchSpanDays } = getBodyFetchWindow(bodyId);
+  // Keep useful samples on both sides for forward/reverse playback while the
+  // response is in flight. The backend anchors planets at the END of a window.
+  const startMs = Date.parse(`${date}T00:00:00Z`) - Math.floor(fetchSpanDays / 2) * DAY_MS;
+  return { date: trajectoryRequestDate(bodyId, startMs, fetchSpanDays), fetchSpanDays, ids: [bodyId] };
 }
 
 function resolveMoonParentId(bodyId: string | null | undefined): string | null {
@@ -107,12 +111,7 @@ export function buildCoverageDemands({
     return !hasCoverageNearTime(segments, timeMs, toleranceMs);
   });
 
-  const grouped = groupIdsByFetchSpan(missingIds);
-  return Array.from(grouped.entries()).map(([fetchSpanDays, ids]) => ({
-    date,
-    fetchSpanDays,
-    ids: uniqueSortedIds(ids),
-  }));
+  return groupDemands(missingIds.map((id) => coverageDemand(id, date)));
 }
 
 export function buildBackgroundPaginationDemands({
@@ -122,41 +121,27 @@ export function buildBackgroundPaginationDemands({
   runtimeDate,
   timeMultiplier,
 }: BackgroundPaginationInput): TrajectoryCoverageDemand[] {
-  const groupedFetches = new Map<string, { date: string; fetchSpanDays: number; ids: Set<string> }>();
-
+  const demands: TrajectoryCoverageDemand[] = [];
   for (const id of bodyIds) {
     const segments = segmentsByBody[id] ?? [];
+    const containingIndex = findSegmentIndexForTime(segments, timeMs);
+    if (containingIndex === -1) {
+      demands.push(coverageDemand(id, runtimeDate));
+      continue;
+    }
+    const segment = segments[containingIndex];
     const { fetchSpanDays, thresholdDays } = getBodyFetchWindow(id);
-    const plan = computeBufferPlan({
-      segments,
-      timeMs,
-      thresholdDays,
-      fetchSpanDays,
-      timeMultiplier,
-      currentDate: runtimeDate,
-    });
-
-    for (const date of plan.fetchDates) {
-      if (!date) continue;
-      const groupKey = `${date}|${fetchSpanDays}`;
-      const existing = groupedFetches.get(groupKey);
-      if (existing) {
-        existing.ids.add(id);
-      } else {
-        groupedFetches.set(groupKey, {
-          date,
-          fetchSpanDays,
-          ids: new Set([id]),
-        });
-      }
+    // Adjacent windows overlap at the boundary; no artificial one-day gaps.
+    if (timeMultiplier >= 0 && timeMs > segment.endTimeMs - thresholdDays * DAY_MS) {
+      const startMs = Math.floor(segment.endTimeMs / DAY_MS) * DAY_MS;
+      demands.push({ date: trajectoryRequestDate(id, startMs, fetchSpanDays), fetchSpanDays, ids: [id] });
+    }
+    if (timeMultiplier <= 0 && timeMs < segment.startTimeMs + thresholdDays * DAY_MS) {
+      const startMs = Math.ceil(segment.startTimeMs / DAY_MS) * DAY_MS - fetchSpanDays * DAY_MS;
+      demands.push({ date: trajectoryRequestDate(id, startMs, fetchSpanDays), fetchSpanDays, ids: [id] });
     }
   }
-
-  return Array.from(groupedFetches.values()).map(({ date, fetchSpanDays, ids }) => ({
-    date,
-    fetchSpanDays,
-    ids: uniqueSortedIds(ids),
-  }));
+  return groupDemands(demands);
 }
 
 export function buildMoonOrbitPrefetchDemands({

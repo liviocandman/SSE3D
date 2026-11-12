@@ -10,7 +10,7 @@ import { type ViewMode, KM_TO_UNIT } from "@/lib/scales";
 import { useSolarStore } from "@/store/solarStore";
 import { toRelativeRenderUnitsInto } from "@/lib/renderFrame";
 import type { EphemerisTrajectory } from "@/lib/types";
-import { buildTrajectorySegment } from "@/lib/trajectoryEngine";
+import { buildTrajectorySegments } from "@/lib/trajectoryEngine";
 import { createTemporalLookupCache } from "@/lib/temporalLookup";
 import { calculateAbsoluteRotation } from "@/lib/rotationUtils";
 import { clockRuntime } from "@/lib/time/clockRuntime";
@@ -92,9 +92,8 @@ export function CelestialBody({
 
   const fallbackSegments = useMemo(() => {
     if (!trajectory || trajectory.length === 0) return [];
-    const segment = buildTrajectorySegment(trajectory);
-    return segment ? [segment] : [];
-  }, [trajectory]);
+    return buildTrajectorySegments(trajectory, bodyId);
+  }, [trajectory, bodyId]);
 
   // Dispose of material on unmount (geometry is shared)
   useEffect(() => {

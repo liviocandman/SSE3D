@@ -10,7 +10,6 @@ import {
   FastForward
 } from 'lucide-react';
 import { useSolarStore } from '@/store/solarStore';
-import { useMissionStore } from '@/store/missionStore';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -50,7 +49,6 @@ export function TimeTravelControls() {
     togglePlaybackIntent,
     stepByMsIntent,
     jumpToDateUtcIntent,
-    goLiveIntent,
     resetToAnchorIntent,
     setTimeMultiplier,
   } = useSolarStore(useShallow(s => ({
@@ -60,15 +58,8 @@ export function TimeTravelControls() {
     togglePlaybackIntent: s.togglePlaybackIntent,
     stepByMsIntent: s.stepByMsIntent,
     jumpToDateUtcIntent: s.jumpToDateUtcIntent,
-    goLiveIntent: s.goLiveIntent,
     resetToAnchorIntent: s.resetToAnchorIntent,
     setTimeMultiplier: s.setTimeMultiplier,
-  })));
-
-  const { isLive, setIsLive, liveTimestamp } = useMissionStore(useShallow(s => ({
-    isLive: s.isLive,
-    setIsLive: s.setIsLive,
-    liveTimestamp: s.liveTimestamp,
   })));
 
   const [localDate, setLocalDate] = useState(currentDate);
@@ -81,42 +72,19 @@ export function TimeTravelControls() {
     return () => clearTimeout(timeoutId);
   }, [currentDate]);
 
-  const togglePlay = () => {
-    if (isLive) {
-      setIsLive(false);
-    }
-    togglePlaybackIntent();
-  };
+  const togglePlay = () => togglePlaybackIntent();
 
   const stepTime = (minutes: number) => {
-    if (isLive) {
-      setIsLive(false);
-    }
     stepByMsIntent(minutes * 60000);
   };
 
   const handleDateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isLive) {
-      setIsLive(false);
-    }
     jumpToDateUtcIntent(localDate);
   };
 
   const resetTime = () => {
-    if (isLive) {
-      setIsLive(false);
-    }
-    resetToAnchorIntent(liveTimestamp ?? undefined);
-  };
-
-  const handleGoLive = () => {
-    if (liveTimestamp) {
-      goLiveIntent(liveTimestamp);
-      if (!isLive) {
-        setIsLive(true);
-      }
-    }
+    resetToAnchorIntent();
   };
 
   return (
@@ -140,18 +108,10 @@ export function TimeTravelControls() {
         <div className="h-4 w-[1px] bg-white/10" />
 
         <button
-          onClick={handleGoLive}
-          disabled={!liveTimestamp}
-          className={cn(
-            "px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all flex items-center gap-1",
-            isLive 
-              ? "bg-green-500 text-white shadow-[0_0_10px_rgba(34,197,94,0.5)]" 
-              : "bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/80",
-            !liveTimestamp && "opacity-50 cursor-not-allowed"
-          )}
+          onClick={resetTime}
+          className="px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all flex items-center gap-1 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/80"
         >
-          <span className={cn("w-1.5 h-1.5 rounded-full bg-current", isLive && "animate-pulse")} />
-          Live
+          Now
         </button>
       </div>
 

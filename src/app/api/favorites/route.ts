@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { proxyGet, proxyPost } from '@/lib/server/upstream';
 import { signBffToken } from '@/lib/bff_auth';
 
@@ -19,7 +19,11 @@ export async function GET(req: NextRequest) {
   if (bodyId) params.set('body_id', bodyId);
   if (sessionId) params.set('session_id', sessionId);
 
-  return proxyGet('/api/ai/favorites', params, headers);
+  return proxyGet('/api/ai/favorites', params, headers, {
+    signal: req.signal,
+    wakeRetries: 2,
+    headOnly: req.method === 'HEAD',
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -32,10 +36,9 @@ export async function POST(req: NextRequest) {
       headers['Authorization'] = `Bearer ${bffToken}`;
     }
 
-    return proxyPost('/api/ai/favorites', body, headers);
+    return proxyPost('/api/ai/favorites', body, headers, { signal: req.signal });
   } catch (error) {
     console.error('[Favorites Proxy Route] Error:', error);
-    // Returning dummy call to proxyPost to maintain consistent error shape if JSON parse fails
-    return proxyPost('/api/ai/favorites', {}, {}); 
+    return NextResponse.json({ error: 'INVALID_REQUEST' }, { status: 400 });
   }
 }

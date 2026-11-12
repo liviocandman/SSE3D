@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Optional, TypedDict
+from datetime import datetime
+from threading import Lock
+from typing import Optional
 
 import asyncio
 import numpy as np
@@ -17,21 +18,32 @@ from app.services.spice_windows import (
 )
 
 
-class MissionRelativeGeometry(TypedDict):
-    et: float
-    earth_pos: np.ndarray
-    moon_pos: np.ndarray
+# CSPICE shares native process state and cannot compute in parallel threads.
+# Acquire inside the worker so cancellation of an HTTP task cannot release it
+# while that task's native computation is still running.
+_SPICE_COMPUTATION_LOCK = Lock()
+
+# Bound native work queued behind the process-wide lock. Equivalent callers
+# share a task and do not consume another slot. The loop is part of the key
+# because asyncio Tasks cannot be awaited by another event loop.
+MAX_SPICE_PENDING_REQUESTS = 8
+MAX_EPHEMERIS_BODY_IDS = 32
+_SPICE_REQUESTS_LOCK = Lock()
+_SPICE_REQUESTS: dict[tuple, asyncio.Task[list[EphemerisData]]] = {}
 
 
-MissionGeometryTimestamp = str | datetime
+class SpiceCapacityError(RuntimeError):
+    """The process already has its maximum number of distinct SPICE jobs."""
 
 
-def _to_spice_datetime(value: MissionGeometryTimestamp) -> str:
-    if isinstance(value, datetime):
-        if value.tzinfo is not None:
-            value = value.astimezone(timezone.utc).replace(tzinfo=None)
-        return value.isoformat()
-    return _parse_target_datetime(value).isoformat()
+def _finish_spice_request(key: tuple, task: asyncio.Task) -> None:
+    with _SPICE_REQUESTS_LOCK:
+        if _SPICE_REQUESTS.get(key) is task:
+            del _SPICE_REQUESTS[key]
+    # Observe errors even if every HTTP caller disconnected while native work
+    # was running. Other waiters still receive the original exception.
+    if not task.cancelled():
+        task.exception()
 
 
 def _to_scene_coords(state_xyz: np.ndarray) -> dict[str, float]:
@@ -163,25 +175,26 @@ def _fetch_all_spice_sync(
     orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO,
     orbit_line_only: bool = False,
 ) -> list[EphemerisData]:
-    data: list[EphemerisData] = []
-    for body_id in body_ids:
-        try:
-            item = compute_ephemeris(
-                body_id,
-                target_date=target_date,
-                center_body=center_body,
-                span_days=span_days,
-                full_orbit=full_orbit,
-                orbit_ready=orbit_ready,
-                orbit_profile=orbit_profile,
-                orbit_line_only=orbit_line_only,
-            )
-            if item:
-                data.append(item)
-        except Exception as e:
-            logger.error(f"[fetch_all_spice] Failed to compute ephemeris for body {body_id}: {e}")
-            
-    return data
+    with _SPICE_COMPUTATION_LOCK:
+        data: list[EphemerisData] = []
+        for body_id in body_ids:
+            try:
+                item = compute_ephemeris(
+                    body_id,
+                    target_date=target_date,
+                    center_body=center_body,
+                    span_days=span_days,
+                    full_orbit=full_orbit,
+                    orbit_ready=orbit_ready,
+                    orbit_profile=orbit_profile,
+                    orbit_line_only=orbit_line_only,
+                )
+                if item:
+                    data.append(item)
+            except Exception as e:
+                logger.error(f"[fetch_all_spice] Failed to compute ephemeris for body {body_id}: {e}")
+
+        return data
 
 
 async def fetch_all_spice(
@@ -194,9 +207,15 @@ async def fetch_all_spice(
     orbit_profile: OrbitLineProfile = OrbitLineProfile.AUTO,
     orbit_line_only: bool = False,
 ) -> list[EphemerisData]:
-    return await asyncio.to_thread(
-        _fetch_all_spice_sync,
-        body_ids,
+    if len(body_ids) > MAX_EPHEMERIS_BODY_IDS:
+        raise ValueError(f"At most {MAX_EPHEMERIS_BODY_IDS} bodies may be requested")
+    if not body_ids:
+        return []
+
+    normalized_ids = tuple(sorted(set(body_ids)))
+    key = (
+        asyncio.get_running_loop(),
+        normalized_ids,
         target_date,
         center_body,
         span_days,
@@ -205,179 +224,26 @@ async def fetch_all_spice(
         orbit_profile,
         orbit_line_only,
     )
+    with _SPICE_REQUESTS_LOCK:
+        task = _SPICE_REQUESTS.get(key)
+        if task is None:
+            if len(_SPICE_REQUESTS) >= MAX_SPICE_PENDING_REQUESTS:
+                raise SpiceCapacityError("SPICE computation queue is full")
+            task = asyncio.create_task(asyncio.to_thread(
+                _fetch_all_spice_sync,
+                list(normalized_ids),
+                target_date,
+                center_body,
+                span_days,
+                full_orbit,
+                orbit_ready,
+                orbit_profile,
+                orbit_line_only,
+            ))
+            _SPICE_REQUESTS[key] = task
+            task.add_done_callback(lambda done: _finish_spice_request(key, done))
 
-
-def _fetch_mission_body_positions(
-    target_id: str,
-    ets: list[float],
-) -> list[Optional[np.ndarray]]:
-    if not ets:
-        return []
-
-    try:
-        states, _ = spice.spkezr(
-            target_id,
-            np.array(ets, dtype=float),
-            "ECLIPJ2000",
-            "NONE",
-            "10",
-        )
-        states_array = np.asarray(states, dtype=float)
-        if states_array.ndim == 1:
-            states_array = states_array.reshape(1, 6)
-        if states_array.shape[0] != len(ets):
-            raise ValueError(
-                f"SPICE returned {states_array.shape[0]} states for {len(ets)} requested ETs"
-            )
-
-        return [
-            np.array(states_array[index, 0:3])
-            for index in range(len(ets))
-        ]
-    except Exception as e:
-        if len(ets) == 1:
-            logger.warning(
-                f"Skipping mission geometry sample for body {target_id} at ET={ets[0]}: {e}"
-            )
-            return [None]
-
-        midpoint = len(ets) // 2
-        return _fetch_mission_body_positions(
-            target_id,
-            ets[:midpoint],
-        ) + _fetch_mission_body_positions(
-            target_id,
-            ets[midpoint:],
-        )
-
-
-def _compute_mission_relative_geometry_batch_sync(
-    target_dates: list[MissionGeometryTimestamp],
-) -> list[Optional[MissionRelativeGeometry]]:
-    """
-    Computes Earth and Moon states for mission geometry calculations.
-    Returns raw numpy arrays for positions in ECLIPJ2000, preserving input order.
-    """
-    geometries: list[Optional[MissionRelativeGeometry]] = [
-        None for _date in target_dates
-    ]
-    if not target_dates:
-        return geometries
-
-    try:
-        assert_spice_ready()
-    except Exception as e:
-        logger.error(f"Error preparing mission relative geometry batch: {str(e)}")
-        return geometries
-
-    valid_indices: list[int] = []
-    valid_ets: list[float] = []
-    for index, target_date in enumerate(target_dates):
-        try:
-            et = float(spice.str2et(_to_spice_datetime(target_date)))
-        except Exception as e:
-            logger.warning(f"Skipping mission geometry timestamp {target_date}: {e}")
-            continue
-
-        valid_indices.append(index)
-        valid_ets.append(et)
-
-    if not valid_ets:
-        return geometries
-
-    earth_positions = _fetch_mission_body_positions("399", valid_ets)
-    moon_positions = _fetch_mission_body_positions("301", valid_ets)
-
-    for local_index, result_index in enumerate(valid_indices):
-        earth_pos = (
-            earth_positions[local_index]
-            if local_index < len(earth_positions)
-            else None
-        )
-        moon_pos = (
-            moon_positions[local_index]
-            if local_index < len(moon_positions)
-            else None
-        )
-        if earth_pos is None or moon_pos is None:
-            continue
-
-        geometries[result_index] = {
-            "et": valid_ets[local_index],
-            "earth_pos": earth_pos,
-            "moon_pos": moon_pos,
-        }
-
-    return geometries
-
-def _compute_mission_relative_geometry_sync(target_date: str) -> Optional[MissionRelativeGeometry]:
-    """
-    Computes Earth and Moon states at target_date for mission geometry calculations.
-    Returns raw numpy arrays for positions in ECLIPJ2000.
-    """
-    geometries = _compute_mission_relative_geometry_batch_sync([target_date])
-    return geometries[0] if geometries else None
-
-
-async def compute_mission_relative_geometry(target_date: str) -> Optional[MissionRelativeGeometry]:
-    return await asyncio.to_thread(_compute_mission_relative_geometry_sync, target_date)
-
-
-async def compute_mission_relative_geometry_batch(
-    target_dates: list[MissionGeometryTimestamp],
-) -> list[Optional[MissionRelativeGeometry]]:
-    return await asyncio.to_thread(_compute_mission_relative_geometry_batch_sync, target_dates)
-
-
-def _compute_mission_trajectory_sync(start_date: str, end_date: str, steps: int = 100) -> Optional[dict]:
-    """
-    Computes a mission trajectory window without using planetary full_orbit logic.
-    Provides ET times and corresponding Earth, Moon, and potentially Orion states for the window.
-    """
-    try:
-        assert_spice_ready()
-        dt_start = _parse_target_datetime(start_date)
-        dt_end = _parse_target_datetime(end_date)
-        
-        et_start = spice.str2et(dt_start.isoformat())
-        et_end = spice.str2et(dt_end.isoformat())
-        
-        times = np.linspace(et_start, et_end, steps, dtype=float)
-        
-        earth_states, _ = spice.spkezr("399", times, "ECLIPJ2000", "NONE", "10")
-        moon_states, _ = spice.spkezr("301", times, "ECLIPJ2000", "NONE", "10")
-        
-        earth_states = np.asarray(earth_states, dtype=float)
-        moon_states = np.asarray(moon_states, dtype=float)
-        
-        if earth_states.ndim == 1:
-            earth_states = earth_states.reshape(1, 6)
-            moon_states = moon_states.reshape(1, 6)
-            
-        orion_pos = None
-        orion_vel = None
-        try:
-            orion_states, _ = spice.spkezr("-98", times, "ECLIPJ2000", "NONE", "10")
-            orion_states = np.asarray(orion_states, dtype=float)
-            if orion_states.ndim == 1:
-                orion_states = orion_states.reshape(1, 6)
-            orion_pos = orion_states[:, 0:3]
-            orion_vel = orion_states[:, 3:6]
-        except Exception:
-            logger.debug("Orion (-98) kernel not found in SPICE. Mission trajectory will rely on fallback data.")
-            
-        return {
-            "times": times,
-            "earth_pos": earth_states[:, 0:3],
-            "moon_pos": moon_states[:, 0:3],
-            "orion_pos": orion_pos,
-            "orion_vel": orion_vel
-        }
-    except Exception as e:
-        logger.error(f"Error computing mission trajectory: {str(e)}")
-        return None
-
-
-async def compute_mission_trajectory(start_date: str, end_date: str, steps: int = 100) -> Optional[dict]:
-    return await asyncio.to_thread(_compute_mission_trajectory_sync, start_date, end_date, steps)
+    # Cancelling one HTTP request must not cancel shared work or free a slot
+    # while CSPICE is still executing in its native thread.
+    return await asyncio.shield(task)
 

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useSolarStore } from '@/store/solarStore';
 import { useAstronomer, AstronomerError } from '@/hooks/useAstronomer';
-import type { SelectedPlanet } from '@/lib/types';
+import type { PlanetSelection } from '@/lib/types';
 import { FavoriteButton } from './FavoriteButton';
 import { getSessionItem, setSessionItem, removeSessionItem } from '@/lib/sessionStorage';
 import { Trash2, X, Loader2, Send } from 'lucide-react';
@@ -12,7 +12,7 @@ import { Trash2, X, Loader2, Send } from 'lucide-react';
 interface AstronomerModalProps {
   isOpen: boolean;
   onClose: () => void;
-  planet: SelectedPlanet | null;
+  planet: PlanetSelection | null;
   currentDate: string;
 }
 

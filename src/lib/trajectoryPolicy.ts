@@ -13,6 +13,9 @@ export interface TrajectoryFetchWindow {
 
 const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
+// spice_windows.calculate_trajectory_params returns 200 dynamic samples per window.
+const DYNAMIC_TRAJECTORY_SAMPLES = 200;
+export const TRAJECTORY_CADENCE_GAP_FACTOR = 1.5;
 
 export const BASELINE_PLANET_IDS = [
   BODY_IDS.MERCURY,
@@ -57,6 +60,12 @@ export function getBodyFetchWindow(bodyId: string): TrajectoryFetchWindow {
     return { fetchSpanDays: 7, thresholdDays: 2 };
   }
   return { fetchSpanDays: 45, thresholdDays: 20 };
+}
+
+/** A continuity bound, independent of playback speed and fetch tolerance. */
+export function getMaxInterpolationGapMs(bodyId: string): number {
+  return getBodyFetchWindow(bodyId).fetchSpanDays * 24 * HOUR_MS
+    / (DYNAMIC_TRAJECTORY_SAMPLES - 1) * TRAJECTORY_CADENCE_GAP_FACTOR;
 }
 
 export function getCoverageToleranceMs(bodyId: string, timeMultiplier: number): number {

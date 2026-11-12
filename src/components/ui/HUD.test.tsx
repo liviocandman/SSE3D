@@ -9,7 +9,7 @@ vi.mock('next/config', () => ({
 global.config = global.config || {};
 
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { HUD } from './HUD';
 
 import type { HTMLAttributes, ReactNode } from 'react';
@@ -40,12 +40,13 @@ vi.mock('zustand/react/shallow', () => ({
 }));
 
 // Setup hoisted mocks
-const { solarState, missionStateMock } = vi.hoisted(() => {
+const { solarState } = vi.hoisted(() => {
   return {
     solarState: {
-      selectedPlanet: { bodyId: '399', englishName: 'Earth' },
+      selectedPlanet: { bodyId: '399', englishName: 'Earth' } as { bodyId: string; englishName: string } | null,
       currentDate: '2026-03-26',
       currentTime: new Date('2026-03-26T00:00:00.000Z'),
+      masterTrajectorySegments: {},
       viewMode: 'didactic' as const,
       isPlaying: false,
       toggleViewMode: vi.fn(),
@@ -55,16 +56,6 @@ const { solarState, missionStateMock } = vi.hoisted(() => {
       setTravelTarget: vi.fn(),
       advanceTime: vi.fn(),
     },
-    missionStateMock: {
-      missionMode: 'live',
-      isLive: true,
-      selectedMissionTargetId: null as string | null,
-      missionState: null as { vehicleId: string; mode: string } | null,
-      missionHealth: null,
-      missionEvents: null,
-      setIsLive: vi.fn(),
-      setSelectedMissionTargetId: vi.fn(),
-    }
   };
 });
 
@@ -73,11 +64,6 @@ vi.mock('@/store/solarStore', () => {
   // @ts-expect-error - Mocking the store object
   mock.getState = vi.fn(() => solarState);
   return { useSolarStore: mock };
-});
-
-vi.mock('@/store/missionStore', () => {
-  const mock = vi.fn((selector) => selector ? selector(missionStateMock) : missionStateMock);
-  return { useMissionStore: mock };
 });
 
 const mockUIState = {
@@ -101,7 +87,6 @@ vi.mock('@/hooks/useFavorites', () => ({
 
 // Mock sub-components
 vi.mock('./PlanetInfo', () => ({ PlanetInfo: () => <div data-testid="planet-info" /> }));
-vi.mock('./MissionInfo', () => ({ MissionInfo: () => <div data-testid="mission-info" /> }));
 vi.mock('./DateSelector', () => ({ DateSelector: () => <div data-testid="date-selector" /> }));
 vi.mock('./AstronomerModal', () => ({ AstronomerModal: () => <div data-testid="astronomer-modal" /> }));
 vi.mock('./AuthModal', () => ({ AuthModal: () => <div data-testid="auth-modal" /> }));
@@ -112,7 +97,6 @@ vi.mock('lucide-react', () => ({
   ChevronLeft: () => <div data-testid="chevron-left" />,
   ChevronRight: () => <div data-testid="chevron-right" />,
   Heart: () => <div data-testid="heart" />,
-  Rocket: () => <div data-testid="rocket" />,
   Telescope: () => <div data-testid="telescope" />,
   Calendar: () => <div data-testid="calendar" />,
   Clock: () => <div data-testid="clock" />,
@@ -129,8 +113,8 @@ vi.mock('lucide-react', () => ({
 describe('HUD', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    missionStateMock.selectedMissionTargetId = null;
-    missionStateMock.missionState = null;
+    window.innerWidth = 1024;
+    solarState.selectedPlanet = { bodyId: '399', englishName: 'Earth' };
   });
 
   it('toggles minimize state when clicking the control tab', () => {
@@ -144,41 +128,53 @@ describe('HUD', () => {
 
     expect(screen.getByTitle('Show panel')).toBeInTheDocument();
     expect(screen.getByTestId('chevron-left')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle('Show panel'));
+
+    expect(screen.getByTitle('Hide panel')).toBeInTheDocument();
   });
 
   it('renders PlanetInfo by default when a planet is selected', () => {
     render(<HUD onDateChange={vi.fn()} />);
     expect(screen.getByTestId('planet-info')).toBeInTheDocument();
-    expect(screen.queryByTestId('mission-info')).not.toBeInTheDocument();
   });
 
-  it('renders MissionInfo when orion is selected', () => {
-    missionStateMock.selectedMissionTargetId = 'orion';
-    missionStateMock.missionState = { vehicleId: 'orion', mode: 'live' };
-
-    render(<HUD onDateChange={vi.fn()} />);
-    expect(screen.getByTestId('mission-info')).toBeInTheDocument();
-    expect(screen.queryByTestId('planet-info')).not.toBeInTheDocument();
+  it.each([390, 1024])('shows the degraded data notice and clears it after recovery at width %i', (width) => {
+    window.innerWidth = width;
+    const { rerender } = render(<HUD onDateChange={vi.fn()} isFallback />);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Algumas posições usam dados de referência e podem não representar a data selecionada.',
+    );
+    expect(screen.getAllByText(/Dados degradados/).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Offline')).not.toBeInTheDocument();
+    rerender(<HUD onDateChange={vi.fn()} isFallback={false} />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Dados degradados/)).not.toBeInTheDocument();
   });
 
-  it('keeps PlanetInfo when mission target is selected but mission state is not loaded', () => {
-    missionStateMock.selectedMissionTargetId = 'orion';
-    missionStateMock.missionState = null;
+  it('reopens the minimized drawer when a different planet is selected', async () => {
+    const { rerender } = render(<HUD onDateChange={vi.fn()} />);
+    fireEvent.click(screen.getByTitle('Hide panel'));
+    expect(screen.getByTitle('Show panel')).toBeInTheDocument();
 
-    render(<HUD onDateChange={vi.fn()} />);
+    solarState.selectedPlanet = { bodyId: '499', englishName: 'Mars' };
+    rerender(<HUD onDateChange={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByTitle('Hide panel')).toBeInTheDocument());
+  });
+
+  it('expands the mobile panel from the planetary preview without mission controls', () => {
+    window.innerWidth = 390;
+    solarState.selectedPlanet = null;
+    const { rerender } = render(<HUD onDateChange={vi.fn()} />);
+    expect(screen.getByText('Tap to explore')).toBeInTheDocument();
+
+    solarState.selectedPlanet = { bodyId: '399', englishName: 'Earth' };
+    rerender(<HUD onDateChange={vi.fn()} />);
+    fireEvent.click(screen.getByText('Earth'));
+
+    expect(screen.queryByText('Tap to explore')).not.toBeInTheDocument();
     expect(screen.getByTestId('planet-info')).toBeInTheDocument();
-    expect(screen.queryByTestId('mission-info')).not.toBeInTheDocument();
-  });
-
-  it('uses the loaded mission vehicle id instead of hardcoded orion when toggling mission context', () => {
-    missionStateMock.missionState = { vehicleId: 'artemis-vehicle-1', mode: 'live' };
-
-    render(<HUD onDateChange={vi.fn()} />);
-
-    const missionButton = screen.getByTitle('Mission Context');
-    fireEvent.click(missionButton);
-
-    expect(solarState.setSelectedPlanet).toHaveBeenCalledWith(null);
-    expect(missionStateMock.setSelectedMissionTargetId).toHaveBeenCalledWith('artemis-vehicle-1');
+    expect(screen.queryByRole('button', { name: /mission/i })).not.toBeInTheDocument();
   });
 });

@@ -1,125 +1,114 @@
-import { useEffect, useRef, useCallback } from "react";
-import type { EphemerisData } from "../lib/types";
+import { useEffect, useRef, useCallback } from 'react';
+import type { EphemerisData } from '../lib/types';
+import { abortError, TrajectoryRequestError } from '@/lib/trajectoryRequestErrors';
+
+export const TRAJECTORY_WORKER_TIMEOUT_MS = 20_000;
 
 interface WorkerRequest {
   resolve: (data: EphemerisData[]) => void;
   reject: (reason: unknown) => void;
 }
 
-function getWorkerRequestOrigin(): string {
-  if (typeof window === "undefined") {
-    return "";
-  }
-
-  return window.location.origin;
-}
-
 export function useTrajectoryWorker() {
   const workerRef = useRef<Worker | null>(null);
+  const mountedRef = useRef(false);
   const pendingRequests = useRef<Map<string, WorkerRequest>>(new Map());
 
-  useEffect(() => {
-    const pending = pendingRequests.current;
-
-    // Initialize worker with standard Next.js / Webpack / Vite compatible syntax
-    const worker = new Worker(
-      new URL("../workers/trajectory.worker.ts", import.meta.url),
-      { type: "module" },
-    );
-
-    worker.onmessage = (e: MessageEvent) => {
-      const { type, jobId, data, error } = e.data;
-      const request = pendingRequests.current.get(jobId);
-
-      if (!request) return;
-
-      if (type === "SUCCESS") {
-        request.resolve(data);
-      } else if (type === "ERROR") {
-        request.reject(new Error(error));
-      }
-
-      pendingRequests.current.delete(jobId);
-    };
-
-    workerRef.current = worker;
-
-    return () => {
-      pending.forEach((request) => request.reject(new Error("AbortError")));
-      pending.clear();
+  const stopWorker = useCallback((reason: Error) => {
+    const worker = workerRef.current;
+    workerRef.current = null;
+    if (worker) {
+      worker.onmessage = null;
+      worker.onerror = null;
+      worker.onmessageerror = null;
       worker.terminate();
-      workerRef.current = null;
-    };
+    }
+    // Reject wrappers clean up their own timeout and abort listener.
+    for (const request of pendingRequests.current.values()) request.reject(reason);
+    pendingRequests.current.clear();
   }, []);
 
-  const fetchTrajectoryRaw = useCallback(
-    async (
-      date: string,
-      spanDays: number,
-      ids: string[],
-      tier: string,
-      signal?: AbortSignal,
-    ): Promise<EphemerisData[]> => {
-      if (!workerRef.current) {
-        throw new Error("Worker not initialized");
-      }
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      stopWorker(abortError());
+    };
+  }, [stopWorker]);
 
-      const jobId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const getWorker = useCallback(() => {
+    if (!mountedRef.current) throw abortError();
+    if (workerRef.current) return workerRef.current;
+
+    // Create lazily; a failed worker is replaced only when new work is requested.
+    const worker = new Worker(
+      new URL('../workers/trajectory.worker.ts', import.meta.url),
+      { type: 'module' },
+    );
+    workerRef.current = worker;
+    worker.onmessage = (event: MessageEvent) => {
+      const { type, jobId, data, error, errorName, status, retryAt } = event.data ?? {};
+      const request = pendingRequests.current.get(jobId);
+      if (!request) return;
+      if (type === 'SUCCESS' && Array.isArray(data)) {
+        request.resolve(data);
+      } else if (errorName === 'SyntaxError' || type === 'SUCCESS') {
+        request.reject(new SyntaxError(error ?? 'Invalid worker response'));
+      } else {
+        request.reject(new TrajectoryRequestError(error ?? 'Invalid worker response', status, retryAt));
+      }
+    };
+    worker.onerror = (event) => {
+      event.preventDefault();
+      stopWorker(new Error(event.message || 'Trajectory worker failed'));
+    };
+    worker.onmessageerror = () => stopWorker(new Error('Unable to decode trajectory worker response'));
+    return worker;
+  }, [stopWorker]);
+
+  const fetchTrajectoryRaw = useCallback(
+    async (date: string, spanDays: number, ids: string[], tier: string, signal?: AbortSignal): Promise<EphemerisData[]> => {
+      if (signal?.aborted) throw abortError();
+      const worker = getWorker();
+      const jobId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
       return new Promise<EphemerisData[]>((resolve, reject) => {
         let completed = false;
-
         const cleanup = () => {
+          clearTimeout(timeout);
           pendingRequests.current.delete(jobId);
-          if (signal && abortHandler) {
-            signal.removeEventListener("abort", abortHandler);
-          }
+          signal?.removeEventListener('abort', onAbort);
         };
-
-        const abortHandler = signal
-          ? () => {
-              if (completed) return;
-              completed = true;
-              workerRef.current?.postMessage({ type: "CANCEL", jobId });
-              cleanup();
-              reject(new Error("AbortError"));
-            }
-          : null;
-
+        const settle = (error?: unknown, data?: EphemerisData[]) => {
+          if (completed) return;
+          completed = true;
+          cleanup();
+          if (error !== undefined) reject(error);
+          else resolve(data!);
+        };
+        const onAbort = () => {
+          settle(abortError());
+          try { worker.postMessage({ type: 'CANCEL', jobId }); } catch { /* Already terminated. */ }
+        };
+        const timeout = setTimeout(() => {
+          // An unresponsive worker may have other stuck jobs: release all callers.
+          stopWorker(new Error('Trajectory worker timed out'));
+        }, TRAJECTORY_WORKER_TIMEOUT_MS);
         pendingRequests.current.set(jobId, {
-          resolve: (data) => {
-            if (completed) return;
-            completed = true;
-            cleanup();
-            resolve(data);
-          },
-          reject: (err) => {
-            if (completed) return;
-            completed = true;
-            cleanup();
-            reject(err);
-          },
+          resolve: (data) => settle(undefined, data),
+          reject: (error) => settle(error),
         });
-
-        if (signal && abortHandler) {
-          signal.addEventListener("abort", abortHandler);
+        signal?.addEventListener('abort', onAbort, { once: true });
+        try {
+          worker.postMessage({
+            type: 'FETCH', jobId,
+            params: { date, spanDays, ids, tier, origin: window.location.origin },
+          });
+        } catch (error) {
+          stopWorker(error instanceof Error ? error : new Error('Worker dispatch failed'));
         }
-
-        workerRef.current?.postMessage({
-          type: "FETCH",
-          jobId,
-          params: {
-            date,
-            spanDays,
-            ids,
-            tier,
-            origin: getWorkerRequestOrigin(),
-          },
-        });
       });
-    },
-    [],
+    }, [getWorker, stopWorker],
   );
-
   return { fetchTrajectoryRaw };
 }

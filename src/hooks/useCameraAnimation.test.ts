@@ -17,12 +17,6 @@ vi.mock('@/store/solarStore', () => ({
   },
 }));
 
-vi.mock('@/store/missionStore', () => ({
-  useMissionStore: {
-    getState: vi.fn(),
-  },
-}));
-
 vi.mock('@/lib/time/clockRuntime', () => ({
   clockRuntime: {
     getTimeMs: vi.fn(),

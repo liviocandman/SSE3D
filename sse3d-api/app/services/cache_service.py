@@ -2,6 +2,7 @@ from app.core.redis_client import get_redis
 from loguru import logger
 from app.models.schemas import EphemerisData, OrbitLineProfile
 from app.services.orbit_line_service import ALGORITHM_VERSION
+from app.services.body_catalog import MOON_PARENTS
 import json
 import zlib
 import base64
@@ -48,8 +49,9 @@ def _cache_key(
         parts.append(f"orbit_ready_{ALGORITHM_VERSION}")
         if orbit_profile != OrbitLineProfile.AUTO:
             parts.append(f"profile_{orbit_profile.value}")
-        if orbit_line_only:
-            parts.append("orbit_line_only")
+    # This option changes the payload even when orbit-ready generation is off.
+    if orbit_line_only:
+        parts.append("orbit_line_only")
             
     return ":".join(parts)
 
@@ -94,10 +96,10 @@ async def get_bulk_cached(
             if raw:
                 payload = json.loads(raw)
 
-                # Orbit-ready contracts require a non-empty orbitLine. If cache entry
-                # predates the rollout (or is partial), treat it as a miss so the router
-                # recomputes authoritative moon geometry.
-                if orbit_ready:
+                # The engine produces orbitLine only for moons. Mixed initial
+                # requests also contain planets and the Sun, whose cache entries
+                # remain valid without that optional representation.
+                if orbit_ready and bid in MOON_PARENTS:
                     orbit_line_payload = payload.get("orbitLine")
                     points_payload = (
                         orbit_line_payload.get("points")
@@ -132,9 +134,10 @@ async def set_bulk_cached(
 ) -> None:
     try:
         redis = get_redis()
-        if not redis:
+        if not redis or not items:
             return
-            
+
+        pipeline = redis.pipeline()
         for item in items:
             key = _cache_key(
                 item.body_id,
@@ -147,7 +150,8 @@ async def set_bulk_cached(
                 orbit_line_only=orbit_line_only,
             )
             ttl = _get_ttl(item.body_id, date_str=date)
-            await redis.set(key, item.model_dump_json(by_alias=True), ex=ttl)
+            pipeline.set(key, item.model_dump_json(by_alias=True), ex=ttl)
+        await pipeline.exec()
     except Exception as e:
         logger.error(f"[Cache] Error writing to Redis: {e}")
 

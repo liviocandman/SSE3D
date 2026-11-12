@@ -6,7 +6,6 @@ const INITIAL_STATE: ClockState = {
   currentTimeMs: 1000,
   multiplier: 1,
   isPlaying: true,
-  authority: 'user',
   range: DEFAULT_CLOCK_RANGE,
   lastTickMs: Date.now(),
 };
@@ -25,12 +24,6 @@ describe('clockEngine', () => {
 
   it('does not tick when paused', () => {
     const state = { ...INITIAL_STATE, isPlaying: false };
-    const next = tickClock(state, 1);
-    expect(next.currentTimeMs).toBe(1000);
-  });
-
-  it('does not tick when authority is mission_live', () => {
-    const state = { ...INITIAL_STATE, authority: 'mission_live' as const };
     const next = tickClock(state, 1);
     expect(next.currentTimeMs).toBe(1000);
   });

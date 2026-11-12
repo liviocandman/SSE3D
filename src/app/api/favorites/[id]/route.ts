@@ -19,5 +19,5 @@ export async function DELETE(
   const proxyParams = new URLSearchParams();
   if (sessionId) proxyParams.set('session_id', sessionId);
 
-  return proxyDelete(`/api/ai/favorites/${id}`, proxyParams, headers);
+  return proxyDelete(`/api/ai/favorites/${id}`, proxyParams, headers, { signal: req.signal });
 }

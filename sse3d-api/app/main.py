@@ -9,7 +9,7 @@ from loguru import logger
 
 from app.core.config import settings
 from app.core.database import init_db
-from app.routers import ephemeris, astronomer, users, missions
+from app.routers import ephemeris, astronomer, users
 from app.services.asset_contract import read_json, validate_lock
 from app.services.kernel_installation import effective_directory
 from app.services.spice_kernel_manager import (
@@ -108,7 +108,6 @@ async def request_error_handler(request: Request, exc: httpx.RequestError):
 app.include_router(ephemeris.router, prefix="/api")
 app.include_router(astronomer.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
-app.include_router(missions.router, prefix="/api")
 
 
 @app.get("/health")

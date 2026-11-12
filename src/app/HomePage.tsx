@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { Toaster, toast } from 'sonner';
 import { useEphemeris } from '@/hooks/useEphemeris';
@@ -10,12 +10,11 @@ import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { ErrorOverlay } from '@/components/ui/ErrorOverlay';
 import { HUD } from '@/components/ui/HUD';
 import { useSessionMerge } from '@/hooks/useSessionMerge';
-import { BODY_IDS, type EphemerisData } from '@/lib/types';
-import { scalePositionFromKm } from '@/lib/scales';
+import type { EphemerisData } from '@/lib/types';
 import type { AppError } from '@/components/ui/ErrorOverlay';
 import { useSolarStore } from '@/store/solarStore';
 import { StoreInitializer } from '@/components/three/StoreInitializer';
-import { MissionDataController } from '@/components/mission/MissionDataController';
+import { DEGRADED_EPHEMERIS_MESSAGE } from '@/lib/ephemerisStatus';
 
 // Dynamically import SceneManager with SSR disabled
 const SceneManager = dynamic(
@@ -61,20 +60,6 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
     hasApiData: ephemerisData.length > 0,
   });
 
-  // Get Earth position for distance calculations
-  const earthPosition = useMemo(() => {
-    const earth = ephemerisData.find(body => body.bodyId === BODY_IDS.EARTH);
-    if (earth) {
-      const scaledEarth = scalePositionFromKm(earth.position.x, earth.position.y, earth.position.z);
-      return {
-        x: scaledEarth[0],
-        y: scaledEarth[1],
-        z: scaledEarth[2],
-      };
-    }
-    return undefined;
-  }, [ephemerisData]);
-
   const activeError: AppError | null = webglError ?? (ephemerisError ? {
     type: ephemerisError.type,
     message: ephemerisError.message,
@@ -92,11 +77,13 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
   };
 
   useEffect(() => {
+    if (!isFallback) toast.dismiss('degraded-ephemeris');
     if (isLoading || !source) return;
 
-    if (source === 'FALLBACK_DATASET') {
-      toast.warning('Modo Offline: Posições aproximadas', {
-        description: 'Usando dados de fallback. API NASA indisponível.',
+    if (isFallback) {
+      toast.warning('Dados degradados', {
+        id: 'degraded-ephemeris',
+        description: DEGRADED_EPHEMERIS_MESSAGE,
         duration: 5000,
       });
     } else if (source === 'CACHE_HIT') {
@@ -110,13 +97,12 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
     }
 
     console.log(`[HomePage] Ephemeris loaded - Source: ${source}, Bodies: ${ephemerisData.length}, Date: ${currentDate}`);
-  }, [source, isLoading, ephemerisData.length, currentDate]);
+  }, [source, isFallback, isLoading, ephemerisData.length, currentDate]);
 
   const showLoadingScreen = loadingProgress.stage !== 'ready' && !showErrorOverlay;
 
   return (
     <>
-      <MissionDataController />
       {/* 1. Synchronous hydration runs first during initial render pass */}
       <StoreInitializer 
         initialFullOrbits={initialFullOrbits} 
@@ -158,7 +144,6 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
 
       {!showLoadingScreen && !showErrorOverlay && (
         <HUD
-          earthPosition={earthPosition}
           onDateChange={handleDateChange}
           onRefresh={refresh}
           isFallback={isFallback}

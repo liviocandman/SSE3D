@@ -13,7 +13,7 @@ const UNIT_TO_MS = {
  */
 
 export function tickClock(state: ClockState, deltaSeconds: number): ClockState {
-  if (!state.isPlaying || state.authority === 'mission_live') {
+  if (!state.isPlaying) {
     return state;
   }
 
@@ -77,13 +77,6 @@ export function setPlaying(state: ClockState, isPlaying: boolean): ClockState {
   return {
     ...state,
     isPlaying,
-  };
-}
-
-export function setAuthority(state: ClockState, authority: ClockState['authority']): ClockState {
-  return {
-    ...state,
-    authority,
   };
 }
 
