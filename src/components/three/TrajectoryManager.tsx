@@ -6,6 +6,7 @@ import { useSolarStore } from "@/store/solarStore";
 import { useShallow } from "zustand/react/shallow";
 import { clockRuntime } from "@/lib/time/clockRuntime";
 import { useTrajectoryClient } from "@/hooks/useTrajectoryClient";
+import { useMoonOrbitLines } from "@/hooks/useMoonOrbitLines";
 import { buildTrajectoryRequestKey, getCoverageToleranceMs } from '@/lib/trajectoryPolicy';
 import { trajectoryRequestWindow } from '@/lib/trajectoryRequestWindow';
 import { getTrajectoryRetryAt, isAbortError, TrajectoryRequestDeferredError } from '@/lib/trajectoryRequestErrors';
@@ -14,14 +15,11 @@ import {
   buildBackgroundPaginationDemands,
   buildCoverageDemands,
   buildFetchBodyIds,
-  buildMoonOrbitPrefetchDemands,
   buildMoonOrbitPrefetchParentIds,
 } from "@/lib/trajectoryAvailabilityPolicy";
 
 const COVERAGE_DEBOUNCE_MS = 250;
 const BACKGROUND_PAGINATION_EVERY_FRAMES = 300;
-const MOON_ORBIT_PREFETCH_DEBOUNCE_MS = 250;
-const MIN_ORBIT_LINE_POINTS = 2;
 
 function toDateStringUTC(ms: number): string {
   return new Date(ms).toISOString().split("T")[0];
@@ -50,7 +48,6 @@ export function TrajectoryManager() {
     selectedPlanet,
     hoveredPlanetId,
     appendTrajectoryData,
-    appendFullOrbits,
   } = useSolarStore(
     useShallow((s) => ({
       currentDate: s.currentDate,
@@ -59,7 +56,6 @@ export function TrajectoryManager() {
       selectedPlanet: s.selectedPlanet,
       hoveredPlanetId: s.hoveredPlanetId,
       appendTrajectoryData: s.appendTrajectoryData,
-      appendFullOrbits: s.appendFullOrbits,
     })),
   );
 
@@ -160,41 +156,9 @@ export function TrajectoryManager() {
     return () => clearTimeout(timer);
   }, [currentDate, timeSeekRevision, selectedPlanet?.bodyId, hoveredPlanetId, timeMultiplier, fetchBlock, cancelObsoleteRequests]);
 
-  // 1C. Prefetch orbit lines for moon systems from hovered/selected planet context.
-  useEffect(() => {
-    const controller = new AbortController();
-    const debounceTimeout = setTimeout(() => {
-      const parentIds = buildMoonOrbitPrefetchParentIds(
-        selectedPlanet?.bodyId,
-        selectedPlanet?.parentId ?? null,
-        hoveredPlanetId,
-      );
-      if (parentIds.length === 0) return;
-
-      const state = useSolarStore.getState();
-      const demands = buildMoonOrbitPrefetchDemands({
-        parentIds,
-        orbitLines: state.orbitLines,
-        minOrbitLinePoints: MIN_ORBIT_LINE_POINTS,
-      });
-
-      for (const demand of demands) {
-        // The client owns the only retry budget for this request.
-        void requestOrbitLines(demand.ids, controller.signal).then((data) => {
-          if (!controller.signal.aborted && data.length > 0) appendFullOrbits(data);
-        }).catch(() => {
-          if (!controller.signal.aborted) {
-            debugTrajectoryLog(`[TrajectoryManager] Moon orbit prefetch failed for parent ${demand.parentId}.`);
-          }
-        });
-      }
-    }, MOON_ORBIT_PREFETCH_DEBOUNCE_MS);
-
-    return () => {
-      controller.abort();
-      clearTimeout(debounceTimeout);
-    };
-  }, [appendFullOrbits, hoveredPlanetId, requestOrbitLines, selectedPlanet?.bodyId, selectedPlanet?.parentId]);
+  useMoonOrbitLines(buildMoonOrbitPrefetchParentIds(
+    selectedPlanet?.bodyId, selectedPlanet?.parentId, hoveredPlanetId,
+  ), requestOrbitLines);
 
   // 2. Background pagination driven by segment coverage
   useFrame(() => {

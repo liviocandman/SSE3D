@@ -44,6 +44,7 @@ beforeEach(() => {
     timeSeekRevision: 0, timeMultiplier: 86400, isPlaying: true,
     selectedPlanet: null, hoveredPlanetId: null,
     masterTrajectory: {}, masterTrajectorySegments: {}, orbitLines: {},
+    orbitLineStatus: {}, orbitLineRetryAt: {},
   });
 });
 afterEach(() => { vi.useRealTimers(); });

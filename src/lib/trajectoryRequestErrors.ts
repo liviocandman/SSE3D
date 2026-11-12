@@ -56,3 +56,17 @@ export function canRetryTrajectoryRequest(error: unknown): boolean {
   }
   return !(typeof error === 'object' && error !== null && 'name' in error && error.name === 'SyntaxError');
 }
+
+export const ORBIT_RECOVERY_COOLDOWN_MS = 30_000;
+
+/** Shared recovery policy after the transport has consumed its retry budget. */
+export function getOrbitRecoveryAt(error: unknown, now = Date.now()): number | undefined {
+  if (error instanceof TrajectoryRequestDeferredError) {
+    return Math.max(now + 1, getTrajectoryRetryAt(error) ?? 0);
+  }
+  if (isAbortError(error)) return undefined;
+  if (canRetryTrajectoryRequest(error) || isTimeoutError(error)) {
+    return Math.max(now + ORBIT_RECOVERY_COOLDOWN_MS, getTrajectoryRetryAt(error) ?? 0);
+  }
+  return undefined;
+}

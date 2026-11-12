@@ -1,11 +1,11 @@
 import { useEffect } from 'react';
 import { useSolarStore } from '@/store/solarStore';
 import {
-  canRetryTrajectoryRequest, getTrajectoryRetryAt, isAbortError, isTimeoutError, TrajectoryRequestDeferredError,
+  getOrbitRecoveryAt, isAbortError, ORBIT_RECOVERY_COOLDOWN_MS,
 } from '@/lib/trajectoryRequestErrors';
 import { useTrajectoryClient } from './useTrajectoryClient';
 
-export const FULL_ORBIT_RECOVERY_COOLDOWN_MS = 30_000;
+export const FULL_ORBIT_RECOVERY_COOLDOWN_MS = ORBIT_RECOVERY_COOLDOWN_MS;
 const MAX_TIMER_MS = 2_147_483_647;
 
 /** Only a valid success without geometry is unavailable. Transport failures
@@ -51,13 +51,11 @@ export function useFullOrbits(ids: string[]) {
         state.setFullOrbitStatus(missingIds.filter((id) => (latest.fullOrbits[id]?.length ?? 0) < 2), 'unavailable');
       } catch (error) {
         if (disposed || controller.signal.aborted) return;
-        if (error instanceof TrajectoryRequestDeferredError) {
-          state.setFullOrbitStatus(missingIds, 'retryable_error', Math.max(Date.now() + 1, getTrajectoryRetryAt(error) ?? 0));
+        const retryAt = getOrbitRecoveryAt(error);
+        if (retryAt !== undefined) {
+          state.setFullOrbitStatus(missingIds, 'retryable_error', retryAt);
         } else if (isAbortError(error)) {
           state.setFullOrbitStatus(missingIds, 'idle');
-        } else if (canRetryTrajectoryRequest(error) || isTimeoutError(error)) {
-          const retryAt = Math.max(Date.now() + FULL_ORBIT_RECOVERY_COOLDOWN_MS, getTrajectoryRetryAt(error) ?? 0);
-          state.setFullOrbitStatus(missingIds, 'retryable_error', retryAt);
         } else {
           state.setFullOrbitStatus(missingIds, 'error');
         }

@@ -59,6 +59,8 @@ describe('useSolarStore', () => {
       orbitLines: {},
       fullOrbitStatus: {},
       fullOrbitRetryAt: {},
+      orbitLineStatus: {},
+      orbitLineRetryAt: {},
     });
   });
 
@@ -202,6 +204,19 @@ describe('useSolarStore', () => {
     before.appendFullOrbits([]);
     before.appendFullOrbits([{ bodyId: '399', name: 'Earth', timestamp: '2026-03-26', position: { x: 0, y: 0, z: 0 } }]);
     expect(useSolarStore.getState()).toBe(before);
+  });
+
+  it('keeps orbit-line recovery independent and avoids redundant status updates', () => {
+    const initial = useSolarStore.getState();
+    initial.setOrbitLineStatus(['501'], 'retryable_error', 1234);
+    const retrying = useSolarStore.getState();
+    expect(retrying.fullOrbitStatus).toBe(initial.fullOrbitStatus);
+    expect(retrying.fullOrbitRetryAt).toBe(initial.fullOrbitRetryAt);
+    retrying.setOrbitLineStatus(['501'], 'retryable_error', 1234);
+    expect(useSolarStore.getState()).toBe(retrying);
+    retrying.setOrbitLineStatus(['501'], 'ready');
+    expect(useSolarStore.getState().orbitLineRetryAt['501']).toBeUndefined();
+    expect(useSolarStore.getState().orbitLineStatus['501']).toBe('ready');
   });
 
   it('preserves full-orbit references for identical data and ignores empty replacements', () => {

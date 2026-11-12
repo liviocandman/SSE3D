@@ -7,7 +7,8 @@ import {
 } from '@/lib/trajectoryEngine';
 import { TimeSlice } from './timeSlice';
 
-export type FullOrbitStatus = 'idle' | 'loading' | 'ready' | 'unavailable' | 'retryable_error' | 'error';
+export type OrbitLoadStatus = 'idle' | 'loading' | 'ready' | 'unavailable' | 'retryable_error' | 'error';
+export type FullOrbitStatus = OrbitLoadStatus;
 
 export interface TrajectoryState {
   // Master Buffer: Maps bodyId -> Sliding window of high-precision NASA vectors
@@ -19,6 +20,8 @@ export interface TrajectoryState {
   orbitLines: Record<string, OrbitLineData>;
   fullOrbitStatus: Record<string, FullOrbitStatus>;
   fullOrbitRetryAt: Record<string, number>;
+  orbitLineStatus: Record<string, OrbitLoadStatus>;
+  orbitLineRetryAt: Record<string, number>;
 }
 
 export interface TrajectoryActions {
@@ -26,6 +29,7 @@ export interface TrajectoryActions {
   appendFullOrbits: (data: EphemerisData[]) => void;
   clearTrajectoryBuffer: () => void;
   setFullOrbitStatus: (ids: string[], status: FullOrbitStatus, retryAt?: number) => void;
+  setOrbitLineStatus: (ids: string[], status: OrbitLoadStatus, retryAt?: number) => void;
 }
 
 export type TrajectorySlice = TrajectoryState & TrajectoryActions;
@@ -44,6 +48,8 @@ export const createTrajectorySlice: StateCreator<
   orbitLines: {},
   fullOrbitStatus: {},
   fullOrbitRetryAt: {},
+  orbitLineStatus: {},
+  orbitLineRetryAt: {},
 
   setFullOrbitStatus: (ids, status, retryAt) => set((state) => {
     const nextRetryAt = status === 'retryable_error' ? retryAt : undefined;
@@ -57,6 +63,20 @@ export const createTrajectorySlice: StateCreator<
       else fullOrbitRetryAt[id] = nextRetryAt;
     }
     return { fullOrbitStatus, fullOrbitRetryAt };
+  }),
+
+  setOrbitLineStatus: (ids, status, retryAt) => set((state) => {
+    const nextRetryAt = status === 'retryable_error' ? retryAt : undefined;
+    const changedIds = ids.filter((id) => state.orbitLineStatus[id] !== status || state.orbitLineRetryAt[id] !== nextRetryAt);
+    if (changedIds.length === 0) return state;
+    const orbitLineStatus = { ...state.orbitLineStatus };
+    const orbitLineRetryAt = { ...state.orbitLineRetryAt };
+    for (const id of changedIds) {
+      orbitLineStatus[id] = status;
+      if (nextRetryAt === undefined) delete orbitLineRetryAt[id];
+      else orbitLineRetryAt[id] = nextRetryAt;
+    }
+    return { orbitLineStatus, orbitLineRetryAt };
   }),
 
   appendTrajectoryData: (data) =>
