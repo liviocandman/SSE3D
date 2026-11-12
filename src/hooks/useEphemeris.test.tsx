@@ -189,6 +189,18 @@ describe('useEphemeris Retry-After', () => {
     };
   }
 
+  async function settleFallbackData() {
+    await act(async () => {
+      // Publish the terminal React Query error before running the error effect.
+      await vi.runOnlyPendingTimersAsync();
+    });
+    await act(async () => {
+      // The effect defers a real import; the fake clock cannot complete its I/O.
+      await vi.runOnlyPendingTimersAsync();
+      await vi.dynamicImportSettled();
+    });
+  }
+
   it.each(['seconds', 'http-date'])('waits for the %s header and recovers without fallback', async (format) => {
     const start = Date.now();
     const attempts: number[] = [];
@@ -254,8 +266,9 @@ describe('useEphemeris Retry-After', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(3999); });
     expect(attempts).toEqual([0, 2000]);
     expect(result.current.isFallback).toBe(false);
-    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(attempts).toEqual([0, 2000, 4000]);
+    await settleFallbackData();
     expect(result.current.isFallback).toBe(true);
     expect(result.current.error?.canRetry).toBe(true);
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
@@ -265,10 +278,13 @@ describe('useEphemeris Retry-After', () => {
   it('does not retry a permanent HTTP error even when Retry-After is present', async () => {
     mockFetch.mockResolvedValue(unavailable('60', 422));
     const { result } = renderHook(() => useEphemeris({ date: '2026-03-26' }), { wrapper: createWrapper() });
-    await act(async () => { await vi.advanceTimersByTimeAsync(60_001); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(mockFetch).toHaveBeenCalledOnce();
+    await settleFallbackData();
     expect(result.current.isFallback).toBe(true);
     expect(result.current.error?.canRetry).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(mockFetch).toHaveBeenCalledOnce();
   });
 
   it('does not shorten a server wait to fit the per-request timeout', async () => {
