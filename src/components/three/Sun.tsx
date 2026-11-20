@@ -90,7 +90,7 @@ export function Sun({
         <meshBasicMaterial
           map={sunTexture}
           color={[3, 2.4, 1.5]} // Multiplicador de HDR (Intensidade do brilho)
-          toneMapped={false}    // Importante: Permite cores "estouradas" para o Bloom
+          toneMapped           // ACES direto em low; em high/mid o composer aplica ACES após Bloom.
         />
       </mesh>
 

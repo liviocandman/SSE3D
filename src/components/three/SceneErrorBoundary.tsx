@@ -3,7 +3,10 @@
 import { Component, type ReactNode } from 'react';
 import { ErrorOverlay, type AppError } from '@/components/ui/ErrorOverlay';
 
-interface Props { children: ReactNode }
+interface Props {
+  children: ReactNode;
+  onError?: (error: AppError) => void;
+}
 interface State { error: AppError | null }
 
 /** R3F forwards errors from its scene tree to the surrounding React tree. */
@@ -21,6 +24,10 @@ export class SceneErrorBoundary extends Component<Props, State> {
         canRetry: false,
       },
     };
+  }
+
+  componentDidCatch() {
+    if (this.state.error) this.props.onError?.(this.state.error);
   }
 
   render() {

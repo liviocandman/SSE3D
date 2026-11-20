@@ -14,8 +14,10 @@ describe('SceneErrorBoundary', () => {
     ['Unable to initialize renderer', '3D Scene Unavailable'],
   ])('offers recovery when the scene fails: %s', (message, title) => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    render(<SceneErrorBoundary><BrokenScene message={message} /></SceneErrorBoundary>);
+    const onError = vi.fn();
+    render(<SceneErrorBoundary onError={onError}><BrokenScene message={message} /></SceneErrorBoundary>);
     expect(screen.getByRole('heading', { name: title })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Manual Refresh' })).toBeEnabled();
+    expect(onError).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ technicalDetails: message }));
   });
 });

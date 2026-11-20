@@ -2,21 +2,34 @@ import { act, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HomePage } from './HomePage';
 
+const sceneMode = vi.hoisted(() => ({ realCanvas: false, failedTexture: false }));
+
 vi.mock('next/dynamic', async () => {
   const { SceneManager } = await import('@/components/three/SceneManager');
+  const { SceneErrorBoundary } = await import('@/components/three/SceneErrorBoundary');
+  function BrokenTexture(): never {
+    throw new Error('Could not load the essential Earth texture');
+  }
   return {
     default: () => function TestScene(props: React.ComponentProps<typeof SceneManager>) {
-      return <SceneManager {...props} />;
+      if (sceneMode.failedTexture) {
+        return <SceneErrorBoundary onError={props.onSceneError}><BrokenTexture /></SceneErrorBoundary>;
+      }
+      return sceneMode.realCanvas
+        ? <SceneManager {...props} />
+        : <div data-solar-scene><canvas data-testid="scene-canvas" /></div>;
     },
   };
 });
 vi.mock('@/hooks/useEphemeris', () => ({
   useEphemeris: () => ({
-    data: [], isLoading: false, error: null, source: null, isFallback: true,
+    data: [], isLoading: false, error: null, source: null, isFallback: sceneMode.realCanvas,
   }),
 }));
 vi.mock('@/hooks/useLoadingProgress', () => ({
-  useLoadingProgress: () => ({ stage: 'loading_textures', progress: 40 }),
+  useLoadingProgress: () => sceneMode.realCanvas
+    ? { stage: 'loading_textures', progress: 40 }
+    : { stage: 'ready' },
 }));
 vi.mock('@/hooks/useSessionMerge', () => ({ useSessionMerge: () => {} }));
 vi.mock('@/components/three/StoreInitializer', () => ({ StoreInitializer: () => null }));
@@ -37,11 +50,30 @@ vi.mock('@/store/solarStore', () => ({
 
 describe('HomePage WebGL recovery', () => {
   afterEach(() => {
+    sceneMode.realCanvas = false;
+    sceneMode.failedTexture = false;
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
+  it('retains the actual canvas during context loss and clears the error when it restores', () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(
+      (() => ({ getExtension: () => null })) as unknown as HTMLCanvasElement['getContext'],
+    );
+    render(<HomePage initialFullOrbits={[]} />);
+    const canvas = screen.getByTestId('scene-canvas');
+    act(() => { canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true })); });
+    expect(screen.getByRole('heading', { name: 'Graphics Context Lost' })).toBeVisible();
+    expect(screen.getByTestId('scene-canvas')).toBe(canvas);
+    expect(canvas.isConnected).toBe(true);
+
+    act(() => { canvas.dispatchEvent(new Event('webglcontextrestored')); });
+    expect(screen.queryByRole('heading', { name: 'Graphics Context Lost' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('scene-canvas')).toBe(canvas);
+  });
+
   it('shows recovery once when the scene context is refused after the support probe succeeds', async () => {
+    sceneMode.realCanvas = true;
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
       disconnect() {}
@@ -79,5 +111,20 @@ describe('HomePage WebGL recovery', () => {
     expect(requestRendererContext).toHaveBeenNthCalledWith(1, 'webgl2', expect.objectContaining({
       antialias: true, alpha: true,
     }));
+  });
+
+  it('replaces initial loading with the essential texture error even with degraded ephemerides', async () => {
+    sceneMode.realCanvas = true;
+    sceneMode.failedTexture = true;
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(
+      (() => ({ getExtension: () => null })) as unknown as HTMLCanvasElement['getContext'],
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    render(<HomePage initialFullOrbits={[]} />);
+
+    expect(await screen.findByRole('heading', { name: 'Texture Load Error' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Manual Refresh' })).toBeEnabled();
+    expect(screen.queryByText('Loading planet textures...')).not.toBeInTheDocument();
   });
 });

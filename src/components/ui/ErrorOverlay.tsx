@@ -54,8 +54,8 @@ const ERROR_MESSAGES: Record<ErrorType, { title: string; description: string; ic
     icon: '⏱️',
   },
   WEBGL_NOT_SUPPORTED: {
-    title: 'WebGL Not Supported',
-    description: 'Your browser does not support WebGL, which is required for 3D rendering.',
+    title: 'WebGL 2 Not Available',
+    description: 'WebGL 2 is required for this 3D scene. Please use a compatible browser and graphics device.',
     icon: '🖥️',
   },
   WEBGL_CONTEXT_LOST: {

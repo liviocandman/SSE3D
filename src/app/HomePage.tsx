@@ -31,9 +31,9 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
   const currentDate = useSolarStore((state) => state.currentDate);
   const trajectoryBaseDate = useSolarStore((state) => state.trajectoryBaseDate);
   const setCurrentDate = useSolarStore((state) => state.setCurrentDate);
-  const [rendererError, setRendererError] = useState<AppError | null>(null);
+  const [fatalSceneError, setFatalSceneError] = useState<AppError | null>(null);
   const handleRendererInitializationError = useCallback((error: unknown) => {
-    setRendererError({
+    setFatalSceneError({
       type: 'SCENE_RENDER_ERROR',
       message: 'The 3D renderer could not be initialized',
       technicalDetails: error instanceof Error ? error.message : String(error),
@@ -60,7 +60,6 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
   const {
     error: webglError,
     isSupported: isWebGLSupported,
-    isContextLost: isWebGLContextLost,
   } = useWebGLError();
 
   // Track loading progress
@@ -69,17 +68,14 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
     hasApiData: ephemerisData.length > 0,
   });
 
-  const activeError: AppError | null = rendererError ?? webglError ?? (ephemerisError ? {
+  const activeError: AppError | null = fatalSceneError ?? webglError ?? (ephemerisError ? {
     type: ephemerisError.type,
     message: ephemerisError.message,
     technicalDetails: ephemerisError.technicalDetails,
     canRetry: ephemerisError.canRetry,
   } : null);
 
-  const isSceneError = activeError?.type === 'WEBGL_NOT_SUPPORTED'
-    || activeError?.type === 'WEBGL_CONTEXT_LOST'
-    || activeError?.type === 'SCENE_RENDER_ERROR';
-  const showErrorOverlay = !!activeError && (isSceneError || !isFallback);
+  const showErrorOverlay = !!activeError && (!!fatalSceneError || !!webglError || !isFallback);
 
   const handleDateChange = (newDate: string) => {
     setCurrentDate(newDate);
@@ -146,10 +142,12 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
         <LoadingScreen progress={loadingProgress} />
       )}
 
-      {isWebGLSupported && !isWebGLContextLost && !isSceneError && (
+      {/* Keep the canvas alive so its renderer and restoration listener can recover. */}
+      {isWebGLSupported && !fatalSceneError && (
         <SceneManager
           ephemerisData={ephemerisData}
           onRendererInitializationError={handleRendererInitializationError}
+          onSceneError={setFatalSceneError}
         />
       )}
 
