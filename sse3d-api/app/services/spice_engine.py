@@ -124,7 +124,9 @@ def compute_ephemeris(
             }
         )
 
-    target_id, observer_id = resolve_target_observer(body_id, center_body)
+    target_id, observer_id = resolve_target_observer(
+        body_id, center_body, full_orbit=full_orbit
+    )
     parent_id = MOON_PARENTS.get(body_id)
     start_dt, end_dt, steps = _resolve_window(
         body_id, target_date, span_days, full_orbit=full_orbit

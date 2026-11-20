@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.services.asset_contract import KERNEL_PATHS, PROFILE, VALIDATOR_VERSION, read_json, validate_lock
 from app.services.body_catalog import ALL_BODY_IDS
 from app.services.kernel_installation import effective_directory, verify_installation
-from app.services.spice_windows import resolve_target_observer
+from app.services.spice_windows import OUTER_PLANET_BARYCENTERS, resolve_target_observer
 
 
 @dataclass
@@ -66,6 +66,13 @@ def initialize_spice_kernels(kernel_directory: Path | None = None, *, kernel_loc
                 _status.covered_body_ids.append(body_id)
             except Exception:
                 _status.missing_required_ids.append(body_id)
+        # Full-orbit planet paths intentionally retain barycenter targets.
+        for body_id in OUTER_PLANET_BARYCENTERS:
+            target, observer = resolve_target_observer(body_id, full_orbit=True)
+            try:
+                spice.spkpos(target, 0.0, "ECLIPJ2000", "NONE", observer)
+            except Exception:
+                _status.missing_required_ids.append(f"{body_id}:fullOrbit")
         if _status.missing_required_ids:
             raise RuntimeError("Missing required relative-state coverage: " + ", ".join(_status.missing_required_ids))
         if spice.ktotal("ALL") != 8:

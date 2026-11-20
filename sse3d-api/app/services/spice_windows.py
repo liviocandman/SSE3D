@@ -2,6 +2,8 @@
 from datetime import datetime, timedelta
 from app.services.body_catalog import MOON_PARENTS, ORBITAL_PERIODS_DAYS
 
+OUTER_PLANET_BARYCENTERS = {"599": "5", "699": "6", "799": "7", "899": "8", "999": "9"}
+
 def calculate_trajectory_params(
     body_id: str, requested_span: int, full_orbit: bool = False
 ) -> tuple[float, int]:
@@ -51,6 +53,11 @@ def _resolve_window(
     return start_dt, end_dt, steps
 
 
-def resolve_target_observer(body_id: str, center_body: str = "10") -> tuple[str, str]:
-    target = body_id[0] if body_id in {"599", "699", "799", "899", "999"} else body_id
+def resolve_target_observer(
+    body_id: str, center_body: str = "10", *, full_orbit: bool = False
+) -> tuple[str, str]:
+    # Dynamic planet state and trajectories are physical-center positions so
+    # they compose with the moons' parent-relative states. Long full-orbit
+    # geometry retains the established system-barycenter target and origin.
+    target = OUTER_PLANET_BARYCENTERS.get(body_id, body_id) if full_orbit else body_id
     return target, MOON_PARENTS.get(body_id, center_body)

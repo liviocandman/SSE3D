@@ -399,7 +399,7 @@ Migrates anonymous favorites to the authenticated user's account. **Requires aut
 
 The active ephemeris route computes locally from the image-pinned SPICE release. Redis caches the results; the existing JSON fallback remains in the route. `meta.source` is `SPICE_KERNELS` or `SPICE_AND_FALLBACK`.
 
-The runtime uses ECLIPJ2000/NONE states, existing outer-planet barycenters and moon-parent observers; it converts `(x, y, z)` to scene `(x, z, -y)`. No NASA network request is part of bootstrap. `nasa_client.py` remains a legacy utility outside the active route. Coverage and known 1950/2050 trajectory limitations are recorded in the pinned manifest.
+The runtime uses ECLIPJ2000/NONE states and converts `(x, y, z)` to scene `(x, z, -y)`. With the default observer, dynamic planet states are relative to the Sun, and moon states are relative to the physical center of their parent. Full-orbit paths for the outer planets use system barycenters to cover the longer windows. Bootstrap uses the installed kernels. Coverage and known 1950/2050 trajectory limitations are recorded in the pinned manifest.
 
 The published [kernels-2026-11-04.1 Release](https://github.com/liviocandman/SSE3D/releases/tag/kernels-2026-11-04.1) includes the ZIP, manifest, checksums and attribution information. Its archive and manifest were downloaded anonymously and matched the pinned lock. Follow the Deployment section below for provisioning, readiness and rollback.
 
@@ -536,7 +536,7 @@ Planet position data is cached in Redis with **tiered TTLs** based on orbital sp
 | Outer planets (`599`–`899`) | 24 hours (86,400s) | Slow orbits — minimal daily movement |
 | All others | 6 hours (21,600s) | Balanced default |
 
-**Cache Key Format**: `ephemeris:{body_id}:{date}:span_{days}` for the default Sun observer. A different observer, full-orbit mode, orbit-ready algorithm/profile and line-only response add separate key components. `orbitLineOnly` remains distinct even when `orbitReady` is disabled. Orbit-ready cache reads require `orbitLine` for moons; planets and the Sun retain their ordinary ephemeris payloads.
+**Cache Key Format**: `ephemeris:{body_id}:{date}:span_{days}` for the default Sun observer. A different observer, full-orbit mode, orbit-ready algorithm/profile and line-only response add separate key components. Outer planet state keys include `physical_state_v2` to isolate results from the previous barycenter-based frame. Dynamic planet states and trajectories use physical centers relative to the Sun; moon states and trajectories use the physical parent as observer. Full-orbit planet geometry retains barycenter targets under its separate `full_orbit` key. `orbitLineOnly` remains distinct even when `orbitReady` is disabled. Orbit-ready cache reads require `orbitLine` for moons; planets and the Sun retain their ordinary ephemeris payloads.
 
 ### Cache Miss Flow
 

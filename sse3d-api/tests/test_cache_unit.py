@@ -162,6 +162,16 @@ def test_orbit_line_only_has_distinct_cache_key_without_orbit_ready():
     assert line_only.endswith(":orbit_line_only")
 
 
+def test_physical_center_planet_cache_is_versioned_without_changing_moon_keys():
+    from app.services.cache_service import _cache_key
+
+    assert _cache_key("599", "2024-01-01").startswith(
+        "ephemeris:599:physical_state_v2:"
+    )
+    assert "physical_state_v2" not in _cache_key("501", "2024-01-01")
+    assert "physical_state_v2" not in _cache_key("599", "2024-01-01", full_orbit=True)
+
+
 @pytest.mark.asyncio
 async def test_set_bulk_cached_uses_one_pipeline_and_preserves_each_ttl():
     from app.services.cache_service import set_bulk_cached
@@ -179,11 +189,14 @@ async def test_set_bulk_cached_uses_one_pipeline_and_preserves_each_ttl():
 
     redis.pipeline.assert_called_once_with()
     redis.set.assert_not_called()
+    keys = [
+        "ephemeris:399:2024-01-01:span_30:orbit_ready_orbit-ready-v1",
+        "ephemeris:599:physical_state_v2:2024-01-01:span_30:orbit_ready_orbit-ready-v1",
+        "ephemeris:401:2024-01-01:span_30:orbit_ready_orbit-ready-v1",
+    ]
     pipeline.set.assert_has_calls([
-        call(
-            f"ephemeris:{item.body_id}:2024-01-01:span_30:orbit_ready_orbit-ready-v1",
-            item.model_dump_json(by_alias=True), ex=ttl,
-        ) for item, ttl in zip(items, [3600, 86400, 21600])
+        call(key, item.model_dump_json(by_alias=True), ex=ttl)
+        for key, item, ttl in zip(keys, items, [3600, 86400, 21600])
     ])
     pipeline.exec.assert_awaited_once_with()
 

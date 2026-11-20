@@ -50,9 +50,10 @@ def validate(root: Path) -> dict:
                 for span, full in ((1, False), (30, False), (1825, False), (30, True)):
                     if body == "10":
                         continue
+                    trajectory_target, trajectory_observer = resolve_target_observer(body, full_orbit=full)
                     start, end, steps = _resolve_window(body, date, span, full)
                     times = np.linspace(spice.str2et(start.isoformat()), spice.str2et(end.isoformat()), steps)
-                    states, _ = spice.spkezr(target, times, "ECLIPJ2000", "NONE", observer)
+                    states, _ = spice.spkezr(trajectory_target, times, "ECLIPJ2000", "NONE", trajectory_observer)
                     if not np.isfinite(states).all():
                         raise ValueError(f"nonfinite trajectory: {body}/{date}/{span}/{full}")
                     count += 1
@@ -63,7 +64,7 @@ def validate(root: Path) -> dict:
             for span, full in ((1, False), (30, False), (1825, False), (30, True)):
                 failures = []
                 for body in ALL_BODY_IDS[1:]:
-                    target, observer = resolve_target_observer(body)
+                    target, observer = resolve_target_observer(body, full_orbit=full)
                     try:
                         start, end, steps = _resolve_window(body, date, span, full)
                         spice.spkezr(target, np.linspace(spice.str2et(start.isoformat()), spice.str2et(end.isoformat()), steps), "ECLIPJ2000", "NONE", observer)

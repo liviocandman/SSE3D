@@ -3,6 +3,7 @@ from loguru import logger
 from app.models.schemas import EphemerisData, OrbitLineProfile
 from app.services.orbit_line_service import ALGORITHM_VERSION
 from app.services.body_catalog import MOON_PARENTS
+from app.services.spice_windows import OUTER_PLANET_BARYCENTERS
 import json
 import zlib
 import base64
@@ -37,6 +38,9 @@ def _cache_key(
     orbit_line_only: bool = False,
 ) -> str:
     parts = [f"ephemeris:{body_id}"]
+    # Only dynamic outer-planet states changed their reference frame.
+    if body_id in OUTER_PLANET_BARYCENTERS and not full_orbit:
+        parts.append("physical_state_v2")
     if center != "10":
         parts.append(f"center_{center}")
     parts.append(date)
