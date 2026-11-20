@@ -7,6 +7,7 @@ import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { MoonSurfaceMaterial } from './MoonSurfaceMaterial';
+import { bodySelectionData } from '@/lib/bodyPresentation';
 import TrailLine from './TrailLine';
 
 import {
@@ -256,12 +257,12 @@ function MoonMesh({
   const labelAnchorY = isHovered ? 'bottom' : 'top';
 
   return (
-    <group name={bodyId} ref={groupRef}>
-      <mesh {...events} geometry={HITBOX_SPHERE} scale={isDataLoading ? 0 : hitboxRadius} renderOrder={-1} dispose={null}>
+    <group name={bodyId} ref={groupRef} visible={!isDataLoading}>
+      <mesh {...events} userData={bodySelectionData(bodyId, 'hitbox')} geometry={HITBOX_SPHERE} scale={isDataLoading ? 0 : hitboxRadius} renderOrder={-1} dispose={null}>
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      <mesh ref={meshRef} {...events} scale={currentRadius}>
+      <mesh ref={meshRef} {...events} userData={bodySelectionData(bodyId, 'surface')} scale={currentRadius}>
         <primitive attach="geometry" object={SPHERE_MID} />
         <MoonSurfaceMaterial
           name={name}
@@ -285,6 +286,8 @@ function MoonMesh({
       {!isDataLoading && (
         <Billboard follow lockX={false} lockY={false} lockZ={false}>
           <Text
+            {...events}
+            userData={bodySelectionData(bodyId, 'label')}
             position={[0, labelY, 0]}
             fontSize={fontSize}
             color={labelColor}

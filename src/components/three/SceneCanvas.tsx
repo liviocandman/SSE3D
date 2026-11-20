@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef, type ReactNode } from 'react';
-import { Canvas, type CanvasProps } from '@react-three/fiber';
+import { Canvas, events as createPointerEvents, type CanvasProps } from '@react-three/fiber';
 import { WebGLRenderer } from 'three';
 import { useQualityTier } from '@/contexts/QualityTierContext';
 import { useSolarStore } from '@/store/solarStore';
@@ -14,6 +14,7 @@ import { GlobalTimeController } from './GlobalTimeController';
 import { TrajectoryManager } from './TrajectoryManager';
 import { SolarSystemLayer } from './SolarSystemLayer';
 import type { EphemerisData } from '@/lib/types';
+import { filterSceneIntersections } from '@/lib/bodyPresentation';
 
 // --- Constants ---
 
@@ -89,6 +90,7 @@ export function SceneCanvas({ children, ephemerisData, onRendererInitializationE
       camera={CAMERA_CONFIG}
       dpr={[1, settings.devicePixelRatio]}
       gl={createRenderer}
+      events={state => ({ ...createPointerEvents(state), filter: items => filterSceneIntersections(items) })}
       style={{ width: '100%', height: '100%' }}
       onPointerMissed={() => {
         setSelectedPlanet(null);

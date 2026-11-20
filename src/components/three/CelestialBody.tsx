@@ -14,6 +14,7 @@ import { buildTrajectorySegments } from "@/lib/trajectoryEngine";
 import { createTemporalLookupCache } from "@/lib/temporalLookup";
 import { calculateAbsoluteRotation } from "@/lib/rotationUtils";
 import { clockRuntime } from "@/lib/time/clockRuntime";
+import { bodySelectionData } from '@/lib/bodyPresentation';
 import { resolvePlanetFrame } from "@/lib/simulation/frameResolvers";
 
 // --- Types ---
@@ -278,6 +279,7 @@ export function CelestialBody({
         onPointerEnter={handlePointerEnter}
         onPointerLeave={handlePointerLeave}
         renderOrder={-1}
+        userData={bodySelectionData(bodyId, 'hitbox')}
         geometry={HITBOX_SPHERE}
         scale={hitboxRadius}
         dispose={null}
@@ -291,6 +293,7 @@ export function CelestialBody({
         {/* Visible planet mesh */}
         <mesh
           ref={meshRef}
+          userData={bodySelectionData(bodyId, 'surface')}
           onClick={handleClick}
           onDoubleClick={handleDoubleClick}
           onPointerEnter={handlePointerEnter}
@@ -326,6 +329,7 @@ export function CelestialBody({
       <Billboard follow lockX={false} lockY={false} lockZ={false}>
         <Text
           ref={labelRef}
+          userData={bodySelectionData(bodyId, 'label')}
           position={[0, labelYPosition, 0]}
           fontSize={10}
           color={labelColor}
