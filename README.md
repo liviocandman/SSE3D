@@ -208,6 +208,8 @@ npm run assets:verify
 # Environment templates are not tracked in this repository.
 ```
 
+`npm run setup` and `npm run setup:force` both run the pinned installer and preserve installed releases. To generate candidate KTX2 maps, install `toktx` and run `node scripts/setup-assets-tiered.js`. It writes the maps and their source URL records to `.cache/texture-generation`.
+
 Edit `.env.local` with your credentials:
 ```env
 # NextAuth

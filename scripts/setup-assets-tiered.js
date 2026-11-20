@@ -5,7 +5,7 @@
 // ==============================================================================
 // Downloads high-resolution textures from official NASA/scientific sources
 // and generates Low (1k), Mid (2k) and High (4k+) tiers automatically.
-// Supports WebP (Fallback) and KTX2 (VRAM Optimized) via toktx CLI.
+// Encodes KTX2 using the toktx CLI.
 // ==============================================================================
 
 import fs from "fs";
@@ -16,7 +16,9 @@ import { execSync } from "child_process";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, "..");
-const TARGET_DIR = path.join(PROJECT_ROOT, "public", "textures");
+// This legacy generator is a research workspace only. Never write into the
+// versioned texture tree consumed by the app. The installer reads pinned releases.
+const TARGET_DIR = path.join(PROJECT_ROOT, ".cache", "texture-generation");
 
 // --- Tooling Check ---
 let hasToktx = false;
@@ -24,7 +26,7 @@ try {
   execSync("toktx --version", { stdio: "ignore" });
   hasToktx = true;
 } catch {
-  // Will log warning in main
+  // main reports the missing encoder before downloading anything.
 }
 
 const colors = {
@@ -224,13 +226,14 @@ async function downloadFile(url, dest) {
   const arrayBuffer = await response.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
   fs.writeFileSync(dest, buffer);
+  return response.url || url;
 }
 
 async function tryDownload(urls, outputPath, fallback) {
   for (const url of urls) {
     try {
-      await downloadFile(url, outputPath);
-      return { success: true, source: "primary" };
+      const resolvedUrl = await downloadFile(url, outputPath);
+      return { success: true, source: "primary", url, resolvedUrl };
     } catch (err) {
       console.log(`\n    -> ⚠️ [Aviso] Falha na URL primária: ${err.message}`);
     }
@@ -238,8 +241,8 @@ async function tryDownload(urls, outputPath, fallback) {
 
   if (fallback) {
     try {
-      await downloadFile(fallback, outputPath);
-      return { success: true, source: "fallback" };
+      const resolvedUrl = await downloadFile(fallback, outputPath);
+      return { success: true, source: "fallback", url: fallback, resolvedUrl };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -248,7 +251,7 @@ async function tryDownload(urls, outputPath, fallback) {
   return { success: false, error: "All sources failed" };
 }
 
-async function generateTiers(inputPath, baseName, sharp) {
+async function generateTiers(inputPath, baseName, sharp, source) {
   const results = [];
 
   try {
@@ -273,7 +276,14 @@ async function generateTiers(inputPath, baseName, sharp) {
         const success = await generateKTX2(tempResized, ktx2Path, isDataMap);
         
         if (fs.existsSync(tempResized)) fs.unlinkSync(tempResized);
-        if (success) results.push(`${tier.name}(ktx2)`);
+        if (success) {
+          fs.writeFileSync(`${ktx2Path}.source.json`, JSON.stringify({
+            source: source.source,
+            url: source.url,
+            resolvedUrl: source.resolvedUrl,
+          }, null, 2) + "\n");
+          results.push(tier.name);
+        }
       }
     }
   } catch (error) {
@@ -309,17 +319,12 @@ async function main() {
   );
 
   if (!hasToktx) {
-    console.log(
-      `${colors.yellow}⚠️  toktx (KTX-Software) not found in PATH.${colors.reset}`,
-    );
-    console.log(
-      `${colors.dim}   KTX2 generation will be skipped. Only WebP will be generated.${colors.reset}\n`,
-    );
-  } else {
-    console.log(
-      `${colors.green}✓ toktx CLI found. KTX2 hardware-native textures will be generated.${colors.reset}\n`,
-    );
+    console.error(`${colors.red}✗ toktx (KTX-Software) is required to generate KTX2 assets. Install it and retry.${colors.reset}`);
+    process.exitCode = 1;
+    return;
   }
+
+  console.log(`${colors.green}✓ toktx CLI found. Generated files stay isolated in ${TARGET_DIR}.${colors.reset}\n`);
 
   if (!fs.existsSync(TARGET_DIR)) {
     fs.mkdirSync(TARGET_DIR, { recursive: true });
@@ -343,7 +348,7 @@ async function main() {
   for (const [name, config] of Object.entries(TEXTURE_SOURCES)) {
     const tempPath = path.join(TARGET_DIR, `${name}_master.tmp`);
     
-    const ktx2Exist = !hasToktx || TIERS.every((t) =>
+    const ktx2Exist = TIERS.every((t) =>
       fs.existsSync(path.join(TARGET_DIR, `${name}_${t.name}.ktx2`)),
     );
 
@@ -378,10 +383,11 @@ async function main() {
         tempPath,
         name,
         sharp,
-        config.isRing,
+        result,
       );
-      if (generated.length === 0) {
-        console.log(`${colors.red}FAILED (no tiers generated)${colors.reset}`);
+      const complete = TIERS.every(t => fs.existsSync(path.join(TARGET_DIR, `${name}_${t.name}.ktx2`)));
+      if (!generated.length || !complete) {
+        console.log(`${colors.red}FAILED (incomplete KTX2 set)${colors.reset}`);
         stats.failed++;
         if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
         continue;
@@ -418,6 +424,10 @@ async function main() {
   console.log(
     `${colors.blue}════════════════════════════════════════════════════════════════${colors.reset}\n`,
   );
+  if (stats.failed) process.exitCode = 1;
 }
 
-main().catch(console.error);
+main().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});
