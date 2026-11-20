@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useFrame, useThree, useLoader } from '@react-three/fiber';
 import * as THREE from 'three';
 import { SingletonKTX2Loader, getSharedKTX2Loader } from '@/lib/SingletonKTX2Loader';
@@ -10,6 +10,8 @@ import { useQualityTier } from '@/contexts/QualityTierContext';
 import { SPHERE_HIGH } from '@/lib/geometryPool';
 import { useSolarStore } from '@/store/solarStore';
 import { toRelativeRenderUnitsInto } from '@/lib/renderFrame';
+import { markEssentialTextureReady } from '@/lib/textureReadiness';
+import { useTexturePromotion } from '@/hooks/useTexturePromotion';
 
 interface SunProps {
   lightIntensity?: number;
@@ -31,10 +33,12 @@ export function Sun({
   const gl = useThree((state) => state.gl);
 
   // Carregar Textura do Sol (KTX2 Optimized)
-  const texturePath = getTexturePath(SUN_BODY_ID, tier as TextureTier);
+  const texturePath = getTexturePath(SUN_BODY_ID, 'low');
   const sunTexture = useLoader(SingletonKTX2Loader as unknown as typeof THREE.Loader, texturePath, () => {
     getSharedKTX2Loader(gl);
   }) as THREE.Texture;
+  useEffect(() => markEssentialTextureReady(SUN_BODY_ID), []);
+  const promotedTexture = useTexturePromotion(meshRef, texturePath, tier as TextureTier);
 
   const targetScale = getRadius(SUN_BODY_ID, 'STAR', viewMode);
 
@@ -61,7 +65,7 @@ export function Sun({
       */}
       <mesh ref={meshRef} geometry={SPHERE_HIGH} dispose={null}>
         <meshBasicMaterial
-          map={sunTexture}
+          map={promotedTexture ?? sunTexture}
           color={[3, 2.4, 1.5]} // Multiplicador de HDR (Intensidade do brilho)
           toneMapped           // ACES direto em low; em high/mid o composer aplica ACES após Bloom.
         />

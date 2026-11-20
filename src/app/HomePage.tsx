@@ -66,6 +66,7 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
   const loadingProgress = useLoadingProgress({
     isApiLoading: isLoading,
     hasApiData: ephemerisData.length > 0,
+    bodyIds: ephemerisData.map(body => body.bodyId),
   });
 
   const activeError: AppError | null = fatalSceneError ?? webglError ?? (ephemerisError ? {

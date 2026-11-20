@@ -2,6 +2,7 @@
   "textures": [
     "Recovered local KTX2 files, including 3 Saturn ring tiers preserved for archival integrity.",
     "The historical generator lists the sources below but does not record which successful URL, author, license version, or transformation produced each recovered file. Provenance is uncertain per file. No new license claim is made; the application license does not license these third-party bytes.",
+    "Europa and Titan currently use byte-identical recovered KTX2 maps at each tier. Their source and intended target are unverified; the interface labels these surfaces as approximate. No dedicated replacement or publication is implied.",
     "Known source candidates: Solar System Scope, NASA SVS/Earth Observatory, Wikimedia Commons, CelestiaContent, three.js examples. Confirm per-file attribution/license before wider redistribution.",
     "https://commons.wikimedia.org/wiki/Special:FilePath/Callisto_map_NASA_JPL_Voyager.jpg",
     "https://commons.wikimedia.org/wiki/Special:FilePath/Ganymede_map_NASA_JPL_Voyager.jpg",

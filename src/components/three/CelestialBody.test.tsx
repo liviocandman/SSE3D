@@ -10,6 +10,8 @@ import { clockRuntime } from '@/lib/time/clockRuntime';
 
 vi.mock('@react-three/fiber', () => ({ useFrame: vi.fn(), useThree: vi.fn(), useLoader: vi.fn() }));
 vi.mock('@react-three/drei', () => ({ Text: 'text', Billboard: 'billboard' }));
+vi.mock('@/contexts/QualityTierContext', () => ({ useQualityTier: () => ({ tier: 'high' }) }));
+vi.mock('@/hooks/useTexturePromotion', () => ({ useTexturePromotion: () => null }));
 // The global test mock replaces useShallow with identity, which cannot cache
 // object snapshots for a real Zustand store. Exercise the real selector here.
 vi.mock('zustand/react/shallow', async importOriginal => importOriginal());

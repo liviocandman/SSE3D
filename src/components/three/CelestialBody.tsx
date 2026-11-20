@@ -52,6 +52,11 @@ import { SPHERE_HIGH, SPHERE_MID, SPHERE_LOW, HITBOX_SPHERE } from '@/lib/geomet
 
 import { SingletonKTX2Loader, getSharedKTX2Loader } from "@/lib/SingletonKTX2Loader";
 
+import { markEssentialTextureReady } from '@/lib/textureReadiness';
+import { useQualityTier } from '@/contexts/QualityTierContext';
+import type { TextureTier } from '@/lib/textureConfig';
+import { useTexturePromotion } from '@/hooks/useTexturePromotion';
+
 export function CelestialBody({
   englishName,
   bodyId,
@@ -71,11 +76,14 @@ export function CelestialBody({
   const meshRef = useRef<Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
   const gl = useThree((state) => state.gl);
+  const { tier } = useQualityTier();
 
   // KTX2 VRAM Optimized Loader
   const texture = useLoader(SingletonKTX2Loader as unknown as typeof THREE.Loader, textureUrl, () => {
     getSharedKTX2Loader(gl);
   }) as THREE.Texture;
+  useEffect(() => markEssentialTextureReady(bodyId), [bodyId]);
+  const promotedTexture = useTexturePromotion(meshRef, textureUrl, tier as TextureTier);
 
 
   const labelRef = useRef<THREE.Object3D | null>(null);
@@ -304,7 +312,7 @@ export function CelestialBody({
           dispose={null}
         >
           <meshStandardMaterial
-            map={texture}
+            map={promotedTexture ?? texture}
             emissive={0x333333}
             emissiveIntensity={0.05}
           />

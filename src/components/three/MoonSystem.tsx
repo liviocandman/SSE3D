@@ -90,11 +90,6 @@ function resolveSegmentAroundTime(segments: TrajectorySegment[], simTimeMs: numb
   return nearest;
 }
 
-function resolveTextureTier(tier: string): TextureTier {
-  if (tier === 'low' || tier === 'high') return tier;
-  return 'mid';
-}
-
 function buildLightFallbackPoints(
   trajectory: EphemerisTrajectory[],
   scale: number,
@@ -159,7 +154,6 @@ function MoonMesh({
 
   // Pre-calculate properties for hooks safely
   const radius = getRadius(bodyId, 'MOON', viewMode);
-  const textureTier = resolveTextureTier(tier);
 
   const orbitScale = config
     ? getMoonOrbitScale(
@@ -266,8 +260,10 @@ function MoonMesh({
         <primitive attach="geometry" object={SPHERE_MID} />
         <MoonSurfaceMaterial
           name={name}
-          textureUrl={config.texturePaths[textureTier]}
+          textureUrl={config.texturePaths.low}
           fallbackColor={config.fallbackColor}
+          meshRef={meshRef}
+          maxTier={tier as TextureTier}
         />
       </mesh>
 

@@ -292,7 +292,7 @@ export function PlanetInfo({ planet, earthPosition, onAskAstronomer }: PlanetInf
             />
           </div>
           {/* Moon-specific metadata: surface type and discoverer */}
-          {isMoon && (config.surfaceType || config.discoverer) && (
+          {isMoon && (config.surfaceType || config.discoverer || config.surfaceTextureNote) && (
             <div className="grid grid-cols-1 gap-2 mt-1">
               {config.surfaceType && (
                 <div className="bg-white/5 rounded-lg p-3 border border-white/10 flex flex-col min-w-0">
@@ -305,6 +305,9 @@ export function PlanetInfo({ planet, earthPosition, onAskAstronomer }: PlanetInf
                   <span className="text-[10px] text-white/50 mb-1 uppercase tracking-wider">🔭 Discovered by</span>
                   <span className="text-sm font-semibold text-white">{config.discoverer}</span>
                 </div>
+              )}
+              {config.surfaceTextureNote && (
+                <p className="text-xs leading-relaxed text-amber-100/70">{config.surfaceTextureNote}</p>
               )}
             </div>
           )}

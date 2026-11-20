@@ -2,16 +2,20 @@ import { useEffect, useMemo } from 'react';
 import { useThree } from '@react-three/fiber';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { SRGBColorSpace } from 'three';
+import { SRGBColorSpace, type Mesh } from 'three';
 import { BasisTranscoderError, loadOptionalKTX2Texture } from '@/lib/SingletonKTX2Loader';
+import { useTexturePromotion } from '@/hooks/useTexturePromotion';
+import type { TextureTier } from '@/lib/textureConfig';
 
 interface MoonSurfaceMaterialProps {
   name: string;
   textureUrl: string;
   fallbackColor: string;
+  meshRef: React.RefObject<Mesh | null>;
+  maxTier: TextureTier;
 }
 
-export function MoonSurfaceMaterial({ name, textureUrl, fallbackColor }: MoonSurfaceMaterialProps) {
+export function MoonSurfaceMaterial({ name, textureUrl, fallbackColor, meshRef, maxTier }: MoonSurfaceMaterialProps) {
   const gl = useThree(state => state.gl);
   const { data, errorUpdateCount, isError, isFetching, refetch } = useQuery({
     queryKey: ['moon-texture', textureUrl],
@@ -33,6 +37,8 @@ export function MoonSurfaceMaterial({ name, textureUrl, fallbackColor }: MoonSur
     texture.needsUpdate = true;
     return texture;
   }, [data]);
+  const promotedTexture = useTexturePromotion(meshRef, textureUrl, maxTier);
+  const visibleTexture = promotedTexture ?? colorTexture;
 
   useEffect(() => () => colorTexture?.dispose(), [colorTexture]);
 
@@ -50,13 +56,11 @@ export function MoonSurfaceMaterial({ name, textureUrl, fallbackColor }: MoonSur
     return () => { toast.dismiss(id); };
   }, [errorUpdateCount, isError, isFetching, name, refetch]);
 
-  // Switching map presence changes the program. Replace the material only,
-  // keeping the mesh, its position and its pointer interactions.
   return (
     <meshStandardMaterial
-      key={colorTexture ? 'textured' : 'solid'}
-      map={colorTexture}
-      color={colorTexture ? '#ffffff' : fallbackColor}
+      key={visibleTexture ? 'textured' : 'solid'}
+      map={visibleTexture}
+      color={visibleTexture ? '#ffffff' : fallbackColor}
     />
   );
 }

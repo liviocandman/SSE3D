@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@react-three/fiber', () => ({ useThree: () => ({}) }));
+vi.mock('@/hooks/useTexturePromotion', () => ({ useTexturePromotion: () => null }));
 vi.mock('sonner', () => ({ toast: { warning: mocks.warning, dismiss: mocks.dismiss } }));
 vi.mock('three-stdlib', () => ({
   KTX2Loader: class {
@@ -24,8 +25,8 @@ vi.mock('three-stdlib', () => ({
   },
 }));
 
-const IO = { name: 'Io', textureUrl: '/textures/io_high.ktx2', fallbackColor: '#ffff66' };
-const EUROPA = { name: 'Europa', textureUrl: '/textures/europa_high.ktx2', fallbackColor: '#d8d8d8' };
+const IO = { name: 'Io', textureUrl: '/textures/io_high.ktx2', fallbackColor: '#ffff66', meshRef: { current: null }, maxTier: 'high' as const };
+const EUROPA = { name: 'Europa', textureUrl: '/textures/europa_high.ktx2', fallbackColor: '#d8d8d8', meshRef: { current: null }, maxTier: 'high' as const };
 
 describe('optional moon surface textures', () => {
   beforeEach(() => {
