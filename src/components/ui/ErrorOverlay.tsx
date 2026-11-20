@@ -12,6 +12,7 @@ export type ErrorType =
   | 'WEBGL_NOT_SUPPORTED'
   | 'WEBGL_CONTEXT_LOST'
   | 'TEXTURE_LOAD_ERROR'
+  | 'SCENE_RENDER_ERROR'
   | 'UNKNOWN_ERROR';
 
 export interface AppError {
@@ -66,6 +67,11 @@ const ERROR_MESSAGES: Record<ErrorType, { title: string; description: string; ic
     title: 'Texture Load Error',
     description: 'Some planet textures could not be loaded. The scene may appear incomplete.',
     icon: '🎨',
+  },
+  SCENE_RENDER_ERROR: {
+    title: '3D Scene Unavailable',
+    description: 'The 3D scene could not start. Refresh the page to try again.',
+    icon: '🖥️',
   },
   UNKNOWN_ERROR: {
     title: 'Unknown Error',

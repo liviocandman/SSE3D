@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Toaster, toast } from 'sonner';
 import { useEphemeris } from '@/hooks/useEphemeris';
@@ -31,6 +31,15 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
   const currentDate = useSolarStore((state) => state.currentDate);
   const trajectoryBaseDate = useSolarStore((state) => state.trajectoryBaseDate);
   const setCurrentDate = useSolarStore((state) => state.setCurrentDate);
+  const [rendererError, setRendererError] = useState<AppError | null>(null);
+  const handleRendererInitializationError = useCallback((error: unknown) => {
+    setRendererError({
+      type: 'SCENE_RENDER_ERROR',
+      message: 'The 3D renderer could not be initialized',
+      technicalDetails: error instanceof Error ? error.message : String(error),
+      canRetry: false,
+    });
+  }, []);
 
   // Trigger data merge if user just logged in
   useSessionMerge();
@@ -60,16 +69,17 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
     hasApiData: ephemerisData.length > 0,
   });
 
-  const activeError: AppError | null = webglError ?? (ephemerisError ? {
+  const activeError: AppError | null = rendererError ?? webglError ?? (ephemerisError ? {
     type: ephemerisError.type,
     message: ephemerisError.message,
     technicalDetails: ephemerisError.technicalDetails,
     canRetry: ephemerisError.canRetry,
   } : null);
 
-  const isWebGLError = activeError?.type === 'WEBGL_NOT_SUPPORTED'
-    || activeError?.type === 'WEBGL_CONTEXT_LOST';
-  const showErrorOverlay = !!activeError && (isWebGLError || !isFallback);
+  const isSceneError = activeError?.type === 'WEBGL_NOT_SUPPORTED'
+    || activeError?.type === 'WEBGL_CONTEXT_LOST'
+    || activeError?.type === 'SCENE_RENDER_ERROR';
+  const showErrorOverlay = !!activeError && (isSceneError || !isFallback);
 
   const handleDateChange = (newDate: string) => {
     setCurrentDate(newDate);
@@ -136,9 +146,10 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
         <LoadingScreen progress={loadingProgress} />
       )}
 
-      {isWebGLSupported && !isWebGLContextLost && !isWebGLError && (
+      {isWebGLSupported && !isWebGLContextLost && !isSceneError && (
         <SceneManager
           ephemerisData={ephemerisData}
+          onRendererInitializationError={handleRendererInitializationError}
         />
       )}
 
