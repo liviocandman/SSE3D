@@ -4,6 +4,7 @@ import { Suspense, ReactNode } from 'react';
 import { QualityTierProvider } from '@/contexts/QualityTierContext';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { SceneCanvas } from './SceneCanvas';
+import { SceneErrorBoundary } from './SceneErrorBoundary';
 import type { EphemerisData } from '@/lib/types';
 
 interface SceneManagerProps {
@@ -20,14 +21,16 @@ export function SceneManager({
   return (
     <QualityTierProvider>
       <div className="fixed inset-0 overflow-hidden bg-[#000]">
-        <Suspense fallback={<LoadingScreen />}>
-          <SceneCanvas
-            ephemerisData={ephemerisData}
-            onRendererInitializationError={onRendererInitializationError}
-          >
-            {children}
-          </SceneCanvas>
-        </Suspense>
+        <SceneErrorBoundary>
+          <Suspense fallback={<LoadingScreen />}>
+            <SceneCanvas
+              ephemerisData={ephemerisData}
+              onRendererInitializationError={onRendererInitializationError}
+            >
+              {children}
+            </SceneCanvas>
+          </Suspense>
+        </SceneErrorBoundary>
       </div>
     </QualityTierProvider>
   );

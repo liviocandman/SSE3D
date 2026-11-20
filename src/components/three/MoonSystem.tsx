@@ -2,19 +2,17 @@
  * Coordinate-stabilized MoonSystem component.
  */
 
-import { useRef, useState, useEffect, Suspense, useMemo } from 'react';
-import { useFrame, useThree, useLoader } from '@react-three/fiber';
+import { useRef, useState, Suspense, useMemo } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import * as THREE from 'three';
-import { SingletonKTX2Loader, getSharedKTX2Loader } from '@/lib/SingletonKTX2Loader';
+import { MoonSurfaceMaterial } from './MoonSurfaceMaterial';
 import TrailLine from './TrailLine';
 
 import {
   getPlanetConfig,
-  getTexturePath,
   PLANET_MOONS,
   type TextureTier,
-  getGenericMoonTexture,
 } from '@/lib/textureConfig';
 import {
   getMoonOrbitScale,
@@ -65,9 +63,6 @@ const MOON_CLOSEUP_TRAVEL_RADIUS_MULTIPLIER = 2;
 const EMPTY_TRAJECTORY: EphemerisTrajectory[] = [];
 const EMPTY_SEGMENTS: TrajectorySegment[] = [];
 const MAX_LIGHT_FALLBACK_POINTS = 240;
-
-// Global singleton to prevent recreating workers and to avoid React Suspense
-// (Removed local globalKtx2Loader and getKtx2Loader, now using getSharedKTX2Loader)
 
 function resolveSegmentAroundTime(segments: TrajectorySegment[], simTimeMs: number): TrajectorySegment | null {
   if (segments.length === 0) return null;
@@ -138,7 +133,6 @@ function MoonMesh({
   void worldParentPositionKm;
   const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
-  const gl = useThree((state) => state.gl);
   const isInitializedRef = useRef(false);
   const lookupCacheRef = useRef(createTemporalLookupCache());
   const parentLookupCacheRef = useRef(createTemporalLookupCache());
@@ -165,7 +159,6 @@ function MoonMesh({
   // Pre-calculate properties for hooks safely
   const radius = getRadius(bodyId, 'MOON', viewMode);
   const textureTier = resolveTextureTier(tier);
-  const textureUrl = config ? getTexturePath(bodyId, textureTier) : '';
 
   const orbitScale = config
     ? getMoonOrbitScale(
@@ -175,27 +168,6 @@ function MoonMesh({
       viewMode
     )
     : 1;
-
-  const texture = useLoader(SingletonKTX2Loader as unknown as typeof THREE.Loader, textureUrl || getGenericMoonTexture('mid'), () => {
-    getSharedKTX2Loader(gl);
-  }) as THREE.Texture;
-  const colorTexture = useMemo(() => {
-    const nextTexture = texture.clone();
-    nextTexture.colorSpace = THREE.SRGBColorSpace;
-    nextTexture.needsUpdate = true;
-    return nextTexture;
-  }, [texture]);
-
-  // Dispose of material on unmount
-  useEffect(() => {
-    const currentMesh = meshRef.current;
-    return () => {
-      colorTexture.dispose();
-      if (currentMesh?.material) {
-        (currentMesh.material as THREE.Material).dispose();
-      }
-    };
-  }, [colorTexture]);
 
   useFrame((_, delta) => {
     if (!config) return;
@@ -289,14 +261,12 @@ function MoonMesh({
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      <mesh ref={meshRef} {...events} geometry={SPHERE_MID} scale={currentRadius} dispose={null}>
-        <meshStandardMaterial
-          map={colorTexture}
-          color="#ffffff"
-          emissive={0x000000}
-          emissiveIntensity={0}
-          transparent={isDataLoading}
-          opacity={isDataLoading ? 0 : 1}
+      <mesh ref={meshRef} {...events} scale={currentRadius}>
+        <primitive attach="geometry" object={SPHERE_MID} />
+        <MoonSurfaceMaterial
+          name={name}
+          textureUrl={config.texturePaths[textureTier]}
+          fallbackColor={config.fallbackColor}
         />
       </mesh>
 
