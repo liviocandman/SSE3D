@@ -27,9 +27,7 @@ export function Sun({
 }: SunProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
-  const sunWorldPositionRef = useRef(new THREE.Vector3());
   const { tier } = useQualityTier();
-  const camera = useThree((state) => state.camera);
   const gl = useThree((state) => state.gl);
 
   // Carregar Textura do Sol (KTX2 Optimized)
@@ -38,9 +36,7 @@ export function Sun({
     getSharedKTX2Loader(gl);
   }) as THREE.Texture;
 
-  // Tamanhos de referência
-  const didacticRadius = getRadius(SUN_BODY_ID, 'STAR', 'didactic'); // ~35u
-  const realisticRadius = getRadius(SUN_BODY_ID, 'STAR', 'realistic'); // ~0.7u
+  const targetScale = getRadius(SUN_BODY_ID, 'STAR', viewMode);
 
   useFrame((_, delta) => {
     if (!meshRef.current || !groupRef.current) return;
@@ -48,31 +44,8 @@ export function Sun({
     const renderOrigin = useSolarStore.getState().renderOrigin;
     toRelativeRenderUnitsInto(groupRef.current.position, absolutePositionKm, renderOrigin, KM_TO_UNIT);
 
-    let targetScale;
-
-    if (viewMode === 'didactic') {
-      // MODO DIDÁTICO: Tamanho fixo e grande
-      targetScale = didacticRadius;
-    } else {
-      // MODO REALISTA (O Truque da Escala Dinâmica)
-
-      const sunWorldPosition = groupRef.current.getWorldPosition(sunWorldPositionRef.current);
-      const distance = camera.position.distanceTo(sunWorldPosition);
-
-      // 2. Definir um fator de escala visual
-      // "distance / 500" significa: a cada 500 unidades de distância, o sol ganha 1 unidade de tamanho visual.
-      // Isso mantém ele visível como um disco pequeno no céu de Netuno (~12 units).
-      const visualScale = distance / 500;
-
-      // 3. Clamp (Trava de segurança)
-      // Nunca deixe o sol ficar menor que o tamanho real (0.7)
-      // Nunca deixe ele ficar colossalmente grande a ponto de engolir a Terra se estivermos perto
-      targetScale = Math.max(realisticRadius, visualScale);
-    }
-
     const currentScale = meshRef.current.scale.x;
 
-    // NOVA FÓRMULA SEGURA: 
     const lerpFactor = 1 - Math.exp(-25 * delta);
     const smoothScale = THREE.MathUtils.lerp(currentScale, targetScale, lerpFactor);
 

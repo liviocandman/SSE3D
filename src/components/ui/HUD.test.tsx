@@ -47,6 +47,7 @@ const { solarState } = vi.hoisted(() => {
       currentDate: '2026-03-26',
       currentTime: new Date('2026-03-26T00:00:00.000Z'),
       masterTrajectorySegments: {},
+      baseTrajectorySegments: {},
       viewMode: 'didactic' as const,
       isPlaying: false,
       toggleViewMode: vi.fn(),

@@ -65,7 +65,7 @@ export function HUD({
   isFallback = false,
 }: HUDProps) {
   const isMobile = useIsMobile();
-  const { planet, earthPosition } = useSelectedPlanet();
+  const { planet, earthPosition, staleSampleAt } = useSelectedPlanet();
   
   const { selectedPlanet, viewMode, toggleViewMode } = useSolarStore(
     useShallow((state) => ({
@@ -144,6 +144,12 @@ export function HUD({
       {isFallback && (
         <div role="status" className="rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-3 text-xs leading-relaxed text-yellow-200">
           {DEGRADED_EPHEMERIS_MESSAGE}
+        </div>
+      )}
+
+      {staleSampleAt && (
+        <div role="status" className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-100">
+          A cena mantém a última amostra disponível de {new Date(staleSampleAt).toLocaleString('pt-BR', { timeZone: 'UTC', timeZoneName: 'short' })} enquanto aguarda dados para o instante atual.
         </div>
       )}
 

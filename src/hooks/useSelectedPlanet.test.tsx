@@ -31,6 +31,7 @@ describe('useSelectedPlanet', () => {
     clockRuntime.setTimeMs(START);
     useSolarStore.setState({
       currentTime: new Date(START), timeSeekRevision: 0, selectedPlanet: MARS,
+      baseTrajectorySegments: {},
       masterTrajectorySegments: { '499': segment(150_000_000), '399': segment(100_000_000) },
     });
   });
@@ -92,11 +93,12 @@ describe('useSelectedPlanet', () => {
     expect(result.current.planet?.distanceFromSun).toBeCloseTo(100.38405);
   });
 
-  it('clears dynamic values outside coverage and recovers when data arrives without another click', () => {
+  it('holds and labels the last available sample outside coverage, then recovers without another click', () => {
     const { result } = renderHook(() => useSelectedPlanet());
     act(() => useSolarStore.getState().setCurrentTime(new Date(START + 20_000)));
     expect(result.current.planet).toMatchObject(MARS);
     expect(result.current.planet?.position).toBeUndefined();
+    expect(result.current.staleSampleAt).toBe(new Date(START + 10_000).toISOString());
     expect(result.current.planet?.distanceFromSun).toBeUndefined();
     expect(result.current.planet?.velocity).toBeUndefined();
     expect(result.current.earthPosition).toBeUndefined();
@@ -106,6 +108,16 @@ describe('useSelectedPlanet', () => {
     }];
     act(() => useSolarStore.setState({ masterTrajectorySegments: { '499': [buildTrajectorySegment(extended)!] } }));
     expect(result.current.planet?.position?.x).toBeCloseTo(150_000_400);
+    expect(result.current.staleSampleAt).toBeUndefined();
+  });
+
+  it('uses the covered base query for HUD while master coverage is stale', () => {
+    const base = [buildTrajectorySegment([{ ...trajectory(225_000_000)[0], timestamp: new Date(START + 20_000).toISOString() }])!];
+    useSolarStore.setState({ baseTrajectorySegments: { '499': base } });
+    clockRuntime.setTimeMs(START + 20_000);
+    const { result } = renderHook(() => useSelectedPlanet());
+    expect(result.current.planet?.position?.x).toBe(225_000_000);
+    expect(result.current.staleSampleAt).toBeUndefined();
   });
 
   it('does not present parent-relative moon coordinates as absolute when parent data is missing', () => {

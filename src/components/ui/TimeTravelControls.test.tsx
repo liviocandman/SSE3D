@@ -57,6 +57,12 @@ describe('TimeTravelControls', () => {
     expect(solarState.resetToAnchorIntent).toHaveBeenCalledWith();
   });
 
+  it('labels the clock and date selector as UTC', () => {
+    render(<TimeTravelControls />);
+    expect(screen.getByText('2026-03-26 00:00 UTC')).toBeInTheDocument();
+    expect(screen.getByLabelText('Simulation date (UTC)')).toBeInTheDocument();
+  });
+
   it('steps time backward with Back button', () => {
     render(<TimeTravelControls />);
     const backButton = screen.getByTitle('Back 15m');

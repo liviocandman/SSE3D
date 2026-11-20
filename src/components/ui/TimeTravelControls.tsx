@@ -12,7 +12,6 @@ import {
 import { useSolarStore } from '@/store/solarStore';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
 import { useDisplayTime } from '@/hooks/useDisplayTime';
 
 const PLAYBACK_SPEED_OPTIONS = [
@@ -33,11 +32,12 @@ const PLAYBACK_SPEED_OPTIONS = [
  */
 function ClockDisplay() {
   const displayTime = useDisplayTime(500);
+  const utc = new Date(displayTime);
+  const stamp = [utc.getUTCFullYear(), String(utc.getUTCMonth() + 1).padStart(2, '0'), String(utc.getUTCDate()).padStart(2, '0')].join('-')
+    + ` ${String(utc.getUTCHours()).padStart(2, '0')}:${String(utc.getUTCMinutes()).padStart(2, '0')} UTC`;
 
   return (
-    <span className="font-mono text-sm tracking-wider">
-      {format(displayTime, 'yyyy-MM-dd HH:mm')}
-    </span>
+    <time className="font-mono text-sm tracking-wider" dateTime={utc.toISOString()}>{stamp}</time>
   );
 }
 
@@ -167,7 +167,9 @@ export function TimeTravelControls() {
         </select>
 
         <form onSubmit={handleDateSubmit} className="flex flex-1 items-center justify-between gap-2 overflow-hidden">
+          <label className="sr-only" htmlFor="simulation-date">Simulation date (UTC)</label>
           <input
+            id="simulation-date"
             type="date"
             value={localDate}
             onChange={(e) => setLocalDate(e.target.value)}

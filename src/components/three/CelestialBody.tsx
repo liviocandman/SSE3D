@@ -176,16 +176,17 @@ export function CelestialBody({
 
     // 2. Planet rotation (Absolute orientation + Optional didactic spin)
     if (meshRef.current) {
+      const axisHemisphere = Math.cos(THREE.MathUtils.degToRad(axialTilt)) < 0 ? -1 : 1;
       if (viewMode === "realistic" && dayLength !== undefined) {
-        // Realistic mode: strictly physical orientation based on timestamp
-        meshRef.current.rotation.y = calculateAbsoluteRotation(dayLength, simTime);
+        // Deterministic period-based orientation; not a full SPICE attitude model.
+        meshRef.current.rotation.y = calculateAbsoluteRotation(dayLength, simTime) * axisHemisphere;
       } else {
         // Didactic mode: absolute orientation (boosted) + real-time spin
         const baseRotation = dayLength !== undefined
-          ? calculateAbsoluteRotation(dayLength, simTime)
+          ? calculateAbsoluteRotation(dayLength, simTime) * axisHemisphere
           : 0;
 
-        const direction = (dayLength !== undefined && dayLength < 0) ? -1 : 1;
+        const direction = (dayLength !== undefined && dayLength < 0 ? -1 : 1) * axisHemisphere;
         const speed = rotationSpeed ?? DEFAULT_ROTATION_SPEED;
         const visualSpin = state.clock.elapsedTime * speed * 60 * direction;
 
