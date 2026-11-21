@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useSolarStore } from '@/store/solarStore';
 import { buildTrajectorySegments } from '@/lib/trajectoryEngine';
-import { resolveCoveredTargetPosition, resolvePlanetFrame } from './frameResolvers';
+import { resolvePlanetFrame } from './frameResolvers';
+import { resolveCoveredTargetPosition } from './trajectoryQueries';
 import * as THREE from 'three';
 
 const START = Date.parse('2026-01-01T00:00:00Z');

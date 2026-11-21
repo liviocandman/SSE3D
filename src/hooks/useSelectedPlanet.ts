@@ -5,7 +5,7 @@ import { useSolarStore } from '@/store/solarStore';
 import { useDisplayTime } from './useDisplayTime';
 import { clockRuntime } from '@/lib/time/clockRuntime';
 import { sampleTrajectoryAtTime, sampleTrajectoryStateAtTime, type TrajectorySegment } from '@/lib/trajectoryEngine';
-import { selectSegmentsAtTime } from '@/lib/simulation/frameResolvers';
+import { selectSegmentsAtTime } from '@/lib/simulation/trajectoryQueries';
 import { BODY_IDS, type SelectedPlanet } from '@/lib/types';
 import { getPlanetConfig } from '@/lib/textureConfig';
 import { getRadius, KM_TO_UNIT } from '@/lib/scales';

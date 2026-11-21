@@ -1,6 +1,6 @@
 import type { EphemerisData, PlanetSelection } from '@/lib/types';
 import type { ViewMode } from '@/lib/scales';
-import { resolveCoveredTargetPosition } from '@/lib/simulation/frameResolvers';
+import { resolveCoveredTargetPosition } from '@/lib/simulation/trajectoryQueries';
 import { buildTrajectorySegments } from '@/lib/trajectoryEngine';
 import { clockRuntime } from '@/lib/time/clockRuntime';
 import { getRadius } from '@/lib/scales';
