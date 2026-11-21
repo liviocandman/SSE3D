@@ -30,7 +30,8 @@ import { SPHERE_MID, HITBOX_SPHERE } from '@/lib/geometryPool';
 import { clockRuntime } from '@/lib/time/clockRuntime';
 import type { EphemerisTrajectory } from '@/lib/types';
 import { USE_BACKEND_ORBIT_READY } from '@/lib/types';
-import { resolveCoveredTargetPosition, resolveMoonFrame } from '@/lib/simulation/frameResolvers';
+import { resolveMoonFrame } from '@/lib/simulation/frameResolvers';
+import { resolveCoveredTargetPosition } from '@/lib/simulation/trajectoryQueries';
 import { FRAME_PRIORITIES } from '@/lib/framePriorities';
 
 // ---------------------------------------------------------------------------
