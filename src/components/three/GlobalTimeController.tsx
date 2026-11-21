@@ -4,6 +4,7 @@ import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { useSolarStore } from '@/store/solarStore';
 import { clockRuntime } from '@/lib/time/clockRuntime';
+import { FRAME_PRIORITIES } from '@/lib/framePriorities';
 
 const SNAPSHOT_SYNC_INTERVAL_SEC = 0.25;
 
@@ -37,6 +38,6 @@ export function GlobalTimeController() {
       syncSnapshot(runtimeTimeMs);
       lastSnapshotSyncSecRef.current = state.clock.elapsedTime;
     }
-  });
+  }, FRAME_PRIORITIES.CLOCK);
   return null;
 }

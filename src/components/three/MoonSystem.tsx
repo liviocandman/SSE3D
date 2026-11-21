@@ -31,6 +31,7 @@ import { clockRuntime } from '@/lib/time/clockRuntime';
 import type { EphemerisTrajectory } from '@/lib/types';
 import { USE_BACKEND_ORBIT_READY } from '@/lib/types';
 import { resolveCoveredTargetPosition, resolveMoonFrame } from '@/lib/simulation/frameResolvers';
+import { FRAME_PRIORITIES } from '@/lib/framePriorities';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -129,11 +130,9 @@ function MoonMesh({
   void worldParentPositionKm;
   const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
-  const isInitializedRef = useRef(false);
   const lookupCacheRef = useRef(createTemporalLookupCache());
   const parentLookupCacheRef = useRef(createTemporalLookupCache());
   const [isHovered, setIsHovered] = useState(false);
-  const tempVec = useRef(new THREE.Vector3());
   const absPositionKmRef = useRef(new THREE.Vector3());
   const localPositionKmRef = useRef(new THREE.Vector3());
 
@@ -187,21 +186,15 @@ function MoonMesh({
       // Moon trajectories from the backend are parent-relative KM.
       // Simulation resolveMoonFrame provides localPositionKm in this parent-relative KM.
       const { x, y, z } = localPositionKmRef.current;
-      const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);
-
-      if (!isInitializedRef.current) {
-        groupRef.current.position.copy(targetPos);
-        isInitializedRef.current = true;
-      } else {
-        groupRef.current.position.lerp(targetPos, 1 - Math.exp(-10 * delta));
-      }
+      // The sampler already interpolates. Do not add a second, delayed position.
+      groupRef.current.position.set(x * SCALE, y * SCALE, z * SCALE);
     }
 
     if (meshRef.current) {
       const rotationSpeed = config.rotationSpeed || 0.005;
       meshRef.current.rotation.y += rotationSpeed * 60 * delta * (isPlaying ? timeMultiplier : 1);
     }
-  });
+  }, FRAME_PRIORITIES.BODIES);
 
   if (!config) return null;
 

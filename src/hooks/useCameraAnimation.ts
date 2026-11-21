@@ -13,6 +13,7 @@ import { useSolarStore } from "@/store/solarStore";
 import { KM_TO_UNIT } from "@/lib/scales";
 import { isRenderOriginNearTarget } from "@/lib/renderFrame";
 import { CAMERA_CONFIG } from "@/lib/cameraConfig";
+import { FRAME_PRIORITIES } from "@/lib/framePriorities";
 import { createTemporalLookupCache, type TemporalLookupCache } from "@/lib/temporalLookup";
 import { clockRuntime } from "@/lib/time/clockRuntime";
 import { resolveGeneralTargetFrame } from "@/lib/simulation/frameResolvers";
@@ -133,7 +134,7 @@ export function useCameraAnimation(): UseCameraAnimationReturn {
     }
 
     enforceControlsTarget(controls);
-  });
+  }, FRAME_PRIORITIES.ORIGIN);
 
   const focusOn = (
     targetPositionKm: { x: number; y: number; z: number },

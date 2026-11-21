@@ -16,6 +16,7 @@ import { calculateAbsoluteRotation } from "@/lib/rotationUtils";
 import { clockRuntime } from "@/lib/time/clockRuntime";
 import { bodySelectionData } from '@/lib/bodyPresentation';
 import { resolvePlanetFrame } from "@/lib/simulation/frameResolvers";
+import { FRAME_PRIORITIES } from '@/lib/framePriorities';
 
 // --- Types ---
 
@@ -93,7 +94,6 @@ export function CelestialBody({
   const tempVec = useRef(new THREE.Vector3());
   const absPositionKmRef = useRef(new THREE.Vector3());
   const lookupCacheRef = useRef(createTemporalLookupCache());
-  const isInitializedRef = useRef(false);
   const frameCountRef = useRef(0);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -126,7 +126,7 @@ export function CelestialBody({
   }, [segments]);
 
   // Animation loop
-  useFrame((state, delta) => {
+  useFrame((state) => {
     const solarState = useSolarStore.getState();
     const simTime = clockRuntime.getTimeMs();
 
@@ -144,41 +144,23 @@ export function CelestialBody({
 
       if (status !== 'no-data') {
         // Convert absolute KM to relative render units (Zero allocation)
-        const targetPos = toRelativeRenderUnitsInto(
-          tempVec.current,
+        toRelativeRenderUnitsInto(
+          groupRef.current.position,
           absPositionKmRef.current,
           renderOrigin,
           KM_TO_UNIT
         );
-
-        if (!isInitializedRef.current) {
-          // Snap to first valid position to avoid flying from origin
-          groupRef.current.position.copy(targetPos);
-          isInitializedRef.current = true;
-        } else {
-          // Use frame-rate independent LERP (approx 0.1 at 60fps)
-          const lerpFactor = 1 - Math.exp(-6 * delta);
-          groupRef.current.position.lerp(targetPos, lerpFactor);
-        }
       } else {
         // Fallback bodies without trajectory: keep coherent with camera-relative origin
         const invScale = 1 / KM_TO_UNIT;
-        const absKm = {
-          x: initialPosition[0] * invScale,
-          y: initialPosition[1] * invScale,
-          z: initialPosition[2] * invScale
-        };
+        absPositionKmRef.current.set(initialPosition[0] * invScale, initialPosition[1] * invScale, initialPosition[2] * invScale);
 
         toRelativeRenderUnitsInto(
           groupRef.current.position,
-          absKm,
+          absPositionKmRef.current,
           renderOrigin,
           KM_TO_UNIT
         );
-
-        if (!isInitializedRef.current) {
-          isInitializedRef.current = true;
-        }
       }
     }
 
@@ -235,7 +217,7 @@ export function CelestialBody({
       const s = newFontSize / 10;
       labelRef.current.scale.set(s, s, s);
     }
-  });
+  }, FRAME_PRIORITIES.BODIES);
 
   // Click handler - show info only (no travel)
   const handleClick = () => {

@@ -68,4 +68,21 @@ describe('CelestialBody rotation', () => {
       unmount();
     }
   });
+
+  it('rebases without interpolating between different render origins and snaps a time seek', () => {
+    const { result } = renderHook(() => CelestialBody({ bodyId: '399', name: 'Terra', englishName: 'Earth',
+      position: [149.6, 0, 0], radius: 0.006371, textureUrl: '/earth.ktx2', viewMode: 'realistic', dayLength: 24 }));
+    const group = new THREE.Group();
+    (result.current.props.ref as RefObject<THREE.Group>).current = group;
+    const frame = vi.mocked(useFrame).mock.calls[0][0];
+    const state = { clock: { elapsedTime: 0 } } as RootState;
+    frame(state, 1 / 60);
+    expect(group.position.x).toBeCloseTo(149.6, 8);
+    useSolarStore.setState({ renderOrigin: { x: 149599000, y: 0, z: 0 } });
+    frame(state, 1 / 60);
+    expect(group.position.x).toBeCloseTo(0.001, 8);
+    clockRuntime.setTimeMs(START + 10000);
+    frame(state, 1 / 60);
+    expect(group.position.x).toBeCloseTo(0.002, 8);
+  });
 });
