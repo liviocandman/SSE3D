@@ -218,7 +218,7 @@ export function AstronomerModal({
             </div>
           )}
 
-          {messages.map((message) => (
+          {messages.map((message, index) => (
             <div
               key={message.id}
               className={`relative rounded-xl px-4 py-3 text-sm leading-relaxed ${message.role === 'user'
@@ -233,7 +233,7 @@ export function AstronomerModal({
                   <FavoriteButton 
                     bodyId={planet.bodyId}
                     bodyName={planet.englishName}
-                    question={messages.find((m, idx) => messages[idx+1]?.id === message.id)?.content || ''}
+                    question={messages[index - 1]?.content || ''}
                     answer={message.content}
                   />
                 </div>

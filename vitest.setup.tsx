@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom';
-import React from 'react';
+import type React from 'react';
 import { vi } from 'vitest';
 
 // Fix for Next.js 15+ navigation/router in tests
@@ -67,47 +67,6 @@ vi.mock('next-auth/react', () => ({
   signIn: vi.fn(),
   signOut: vi.fn(),
 }));
-
-// Global Framer Motion mock using React.createElement for maximum compatibility
-vi.mock('framer-motion', () => {
-  const mockComponent = (tag: string) => {
-    const Component = ({ children, ...props }: { children?: React.ReactNode; [key: string]: unknown }) => {
-      // Filter out framer-motion specific props that might cause warnings on HTML elements
-      const htmlProps = { ...props };
-      const motionProps = [
-        'animate', 'initial', 'exit', 'transition', 'variants', 
-        'onAnimationComplete', 'onAnimationStart', 
-        'viewport', 'whileInView', 'whileHover', 'whileTap'
-      ];
-      motionProps.forEach(prop => delete htmlProps[prop]);
-      
-      return React.createElement(tag, htmlProps, children);
-    };
-    Component.displayName = `mock.motion.${tag}`;
-    return Component;
-  };
-
-  return {
-    motion: {
-      div: mockComponent('div'),
-      span: mockComponent('span'),
-      section: mockComponent('section'),
-      nav: mockComponent('nav'),
-      button: mockComponent('button'),
-      h1: mockComponent('h1'),
-      h2: mockComponent('h2'),
-      h3: mockComponent('h3'),
-      p: mockComponent('p'),
-      a: mockComponent('a'),
-    },
-    AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
-    useReducedMotion: () => false,
-    useAnimation: () => ({
-      start: vi.fn(),
-      stop: vi.fn(),
-    }),
-  };
-});
 
 // Polyfill for Request/Response if missing in jsdom
 if (typeof global.Request === 'undefined') {

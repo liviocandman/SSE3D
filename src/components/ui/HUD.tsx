@@ -1,11 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import dynamic from "next/dynamic";
 import { PlanetInfo } from "./PlanetInfo";
-import { AstronomerModal } from "./AstronomerModal";
-import { AuthModal } from "./AuthModal";
-import { FavoritesModal } from "./FavoritesModal";
 import { useSolarStore } from "@/store/solarStore";
 import { useUIStore } from "@/store/uiStore";
 import { useShallow } from "zustand/react/shallow";
@@ -14,6 +11,10 @@ import { useFavorites } from "@/hooks/useFavorites";
 import { TimeTravelControls } from "./TimeTravelControls";
 import { useSelectedPlanet } from "@/hooks/useSelectedPlanet";
 import { DEGRADED_EPHEMERIS_MESSAGE } from "@/lib/ephemerisStatus";
+
+const AstronomerModal = dynamic(() => import("./AstronomerModal").then(mod => mod.AstronomerModal));
+const AuthModal = dynamic(() => import("./AuthModal").then(mod => mod.AuthModal));
+const FavoritesModal = dynamic(() => import("./FavoritesModal").then(mod => mod.FavoritesModal));
 
 // --- Types ---
 
@@ -77,7 +78,10 @@ export function HUD({
 
   const openFavorites = useUIStore((state) => state.openFavorites);
   const { data: favorites = [] } = useFavorites();
-  const [isAstronomerOpen, setIsAstronomerOpen] = useState(false);
+  const isAuthOpen = useUIStore(state => state.isAuthModalOpen);
+  const isFavoritesOpen = useUIStore(state => state.isFavoritesOpen);
+  // Keep an opened chat mounted so an in-flight reply survives closing the drawer.
+  const [astronomerState, setAstronomerState] = useState<"unopened" | "open" | "closed">("unopened");
   // Start expanded if a planet is already selected, otherwise collapsed
   const [isExpanded, setIsExpanded] = useState(() => !!selectedPlanet);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -156,9 +160,23 @@ export function HUD({
       <PlanetInfo
         planet={planet}
         earthPosition={earthPosition}
-        onAskAstronomer={() => setIsAstronomerOpen(true)}
+        onAskAstronomer={() => setAstronomerState("open")}
       />
     </div>
+  );
+
+  const modals = (
+    <>
+      {astronomerState !== "unopened" && (
+        <AstronomerModal
+          isOpen={astronomerState === "open"}
+          onClose={() => setAstronomerState("closed")}
+          planet={selectedPlanet}
+        />
+      )}
+      {isAuthOpen && <AuthModal />}
+      {isFavoritesOpen && <FavoritesModal />}
+    </>
   );
 
   if (isMobile) {
@@ -208,13 +226,7 @@ export function HUD({
           </div>
         </div>
         <TimeTravelControls />
-        <AstronomerModal
-          isOpen={isAstronomerOpen}
-          onClose={() => setIsAstronomerOpen(false)}
-          planet={selectedPlanet}
-        />
-        <AuthModal />
-        <FavoritesModal />
+        {modals}
       </>
     );
   }
@@ -222,14 +234,12 @@ export function HUD({
   // Desktop sidebar
   return (
     <>
-      <motion.div
-        initial={false}
-        animate={{
-          x: isMinimized ? "calc(100% - 48px)" : 0,
+      <div
+        style={{
+          transform: isMinimized ? "translateX(calc(100% - 48px))" : undefined,
           opacity: selectedPlanet ? 1 : 0.95,
         }}
-        transition={{ type: "spring", stiffness: 320, damping: 34 }}
-        className={`fixed top-4 right-0 bottom-4 w-80 glass-panel rounded-l-2xl z-100 flex flex-col overflow-hidden hardware-accel border-l-2 ${accentClass}`}
+        className={`motion-safe:transition-[transform,opacity] motion-safe:duration-300 motion-safe:ease-out fixed top-4 right-0 bottom-4 w-80 glass-panel rounded-l-2xl z-100 flex flex-col overflow-hidden hardware-accel border-l-2 ${accentClass}`}
       >
         {/* Left control tab for the desktop drawer */}
         <button
@@ -290,15 +300,9 @@ export function HUD({
 
         {/* Decorative footer element */}
         <div className="h-1 w-full bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-50" />
-      </motion.div>
+      </div>
       <TimeTravelControls />
-      <AstronomerModal
-        isOpen={isAstronomerOpen}
-        onClose={() => setIsAstronomerOpen(false)}
-        planet={selectedPlanet}
-      />
-      <AuthModal />
-      <FavoritesModal />
+      {modals}
     </>
   );
 }

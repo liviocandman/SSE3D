@@ -12,29 +12,6 @@ global.config = global.config || {};
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { HUD } from './HUD';
 
-import type { HTMLAttributes, ReactNode } from 'react';
-
-type MockMotionDivProps = HTMLAttributes<HTMLDivElement> & {
-  children?: ReactNode;
-  'data-testid'?: string;
-};
-
-// Mock framer-motion to bypass animation delays in tests
-vi.mock('framer-motion', () => ({
-  motion: {
-    div: ({
-      children,
-      className,
-      'data-testid': dataTestId,
-      ...props
-    }: MockMotionDivProps) => (
-      <div className={className} data-testid={dataTestId} {...props}>
-        {children}
-      </div>
-    ),
-  },
-}));
-
 vi.mock('zustand/react/shallow', () => ({
   useShallow: <T,>(selector: T) => selector,
 }));
@@ -68,7 +45,8 @@ vi.mock('@/store/solarStore', () => {
 });
 
 const mockUIState = {
-  isMobile: false,
+  isFavoritesOpen: false,
+  isAuthModalOpen: false,
   openFavorites: vi.fn(),
 };
 
@@ -87,7 +65,11 @@ vi.mock('@/hooks/useFavorites', () => ({
 }));
 
 // Mock sub-components
-vi.mock('./PlanetInfo', () => ({ PlanetInfo: () => <div data-testid="planet-info" /> }));
+vi.mock('./PlanetInfo', () => ({
+  PlanetInfo: ({ onAskAstronomer }: { onAskAstronomer?: () => void }) => (
+    <button data-testid="planet-info" onClick={onAskAstronomer}>Ask astronomer</button>
+  ),
+}));
 vi.mock('./DateSelector', () => ({ DateSelector: () => <div data-testid="date-selector" /> }));
 vi.mock('./AstronomerModal', () => ({ AstronomerModal: () => <div data-testid="astronomer-modal" /> }));
 vi.mock('./AuthModal', () => ({ AuthModal: () => <div data-testid="auth-modal" /> }));
@@ -115,6 +97,8 @@ describe('HUD', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.innerWidth = 1024;
+    mockUIState.isFavoritesOpen = false;
+    mockUIState.isAuthModalOpen = false;
     solarState.selectedPlanet = { bodyId: '399', englishName: 'Earth' };
   });
 
@@ -133,6 +117,28 @@ describe('HUD', () => {
     fireEvent.click(screen.getByTitle('Show panel'));
 
     expect(screen.getByTitle('Hide panel')).toBeInTheDocument();
+  });
+
+  it('mounts each optional dialog only after its first open request', async () => {
+    const { rerender } = render(<HUD onDateChange={vi.fn()} />);
+    expect(screen.queryByTestId('favorites-modal')).toBeNull();
+    expect(screen.queryByTestId('auth-modal')).toBeNull();
+    expect(screen.queryByTestId('astronomer-modal')).toBeNull();
+
+    mockUIState.isFavoritesOpen = true;
+    rerender(<HUD onDateChange={vi.fn()} />);
+    expect(await screen.findByTestId('favorites-modal')).toBeInTheDocument();
+
+    mockUIState.isFavoritesOpen = false;
+    mockUIState.isAuthModalOpen = true;
+    rerender(<HUD onDateChange={vi.fn()} />);
+    expect(await screen.findByTestId('auth-modal')).toBeInTheDocument();
+    expect(screen.queryByTestId('favorites-modal')).toBeNull();
+
+    mockUIState.isAuthModalOpen = false;
+    rerender(<HUD onDateChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Ask astronomer' }));
+    expect(await screen.findByTestId('astronomer-modal')).toBeInTheDocument();
   });
 
   it('renders PlanetInfo by default when a planet is selected', () => {
