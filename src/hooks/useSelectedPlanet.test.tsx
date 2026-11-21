@@ -63,6 +63,21 @@ describe('useSelectedPlanet', () => {
     }
   });
 
+  it('keeps the same telemetry snapshot while the display clock is paused', () => {
+    const { result } = renderHook(() => useSelectedPlanet());
+    act(() => { vi.advanceTimersByTime(500); });
+    const paused = result.current;
+
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(result.current).toBe(paused);
+
+    act(() => {
+      clockRuntime.setTimeMs(START + 5000);
+      vi.advanceTimersByTime(500);
+    });
+    expect(result.current.planet?.position?.x).toBeCloseTo(150_000_025);
+  });
+
   it('updates immediately on a paused seek and on corrected trajectory data', () => {
     const { result } = renderHook(() => useSelectedPlanet());
     act(() => useSolarStore.getState().setCurrentTime(new Date(START + 5000)));

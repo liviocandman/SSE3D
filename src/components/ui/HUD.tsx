@@ -19,8 +19,6 @@ const FavoritesModal = dynamic(() => import("./FavoritesModal").then(mod => mod.
 // --- Types ---
 
 interface HUDProps {
-  onDateChange: (date: string) => void;
-  onRefresh?: () => void;
   isFallback?: boolean;
 }
 
@@ -60,13 +58,31 @@ function getPlanetAccentClass(bodyId: string): string {
   return mapping[bodyId] || "border-white/20 shadow-white/10";
 }
 
+function SelectedPlanetDetails({ onAskAstronomer }: { onAskAstronomer: () => void }) {
+  const { planet, earthPosition, staleSampleAt } = useSelectedPlanet();
+  return (
+    <>
+      {staleSampleAt && (
+        <div role="status" className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-100">
+          A cena mantém a última amostra disponível de {new Date(staleSampleAt).toLocaleString('pt-BR', { timeZone: 'UTC', timeZoneName: 'short' })} enquanto aguarda dados para o instante atual.
+        </div>
+      )}
+
+      <PlanetInfo
+        planet={planet}
+        earthPosition={earthPosition}
+        onAskAstronomer={onAskAstronomer}
+      />
+    </>
+  );
+}
+
 // --- Component ---
 
 export function HUD({
   isFallback = false,
 }: HUDProps) {
   const isMobile = useIsMobile();
-  const { planet, earthPosition, staleSampleAt } = useSelectedPlanet();
   
   const { selectedPlanet, viewMode, toggleViewMode } = useSolarStore(
     useShallow((state) => ({
@@ -151,17 +167,9 @@ export function HUD({
         </div>
       )}
 
-      {staleSampleAt && (
-        <div role="status" className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-100">
-          A cena mantém a última amostra disponível de {new Date(staleSampleAt).toLocaleString('pt-BR', { timeZone: 'UTC', timeZoneName: 'short' })} enquanto aguarda dados para o instante atual.
-        </div>
-      )}
-
-      <PlanetInfo
-        planet={planet}
-        earthPosition={earthPosition}
-        onAskAstronomer={() => setAstronomerState("open")}
-      />
+      {selectedPlanet ? (
+        <SelectedPlanetDetails onAskAstronomer={() => setAstronomerState("open")} />
+      ) : <PlanetInfo planet={null} />}
     </div>
   );
 

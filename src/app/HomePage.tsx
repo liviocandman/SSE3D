@@ -28,9 +28,7 @@ interface HomePageProps {
 }
 
 export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: HomePageProps) {
-  const currentDate = useSolarStore((state) => state.currentDate);
   const trajectoryBaseDate = useSolarStore((state) => state.trajectoryBaseDate);
-  const setCurrentDate = useSolarStore((state) => state.setCurrentDate);
   const [fatalSceneError, setFatalSceneError] = useState<AppError | null>(null);
   const handleRendererInitializationError = useCallback((error: unknown) => {
     setFatalSceneError({
@@ -52,8 +50,7 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
     source,
     isFallback,
     retry,
-    retryCount,
-    refresh
+    retryCount
   } = useEphemeris({ date: trajectoryBaseDate, spanDays: 30 });
 
   // WebGL error detection
@@ -78,11 +75,6 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
 
   const showErrorOverlay = !!activeError && (!!fatalSceneError || !!webglError || !isFallback);
 
-  const handleDateChange = (newDate: string) => {
-    setCurrentDate(newDate);
-    console.log(`[HomePage] Date changed to: ${newDate}`);
-  };
-
   useEffect(() => {
     if (!isFallback) toast.dismiss('degraded-ephemeris');
     if (isLoading || !source) return;
@@ -103,8 +95,8 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
       });
     }
 
-    console.log(`[HomePage] Ephemeris loaded - Source: ${source}, Bodies: ${ephemerisData.length}, Date: ${currentDate}`);
-  }, [source, isFallback, isLoading, ephemerisData.length, currentDate]);
+    console.log(`[HomePage] Ephemeris loaded - Source: ${source}, Bodies: ${ephemerisData.length}, Window: ${trajectoryBaseDate}`);
+  }, [source, isFallback, isLoading, ephemerisData.length, trajectoryBaseDate]);
 
   const showLoadingScreen = loadingProgress.stage !== 'ready' && !showErrorOverlay;
 
@@ -154,8 +146,6 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
 
       {!showLoadingScreen && !showErrorOverlay && (
         <HUD
-          onDateChange={handleDateChange}
-          onRefresh={refresh}
           isFallback={isFallback}
         />
       )}

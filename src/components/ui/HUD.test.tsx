@@ -103,7 +103,7 @@ describe('HUD', () => {
   });
 
   it('toggles minimize state when clicking the control tab', () => {
-    render(<HUD onDateChange={vi.fn()} />);
+    render(<HUD />);
 
     const toggleButton = screen.getByTitle('Hide panel');
     expect(toggleButton).toBeInTheDocument();
@@ -120,52 +120,52 @@ describe('HUD', () => {
   });
 
   it('mounts each optional dialog only after its first open request', async () => {
-    const { rerender } = render(<HUD onDateChange={vi.fn()} />);
+    const { rerender } = render(<HUD />);
     expect(screen.queryByTestId('favorites-modal')).toBeNull();
     expect(screen.queryByTestId('auth-modal')).toBeNull();
     expect(screen.queryByTestId('astronomer-modal')).toBeNull();
 
     mockUIState.isFavoritesOpen = true;
-    rerender(<HUD onDateChange={vi.fn()} />);
+    rerender(<HUD />);
     expect(await screen.findByTestId('favorites-modal')).toBeInTheDocument();
 
     mockUIState.isFavoritesOpen = false;
     mockUIState.isAuthModalOpen = true;
-    rerender(<HUD onDateChange={vi.fn()} />);
+    rerender(<HUD />);
     expect(await screen.findByTestId('auth-modal')).toBeInTheDocument();
     expect(screen.queryByTestId('favorites-modal')).toBeNull();
 
     mockUIState.isAuthModalOpen = false;
-    rerender(<HUD onDateChange={vi.fn()} />);
+    rerender(<HUD />);
     fireEvent.click(screen.getByRole('button', { name: 'Ask astronomer' }));
     expect(await screen.findByTestId('astronomer-modal')).toBeInTheDocument();
   });
 
   it('renders PlanetInfo by default when a planet is selected', () => {
-    render(<HUD onDateChange={vi.fn()} />);
+    render(<HUD />);
     expect(screen.getByTestId('planet-info')).toBeInTheDocument();
   });
 
   it.each([390, 1024])('shows the degraded data notice and clears it after recovery at width %i', (width) => {
     window.innerWidth = width;
-    const { rerender } = render(<HUD onDateChange={vi.fn()} isFallback />);
+    const { rerender } = render(<HUD isFallback />);
     expect(screen.getByRole('status')).toHaveTextContent(
       'Algumas posições usam dados de referência e podem não representar a data selecionada.',
     );
     expect(screen.getAllByText(/Dados degradados/).length).toBeGreaterThan(0);
     expect(screen.queryByText('Offline')).not.toBeInTheDocument();
-    rerender(<HUD onDateChange={vi.fn()} isFallback={false} />);
+    rerender(<HUD isFallback={false} />);
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.queryByText(/Dados degradados/)).not.toBeInTheDocument();
   });
 
   it('reopens the minimized drawer when a different planet is selected', async () => {
-    const { rerender } = render(<HUD onDateChange={vi.fn()} />);
+    const { rerender } = render(<HUD />);
     fireEvent.click(screen.getByTitle('Hide panel'));
     expect(screen.getByTitle('Show panel')).toBeInTheDocument();
 
     solarState.selectedPlanet = { bodyId: '499', englishName: 'Mars' };
-    rerender(<HUD onDateChange={vi.fn()} />);
+    rerender(<HUD />);
 
     await waitFor(() => expect(screen.getByTitle('Hide panel')).toBeInTheDocument());
   });
@@ -173,11 +173,11 @@ describe('HUD', () => {
   it('expands the mobile panel from the planetary preview without mission controls', () => {
     window.innerWidth = 390;
     solarState.selectedPlanet = null;
-    const { rerender } = render(<HUD onDateChange={vi.fn()} />);
+    const { rerender } = render(<HUD />);
     expect(screen.getByText('Tap to explore')).toBeInTheDocument();
 
     solarState.selectedPlanet = { bodyId: '399', englishName: 'Earth' };
-    rerender(<HUD onDateChange={vi.fn()} />);
+    rerender(<HUD />);
     fireEvent.click(screen.getByText('Earth'));
 
     expect(screen.queryByText('Tap to explore')).not.toBeInTheDocument();
