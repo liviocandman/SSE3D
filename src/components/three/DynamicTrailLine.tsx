@@ -10,6 +10,7 @@ import {
   type TrailSample,
 } from '@/lib/dynamicTrailBuffers';
 import { KM_TO_UNIT } from '@/lib/scales';
+import { toRelativeRenderUnitsInto } from '@/lib/renderFrame';
 import { useSolarStore } from '@/store/solarStore';
 import { findTemporalInterval, createTemporalLookupCache, resetCacheIfDataChanged } from '@/lib/temporalLookup';
 import { clockRuntime } from '@/lib/time/clockRuntime';
@@ -28,7 +29,7 @@ interface DynamicTrailLineProps {
 const INITIAL_POINTS: [number, number, number][] = [[0, 0, 0], [0, 0, 0]];
 const INITIAL_COLORS: [number, number, number][] = [[1, 1, 1], [1, 1, 1]];
 
-/** Planet trails with persistent GPU attributes and camera-relative positions. */
+/** Planet trails with persistent GPU attributes in a local frame near the visible endpoint. */
 export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
   samples,
   maxTrailPoints,
@@ -49,9 +50,6 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
     color: null as THREE.Color | null,
     lastVisibleIndex: -1,
     subdivisions: 1,
-    originX: NaN,
-    originY: NaN,
-    originZ: NaN,
   });
 
   useLayoutEffect(() => {
@@ -93,24 +91,23 @@ export const DynamicTrailLine: React.FC<DynamicTrailLineProps> = ({
       lastUpload.current.lastVisibleIndex = -1;
       return;
     }
-    const origin = useSolarStore.getState().renderOrigin;
+    // Keep orbital positions near the visible endpoint before writing Float32 attributes.
+    // Camera-relative rebasing then moves the line through its object transform.
+    const anchor = samples[Math.floor(lastVisibleIndex / subdivisions)].point;
+    toRelativeRenderUnitsInto(line.position, anchor, useSolarStore.getState().renderOrigin, KM_TO_UNIT);
     const previous = lastUpload.current;
     // Time changes only affect geometry when the visible sample changes.
     if (previous.buffers === buffers && previous.samples === samples && previous.color === baseColor
       && previous.subdivisions === subdivisions
-      && previous.lastVisibleIndex === lastVisibleIndex && previous.originX === origin.x
-      && previous.originY === origin.y && previous.originZ === origin.z) return;
+      && previous.lastVisibleIndex === lastVisibleIndex) return;
 
-    updateDynamicTrailBuffers(buffers, samples, lastVisibleIndex, count, origin, KM_TO_UNIT, baseColor, subdivisions);
+    updateDynamicTrailBuffers(buffers, samples, lastVisibleIndex, count, anchor, KM_TO_UNIT, baseColor, subdivisions);
     line.visible = buffers.geometry.instanceCount > 0;
     previous.buffers = buffers;
     previous.samples = samples;
     previous.color = baseColor;
     previous.lastVisibleIndex = lastVisibleIndex;
     previous.subdivisions = subdivisions;
-    previous.originX = origin.x;
-    previous.originY = origin.y;
-    previous.originZ = origin.z;
   });
 
   return (
