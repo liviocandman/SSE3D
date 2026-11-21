@@ -136,13 +136,11 @@ function runFollowStep(
   }
 }
 
-function enforceControlsTarget(controls: unknown) {
+function enforceControlsTarget(controls: unknown, target: THREE.Vector3) {
   const ctrl = controls as OrbitControlsLike | null | undefined;
-  if (!ctrl?.target) return;
-  if (ctrl.target.lengthSq() > 0.000001) {
-    ctrl.target.set(0, 0, 0);
-    ctrl.update();
-  }
+  if (!ctrl?.target || ctrl.target.equals(target)) return;
+  ctrl.target.copy(target);
+  ctrl.update();
 }
 
 export function useCameraAnimation(): UseCameraAnimationReturn {
@@ -155,6 +153,8 @@ export function useCameraAnimation(): UseCameraAnimationReturn {
     absPos: new THREE.Vector3(),
     parentPos: new THREE.Vector3(),
     focusCenter: new THREE.Vector3(),
+    preRebaseFocusCenter: new THREE.Vector3(),
+    orbitTarget: new THREE.Vector3(),
   });
   const followLookupCacheRef = useRef(createTemporalLookupCache());
   const followParentLookupCacheRef = useRef(createTemporalLookupCache());
@@ -171,8 +171,9 @@ export function useCameraAnimation(): UseCameraAnimationReturn {
   // Animation frame loop
   useFrame(() => {
     let solarStore = useSolarStore.getState();
-    const { v1, v2, v3, absPos, parentPos, focusCenter } = pool.current;
+    const { v1, v2, v3, absPos, parentPos, focusCenter, preRebaseFocusCenter, orbitTarget } = pool.current;
     focusCenter.set(0, 0, 0);
+    let previousFocusCenter = focusCenter;
     let { cameraNavMode, followTargetId } = solarStore;
 
     if (cameraNavMode === 'travel') {
@@ -207,6 +208,7 @@ export function useCameraAnimation(): UseCameraAnimationReturn {
           // A didactic moon's orbit also changes scale. Keep the new visual
           // centre at the origin even though continuous tracking is stopped.
           if (resolveNavigationTarget(focusBodyId, solarStore.viewMode, absPos, parentPos, followLookupCacheRef.current, followParentLookupCacheRef.current)) {
+            previousFocusCenter = preRebaseFocusCenter.copy(focusCenter);
             solarStore.setRenderOrigin({ x: absPos.x, y: absPos.y, z: absPos.z }, 'selected_body');
             focusCenter.set(0, 0, 0);
           }
@@ -214,11 +216,15 @@ export function useCameraAnimation(): UseCameraAnimationReturn {
       }
     }
     if (framing && focusBodyId) {
+      if (cameraNavMode !== 'idle' || previous?.bodyId !== focusBodyId) orbitTarget.set(0, 0, 0);
       if (previous?.bodyId === focusBodyId && previous.mode !== solarStore.viewMode && focusBodyId !== '10') {
-        // Mesh radii change atomically with view mode. Apply the same ratio to
-        // camera distance in this frame so the body keeps its projected size.
+        // Scale the camera's offset from the body, including a moon whose
+        // visual centre moved when its orbit scale changed.
         const ratio = framing.radius / previous.radius;
-        camera.position.multiplyScalar(ratio);
+        camera.position.sub(previousFocusCenter).multiplyScalar(ratio).add(focusCenter);
+        // Transform the stopped orbit pivot as well so OrbitControls preserves
+        // the viewing direction. Keep this pivot fixed until navigation resumes.
+        orbitTarget.sub(previousFocusCenter).multiplyScalar(ratio).add(focusCenter);
         if (zoomRef.current) {
           zoomRef.current.from *= ratio;
           zoomRef.current.to *= ratio;
@@ -227,6 +233,7 @@ export function useCameraAnimation(): UseCameraAnimationReturn {
       focusScaleRef.current = { bodyId: focusBodyId, mode: solarStore.viewMode, radius: framing.radius };
     } else {
       focusScaleRef.current = null;
+      orbitTarget.set(0, 0, 0);
     }
 
     const zoom = zoomRef.current;
@@ -246,15 +253,16 @@ export function useCameraAnimation(): UseCameraAnimationReturn {
       if (v2.length() < framing.minDistance) {
         if (v2.lengthSq() === 0) v2.set(0, 0, 1);
         camera.position.copy(focusCenter).add(v2.setLength(framing.minDistance));
-        // OrbitControls still enforces a radius around the origin at priority -1.
-        // Keep its next clamp from pushing the camera back into the offset body.
-        if (camera.position.length() < framing.minDistance) {
-          if (camera.position.lengthSq() === 0) camera.position.set(0, 0, 1);
-          camera.position.setLength(focusCenter.length() + framing.minDistance);
+        // OrbitControls also enforces clearance around its pivot. Keep its
+        // next clamp from pushing the camera back into the offset body.
+        v2.copy(camera.position).sub(orbitTarget);
+        if (v2.length() < framing.minDistance) {
+          if (v2.lengthSq() === 0) v2.set(0, 0, 1);
+          camera.position.copy(orbitTarget).add(v2.setLength(orbitTarget.distanceTo(focusCenter) + framing.minDistance));
         }
       }
     }
-    enforceControlsTarget(controls);
+    enforceControlsTarget(controls, orbitTarget);
   }, FRAME_PRIORITIES.ORIGIN);
 
   const focusOn = useCallback((

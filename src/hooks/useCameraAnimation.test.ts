@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as THREE from 'three';
+import { OrbitControls } from 'three-stdlib';
 import { renderHook } from '@testing-library/react';
 import { useCameraAnimation } from './useCameraAnimation';
 import { useSolarStore, type SolarState } from '@/store/solarStore';
@@ -167,18 +168,96 @@ describe('camera-relative navigation', () => {
     expect(state.cameraNavMode).toBe('idle');
   });
 
-  it('rebases a stopped moon focus when its displayed orbit changes scale', () => {
+  it('preserves the relative framing of an offset planet when switching scale', () => {
+    state.cameraFocusBodyId = '399';
+    state.renderOrigin = { x: 149600000, y: 0, z: 0 };
+    vi.mocked(resolveGeneralTargetFrame).mockImplementation((_id, _time, out) => {
+      out.set(149600000, 0, 80000);
+      return true;
+    });
+    renderHook(() => useCameraAnimation());
+    camera.position.set(0, 0, 0.1);
+    frame();
+
+    const initialPosition = camera.position.clone();
+    const center = new THREE.Vector3(0, 0, 0.08);
+    const realistic = getBodyCameraFraming('399', 'realistic')!;
+    const didactic = getBodyCameraFraming('399', 'didactic')!;
+    const initialRatio = camera.position.distanceTo(center) / realistic.radius;
+
+    state.viewMode = 'didactic';
+    frame();
+    expect(camera.position.distanceTo(center) / didactic.radius).toBeCloseTo(initialRatio, 8);
+
+    state.viewMode = 'realistic';
+    frame();
+    expect(camera.position.distanceTo(initialPosition)).toBeCloseTo(0, 8);
+    expect(state.renderOrigin).toEqual({ x: 149600000, y: 0, z: 0 });
+  });
+
+  it.each([
+    { driftKm: 80000, didacticDistance: 40 },
+    { driftKm: 9000, didacticDistance: 16 },
+  ])('keeps the planet in view after OrbitControls updates at $didacticDistance units', ({ driftKm, didacticDistance }) => {
+    state.cameraFocusBodyId = '399';
+    state.renderOrigin = { x: 149600000, y: 0, z: 0 };
+    state.viewMode = 'didactic';
+    let bodyDriftKm = driftKm;
+    vi.mocked(resolveGeneralTargetFrame).mockImplementation((_id, _time, out) => {
+      out.set(149600000, 0, bodyDriftKm);
+      return true;
+    });
+    const center = new THREE.Vector3(0, 0, driftKm * 1e-6);
+    camera.position.set(0, 0, center.z - didacticDistance);
+    const orbitControls = new OrbitControls(camera);
+    const realistic = getBodyCameraFraming('399', 'realistic')!;
+    const didactic = getBodyCameraFraming('399', 'didactic')!;
+    orbitControls.minDistance = didactic.minDistance;
+    vi.mocked(useThree).mockReturnValue({ camera, controls: orbitControls } as never);
+    renderHook(() => useCameraAnimation());
+    frame();
+    orbitControls.update();
+    const initialDirection = camera.getWorldDirection(new THREE.Vector3());
+
+    state.viewMode = 'realistic';
+    orbitControls.minDistance = realistic.minDistance;
+    frame();
+    orbitControls.update();
+    expect(camera.getWorldDirection(new THREE.Vector3()).dot(initialDirection)).toBeCloseTo(1, 8);
+    expect(camera.position.distanceTo(center)).toBeCloseTo(didacticDistance * realistic.radius / didactic.radius, 8);
+
+    const stoppedTarget = orbitControls.target.clone();
+    bodyDriftKm += 100;
+    frame();
+    expect(orbitControls.target).toEqual(stoppedTarget);
+
+    state.setFollowTarget('399');
+    frame();
+    expect(orbitControls.target.toArray()).toEqual([0, 0, 0]);
+  });
+
+  it.each([0, 3000])('rebases a stopped moon with %s km of drift when its displayed orbit changes scale', (moonDriftKm) => {
+    let moonOffsetKm = 0;
     vi.mocked(resolveGeneralTargetFrame).mockImplementation((id, _time, out) => {
-      out.set(id === '301' ? 149984400 : 149600000, 0, 0); return true;
+      const distanceKm = id === '301' ? 149984400 : 149600000;
+      out.set(distanceKm, 0, id === '301' ? moonOffsetKm : 0);
+      return true;
     });
     const { result } = renderHook(() => useCameraAnimation());
     result.current.focusOn({ x: 149984400, y: 0, z: 0 }, undefined, '301');
     nowMs += state.travelDurationMs; frame();
-    result.current.stopTracking(); state.viewMode = 'didactic'; frame();
+    result.current.stopTracking();
+    moonOffsetKm = moonDriftKm;
+    frame();
+    const oldCenter = new THREE.Vector3(0, 0, moonDriftKm * 1e-6);
+    const initialRatio = camera.position.distanceTo(oldCenter) / getBodyCameraFraming('301', 'realistic')!.radius;
+
+    state.viewMode = 'didactic';
+    frame();
     const orbitScale = getMoonOrbitScale('399', 'ROCKY_PLANET', 0.00257 * 149_597_870.7, 'didactic');
     expect(state.renderOrigin.x).toBeCloseTo(149600000 + 384400 * orbitScale, 2);
     expect(state.cameraNavMode).toBe('idle');
-    expect(camera.position.length()).toBeCloseTo(getBodyCameraFraming('301', 'didactic')!.distance, 8);
+    expect(camera.position.length() / getBodyCameraFraming('301', 'didactic')!.radius).toBeCloseTo(initialRatio, 8);
   });
 
   it('protects the global Sun without moving the initial view or zooming through its scale transition', () => {
