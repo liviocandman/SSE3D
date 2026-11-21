@@ -20,7 +20,7 @@ const planet: EphemerisData = {
 describe('planet interaction', () => {
   beforeEach(() => {
     clockRuntime.setTimeMs(START + 5000);
-    useSolarStore.setState({ masterTrajectorySegments: {} });
+    useSolarStore.setState({ masterTrajectorySegments: {}, baseTrajectorySegments: {} });
   });
 
   function interaction(data = planet) {
@@ -46,6 +46,20 @@ describe('planet interaction', () => {
     handlePlanetDoubleClick('499');
     expect(setTravelTarget).toHaveBeenCalledWith(expect.objectContaining({ x: 1150, y: 0, z: 0 }), expect.any(Number));
     expect(setViewMode).toHaveBeenCalledWith('realistic');
+  });
+
+  it('uses the covered shared base buffer for focus while a master window is stale', () => {
+    const base = planet.trajectory!.map((point) => ({ ...point, position: { ...point.position, x: point.position.x + 2000 } }));
+    const oldMaster = planet.trajectory!.map((point) => ({
+      ...point, timestamp: new Date(Date.parse(point.timestamp) - 60_000).toISOString(),
+    }));
+    useSolarStore.setState({
+      masterTrajectorySegments: { '499': [buildTrajectorySegment(oldMaster)!] },
+      baseTrajectorySegments: { '499': [buildTrajectorySegment(base)!] },
+    });
+    const { handlePlanetDoubleClick, setTravelTarget } = interaction();
+    handlePlanetDoubleClick('499');
+    expect(setTravelTarget).toHaveBeenCalledWith(expect.objectContaining({ x: 2150, y: 0, z: 0 }), expect.any(Number));
   });
 
   it('samples the payload trajectory at the current instant while the master buffer is empty', () => {

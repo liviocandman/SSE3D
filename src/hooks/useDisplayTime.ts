@@ -51,10 +51,11 @@ function startSharedTimer(intervalMs: number) {
   const clock = getSharedClock(intervalMs);
   if (clock.intervalId !== null) return;
 
-  clock.lastTime = getDisplayTimeSnapshot();
   clock.intervalId = setInterval(() => {
-    clock.lastTime = getDisplayTimeSnapshot();
-    clock.listeners.forEach((listener) => listener(clock.lastTime!));
+    const nextTime = getDisplayTimeSnapshot();
+    if (nextTime.getTime() === clock.lastTime?.getTime()) return;
+    clock.lastTime = nextTime;
+    clock.listeners.forEach((listener) => listener(nextTime));
   }, intervalMs);
 }
 

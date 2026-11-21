@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useSolarStore } from '@/store/solarStore';
 import { buildTrajectorySegments } from '@/lib/trajectoryEngine';
-import { resolveCoveredTargetPosition } from './frameResolvers';
+import { resolvePlanetFrame } from './frameResolvers';
+import { resolveCoveredTargetPosition } from './trajectoryQueries';
+import * as THREE from 'three';
 
 const START = Date.parse('2026-01-01T00:00:00Z');
 function segments(seconds: number[], offset = 0, bodyId = '399') {
@@ -12,7 +14,7 @@ function segments(seconds: number[], offset = 0, bodyId = '399') {
 }
 
 describe('covered travel targets', () => {
-  beforeEach(() => useSolarStore.setState({ masterTrajectorySegments: {} }));
+  beforeEach(() => useSolarStore.setState({ masterTrajectorySegments: {}, baseTrajectorySegments: {} }));
 
   it.each([
     ['missing', []], ['before coverage', [10, 20]],
@@ -46,5 +48,27 @@ describe('covered travel targets', () => {
       '301': segments([0, 10], 100, '301'), '399': segments([0, 10]),
     } });
     expect(resolveCoveredTargetPosition('301', START)).toEqual({ x: 100, y: 0, z: 0 });
+  });
+});
+
+describe('position source precedence after a seek', () => {
+  beforeEach(() => useSolarStore.setState({ masterTrajectorySegments: {}, baseTrajectorySegments: {} }));
+
+  it('uses a covered base response while the stale master buffer has no coverage', () => {
+    useSolarStore.setState({ masterTrajectorySegments: { '399': segments([0, 1], 1000) } });
+    const out = new THREE.Vector3();
+    const status = resolvePlanetFrame('399', START + 10_000, out, null, segments([9, 11], 2000));
+    expect(status).toBe('ok');
+    expect(out.x).toBe(2010);
+  });
+
+  it('uses the shared base buffer when a stale master endpoint cannot cover the seek', () => {
+    useSolarStore.setState({
+      masterTrajectorySegments: { '399': segments([0, 1], 1000) },
+      baseTrajectorySegments: { '399': segments([9, 11], 2000) },
+    });
+    const out = new THREE.Vector3();
+    expect(resolvePlanetFrame('399', START + 10_000, out)).toBe('ok');
+    expect(out.x).toBe(2010);
   });
 });

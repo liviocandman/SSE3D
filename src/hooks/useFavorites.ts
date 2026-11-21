@@ -152,6 +152,7 @@ export function useFavorites(bodyId?: string) {
 
   return useQuery<Favorite[]>({
     queryKey: ['favorites', bodyId, sessionId, status],
+    enabled: status !== 'loading',
     queryFn: async () => {
       const params = new URLSearchParams();
       if (bodyId) params.set('body_id', bodyId);

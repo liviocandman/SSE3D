@@ -22,6 +22,25 @@ export const getSharedKTX2Loader = (gl?: THREE.WebGLRenderer): KTX2Loader => {
   return globalInstance;
 };
 
+export class BasisTranscoderError extends Error {
+  constructor(cause: unknown) {
+    super('Could not initialize the shared Basis texture transcoder', { cause });
+    this.name = 'BasisTranscoderError';
+  }
+}
+
+/** Identify shared initialization failures separately from one texture's failure. */
+export async function loadOptionalKTX2Texture(gl: THREE.WebGLRenderer, url: string): Promise<THREE.Texture> {
+  // three-stdlib 2.36.1 implements init(), but omits it from its declarations.
+  const loader = getSharedKTX2Loader(gl) as KTX2Loader & { init(): Promise<void> };
+  try {
+    await loader.init();
+  } catch (error) {
+    throw new BasisTranscoderError(error);
+  }
+  return loader.loadAsync(url);
+}
+
 /**
  * A wrapper class for useLoader compatibility.
  * When React Three Fiber calls `new SingletonKTX2Loader()`, it returns the shared instance.

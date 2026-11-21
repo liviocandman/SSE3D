@@ -17,6 +17,8 @@ export interface CameraState {
   // Camera-relative rendering (V1 & V2 Core)
   renderOrigin: { x: number; y: number; z: number };
   renderOriginMode: RenderOriginMode;
+  /** Body still near the render origin; independent of HUD selection and playback tracking. */
+  cameraFocusBodyId: string | null;
 
   // Navigation V2 (Origin-Only Model)
   cameraNavMode: CameraNavMode;
@@ -33,6 +35,7 @@ export interface CameraActions {
   resetTravel: () => void;
   setRenderOrigin: (origin: { x: number; y: number; z: number }, mode?: RenderOriginMode) => void;
   resetRenderOrigin: () => void;
+  setCameraFocusBody: (bodyId: string | null) => void;
   startOriginTravel: (
     targetKm: { x: number; y: number; z: number },
     durationMs: number,
@@ -51,6 +54,7 @@ export const createCameraSlice: StateCreator<CameraSlice, [], [], CameraSlice> =
   travelTargetRadius: undefined,
   renderOrigin: { x: 0, y: 0, z: 0 },
   renderOriginMode: 'global',
+  cameraFocusBodyId: '10',
 
   cameraNavMode: 'idle',
   originStartKm: { x: 0, y: 0, z: 0 },
@@ -66,7 +70,11 @@ export const createCameraSlice: StateCreator<CameraSlice, [], [], CameraSlice> =
   setRenderOrigin: (origin, mode = 'custom') =>
     set(() => ({ renderOrigin: origin, renderOriginMode: mode })),
   resetRenderOrigin: () =>
-    set(() => ({ renderOrigin: { x: 0, y: 0, z: 0 }, renderOriginMode: 'global' })),
+    set(() => ({
+      renderOrigin: { x: 0, y: 0, z: 0 }, renderOriginMode: 'global', cameraFocusBodyId: '10',
+      cameraNavMode: 'idle', followTargetId: null, travelTarget: null, travelTargetRadius: undefined,
+    })),
+  setCameraFocusBody: (bodyId) => set({ cameraFocusBodyId: bodyId }),
 
   startOriginTravel: (targetKm, durationMs, nowMs, followTargetId = null) => set((state) => ({
     cameraNavMode: 'travel',
@@ -74,11 +82,13 @@ export const createCameraSlice: StateCreator<CameraSlice, [], [], CameraSlice> =
     originTargetKm: targetKm,
     travelStartMs: nowMs,
     travelDurationMs: durationMs,
-    followTargetId
+    followTargetId,
+    cameraFocusBodyId: followTargetId,
   })),
   setFollowTarget: (targetId, leadTimeMs = 0) => set({
     cameraNavMode: 'follow',
     followTargetId: targetId,
+    cameraFocusBodyId: targetId,
     followLeadTimeMs: leadTimeMs
   }),
   setOriginTarget: (targetKm) => set({

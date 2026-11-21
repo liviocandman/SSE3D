@@ -72,6 +72,25 @@ describe('useEphemeris', () => {
     expect(result.current.source).toBe('NASA_LIVE');
   });
 
+  it('keeps the displayed bodies while loading the window for a new date', async () => {
+    let complete!: (response: ReturnType<typeof success>) => void;
+    mockFetch.mockResolvedValueOnce(success(payload('SPICE_KERNELS')))
+      .mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const { result, rerender } = renderHook(({ date }) => useEphemeris({ date }), {
+      initialProps: { date: '2026-03-26' }, wrapper: createWrapper(),
+    });
+    await waitFor(() => expect(result.current.data).toHaveLength(2));
+
+    rerender({ date: '2026-07-26' });
+    await waitFor(() => expect(result.current.isLoading).toBe(true));
+    expect(result.current.data).toHaveLength(2);
+
+    const next = payload('SPICE_KERNELS');
+    next.data[1].position.x = 50_000_000;
+    act(() => complete(success(next)));
+    await waitFor(() => expect(result.current.data[1].position.x).toBe(50_000_000));
+  });
+
   it('should handle API errors and return fallback data', async () => {
     mockFetch.mockResolvedValue({
       ok: false,

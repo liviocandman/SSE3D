@@ -2,19 +2,18 @@
  * Coordinate-stabilized MoonSystem component.
  */
 
-import { useRef, useState, useEffect, Suspense, useMemo } from 'react';
-import { useFrame, useThree, useLoader } from '@react-three/fiber';
+import { useRef, useState, Suspense, useMemo } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import * as THREE from 'three';
-import { SingletonKTX2Loader, getSharedKTX2Loader } from '@/lib/SingletonKTX2Loader';
+import { MoonSurfaceMaterial } from './MoonSurfaceMaterial';
+import { bodySelectionData } from '@/lib/bodyPresentation';
 import TrailLine from './TrailLine';
 
 import {
   getPlanetConfig,
-  getTexturePath,
   PLANET_MOONS,
   type TextureTier,
-  getGenericMoonTexture,
 } from '@/lib/textureConfig';
 import {
   getMoonOrbitScale,
@@ -31,7 +30,9 @@ import { SPHERE_MID, HITBOX_SPHERE } from '@/lib/geometryPool';
 import { clockRuntime } from '@/lib/time/clockRuntime';
 import type { EphemerisTrajectory } from '@/lib/types';
 import { USE_BACKEND_ORBIT_READY } from '@/lib/types';
-import { resolveCoveredTargetPosition, resolveMoonFrame } from '@/lib/simulation/frameResolvers';
+import { resolveMoonFrame } from '@/lib/simulation/frameResolvers';
+import { resolveCoveredTargetPosition } from '@/lib/simulation/trajectoryQueries';
+import { FRAME_PRIORITIES } from '@/lib/framePriorities';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -66,9 +67,6 @@ const EMPTY_TRAJECTORY: EphemerisTrajectory[] = [];
 const EMPTY_SEGMENTS: TrajectorySegment[] = [];
 const MAX_LIGHT_FALLBACK_POINTS = 240;
 
-// Global singleton to prevent recreating workers and to avoid React Suspense
-// (Removed local globalKtx2Loader and getKtx2Loader, now using getSharedKTX2Loader)
-
 function resolveSegmentAroundTime(segments: TrajectorySegment[], simTimeMs: number): TrajectorySegment | null {
   if (segments.length === 0) return null;
 
@@ -92,11 +90,6 @@ function resolveSegmentAroundTime(segments: TrajectorySegment[], simTimeMs: numb
     }
   }
   return nearest;
-}
-
-function resolveTextureTier(tier: string): TextureTier {
-  if (tier === 'low' || tier === 'high') return tier;
-  return 'mid';
 }
 
 function buildLightFallbackPoints(
@@ -138,12 +131,9 @@ function MoonMesh({
   void worldParentPositionKm;
   const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
-  const gl = useThree((state) => state.gl);
-  const isInitializedRef = useRef(false);
   const lookupCacheRef = useRef(createTemporalLookupCache());
   const parentLookupCacheRef = useRef(createTemporalLookupCache());
   const [isHovered, setIsHovered] = useState(false);
-  const tempVec = useRef(new THREE.Vector3());
   const absPositionKmRef = useRef(new THREE.Vector3());
   const localPositionKmRef = useRef(new THREE.Vector3());
 
@@ -164,8 +154,6 @@ function MoonMesh({
 
   // Pre-calculate properties for hooks safely
   const radius = getRadius(bodyId, 'MOON', viewMode);
-  const textureTier = resolveTextureTier(tier);
-  const textureUrl = config ? getTexturePath(bodyId, textureTier) : '';
 
   const orbitScale = config
     ? getMoonOrbitScale(
@@ -175,27 +163,6 @@ function MoonMesh({
       viewMode
     )
     : 1;
-
-  const texture = useLoader(SingletonKTX2Loader as unknown as typeof THREE.Loader, textureUrl || getGenericMoonTexture('mid'), () => {
-    getSharedKTX2Loader(gl);
-  }) as THREE.Texture;
-  const colorTexture = useMemo(() => {
-    const nextTexture = texture.clone();
-    nextTexture.colorSpace = THREE.SRGBColorSpace;
-    nextTexture.needsUpdate = true;
-    return nextTexture;
-  }, [texture]);
-
-  // Dispose of material on unmount
-  useEffect(() => {
-    const currentMesh = meshRef.current;
-    return () => {
-      colorTexture.dispose();
-      if (currentMesh?.material) {
-        (currentMesh.material as THREE.Material).dispose();
-      }
-    };
-  }, [colorTexture]);
 
   useFrame((_, delta) => {
     if (!config) return;
@@ -220,21 +187,15 @@ function MoonMesh({
       // Moon trajectories from the backend are parent-relative KM.
       // Simulation resolveMoonFrame provides localPositionKm in this parent-relative KM.
       const { x, y, z } = localPositionKmRef.current;
-      const targetPos = tempVec.current.set(x * SCALE, y * SCALE, z * SCALE);
-
-      if (!isInitializedRef.current) {
-        groupRef.current.position.copy(targetPos);
-        isInitializedRef.current = true;
-      } else {
-        groupRef.current.position.lerp(targetPos, 1 - Math.exp(-10 * delta));
-      }
+      // The sampler already interpolates. Do not add a second, delayed position.
+      groupRef.current.position.set(x * SCALE, y * SCALE, z * SCALE);
     }
 
     if (meshRef.current) {
       const rotationSpeed = config.rotationSpeed || 0.005;
       meshRef.current.rotation.y += rotationSpeed * 60 * delta * (isPlaying ? timeMultiplier : 1);
     }
-  });
+  }, FRAME_PRIORITIES.BODIES);
 
   if (!config) return null;
 
@@ -284,19 +245,19 @@ function MoonMesh({
   const labelAnchorY = isHovered ? 'bottom' : 'top';
 
   return (
-    <group name={bodyId} ref={groupRef}>
-      <mesh {...events} geometry={HITBOX_SPHERE} scale={isDataLoading ? 0 : hitboxRadius} renderOrder={-1} dispose={null}>
+    <group name={bodyId} ref={groupRef} visible={!isDataLoading}>
+      <mesh {...events} userData={bodySelectionData(bodyId, 'hitbox')} geometry={HITBOX_SPHERE} scale={isDataLoading ? 0 : hitboxRadius} renderOrder={-1} dispose={null}>
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      <mesh ref={meshRef} {...events} geometry={SPHERE_MID} scale={currentRadius} dispose={null}>
-        <meshStandardMaterial
-          map={colorTexture}
-          color="#ffffff"
-          emissive={0x000000}
-          emissiveIntensity={0}
-          transparent={isDataLoading}
-          opacity={isDataLoading ? 0 : 1}
+      <mesh ref={meshRef} {...events} userData={bodySelectionData(bodyId, 'surface')} scale={currentRadius}>
+        <primitive attach="geometry" object={SPHERE_MID} />
+        <MoonSurfaceMaterial
+          name={name}
+          textureUrl={config.texturePaths.low}
+          fallbackColor={config.fallbackColor}
+          meshRef={meshRef}
+          maxTier={tier as TextureTier}
         />
       </mesh>
 
@@ -315,6 +276,8 @@ function MoonMesh({
       {!isDataLoading && (
         <Billboard follow lockX={false} lockY={false} lockZ={false}>
           <Text
+            {...events}
+            userData={bodySelectionData(bodyId, 'label')}
             position={[0, labelY, 0]}
             fontSize={fontSize}
             color={labelColor}

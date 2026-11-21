@@ -1,53 +1,11 @@
 import * as THREE from 'three';
-import { useSolarStore } from '@/store/solarStore';
 import { samplePlanet } from './planetarySampler';
 import { sampleMoon } from './moonSampler';
 import type { SampleStatus } from './types';
 import type { TemporalLookupCache } from '../temporalLookup';
-import { hasCoverageAtTime, sampleTrajectoryAtTime, type TrajectorySegment } from '../trajectoryEngine';
-import { PLANET_MOONS } from '@/lib/textureConfig';
-import { BODY_IDS, type EphemerisPosition } from '@/lib/types';
-
-/**
- * Static mapping of moons to parents for fast routing.
- */
-const MOON_PARENT_BY_ID: Record<string, string> = Object.entries(PLANET_MOONS).reduce(
-  (acc, [parentId, moonIds]) => {
-    moonIds.forEach((moonId) => {
-      acc[moonId] = parentId;
-    });
-    return acc;
-  },
-  {} as Record<string, string>
-);
-
-/** Travel requires current scientific coverage, including the moon's parent.
- * Rendering resolvers may hold endpoints outside coverage; those are unsuitable
- * as a destination. Exact covered endpoints remain valid for travel. */
-export function resolveCoveredTargetPosition(
-  bodyId: string,
-  timeMs: number,
-  fallbackSegments: TrajectorySegment[] = [],
-): EphemerisPosition | null {
-  const state = useSolarStore.getState();
-  const segments = state.masterTrajectorySegments[bodyId]?.length
-    ? state.masterTrajectorySegments[bodyId] : fallbackSegments;
-  if (!hasCoverageAtTime(segments, timeMs)) return null;
-  const sample = sampleTrajectoryAtTime(segments, timeMs);
-  if (!sample) return null;
-
-  const parentId = MOON_PARENT_BY_ID[bodyId];
-  if (!parentId) return { ...sample.position };
-  const parentSegments = state.masterTrajectorySegments[parentId] ?? [];
-  if (!hasCoverageAtTime(parentSegments, timeMs)) return null;
-  const parent = sampleTrajectoryAtTime(parentSegments, timeMs);
-  if (!parent) return null;
-  return {
-    x: sample.position.x + parent.position.x,
-    y: sample.position.y + parent.position.y,
-    z: sample.position.z + parent.position.z,
-  };
-}
+import type { TrajectorySegment } from '../trajectoryEngine';
+import { BODY_IDS } from '@/lib/types';
+import { MOON_PARENT_BY_ID, resolveBodySegmentsAtTime } from './trajectoryQueries';
 
 /**
  * High-level resolver for planetary bodies.
@@ -60,10 +18,10 @@ export function resolvePlanetFrame(
   lookupCache?: TemporalLookupCache | null,
   fallbackSegments?: TrajectorySegment[]
 ): SampleStatus {
-  const state = useSolarStore.getState();
-  const segments = (state.masterTrajectorySegments[bodyId]?.length > 0)
-    ? state.masterTrajectorySegments[bodyId]
-    : (fallbackSegments ?? []);
+  // A successful point query can arrive before the replacement window has
+  // been merged into the master buffer. Prefer whichever buffer covers the
+  // requested instant; a stale master endpoint must not mask fresh data.
+  const segments = resolveBodySegmentsAtTime(bodyId, timeMs, fallbackSegments);
   return samplePlanet(bodyId, timeMs, segments, outAbsolutePositionKm, lookupCache);
 }
 
@@ -80,9 +38,8 @@ export function resolveMoonFrame(
   moonLookupCache?: TemporalLookupCache | null,
   parentLookupCache?: TemporalLookupCache | null
 ): SampleStatus {
-  const state = useSolarStore.getState();
-  const moonSegments = state.masterTrajectorySegments[moonId] ?? [];
-  const parentSegments = state.masterTrajectorySegments[parentId] ?? [];
+  const moonSegments = resolveBodySegmentsAtTime(moonId, timeMs);
+  const parentSegments = resolveBodySegmentsAtTime(parentId, timeMs);
   
   return sampleMoon(
     moonId,

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { EphemerisData } from '@/lib/types';
 import type { BodyClass, ViewMode } from '@/lib/scales';
-import { getPlanetConfig, getTexturePath, type TextureTier } from '@/lib/textureConfig';
+import { getPlanetConfig, getTexturePath } from '@/lib/textureConfig';
 import { getRadius, scalePositionFromKm, KM_TO_UNIT } from '@/lib/scales';
 
 const SUN_BODY_ID = '10';
@@ -68,7 +68,8 @@ export function usePlanetsToRender(
           velocity: body.velocity,
           trajectory: body.trajectory,
           radius: getRadius(body.bodyId, config.bodyClass, viewMode),
-          texturePath: getTexturePath(body.bodyId, tier as TextureTier),
+          // Start with the smallest map; a close-up can request a larger tier later.
+          texturePath: getTexturePath(body.bodyId, 'low'),
           rotationSpeed: config.rotationSpeed,
           axialTilt: config.axialTilt,
           dayLength: config.dayLength,

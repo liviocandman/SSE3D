@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from datetime import date, datetime
-from typing import Optional, List
+from typing import Literal, Optional, List
 from enum import Enum
 
 KNOWN_BODY_IDS = {
@@ -58,6 +58,14 @@ class EphemerisTrajectory(BaseModel):
     velocity: Optional[Position] = None
     timestamp: str
 
+
+class EphemerisTrajectorySection(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    reference_center: Literal["system_barycenter"] | None = Field(default=None, alias="referenceCenter")
+    trajectory: list[EphemerisTrajectory]
+
+
 class EphemerisData(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     
@@ -67,7 +75,9 @@ class EphemerisData(BaseModel):
     velocity: Optional[Position] = None
     timestamp: str
     parent_id: Optional[str] = Field(default=None, alias="parentId")
+    reference_center: Literal["system_barycenter"] | None = Field(default=None, alias="referenceCenter")
     trajectory: Optional[List[EphemerisTrajectory]] = None
+    additional_trajectories: list[EphemerisTrajectorySection] | None = Field(default=None, alias="additionalTrajectories")
     orbit_line: Optional[OrbitLineData] = Field(default=None, alias="orbitLine")
 
 class EphemerisMeta(BaseModel):

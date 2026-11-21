@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -10,7 +11,7 @@ from app.core.config import settings
 from app.services.asset_contract import KERNEL_PATHS, PROFILE, VALIDATOR_VERSION, read_json, validate_lock
 from app.services.body_catalog import ALL_BODY_IDS
 from app.services.kernel_installation import effective_directory, verify_installation
-from app.services.spice_windows import resolve_target_observer
+from app.services.spice_windows import OUTER_PLANET_BARYCENTERS, resolve_target_observer
 
 
 @dataclass
@@ -28,9 +29,29 @@ class SpiceRuntimeStatus:
     covered_body_ids: list[str] = field(default_factory=list)
     missing_required_ids: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    coverage_windows_et: dict[str, list[tuple[float, float]]] = field(default_factory=dict)
 
 
 _status = SpiceRuntimeStatus()
+
+
+def _index_coverage(coverage: dict) -> dict[str, list[tuple[float, float]]]:
+    by_body = defaultdict(list)
+    for entries in coverage.values():
+        for entry in entries:
+            by_body[entry["bodyId"]].extend(entry["windowsET"])
+
+    result = {}
+    for body_id, windows in by_body.items():
+        merged: list[tuple[float, float]] = []
+        for start, end in sorted(windows):
+            if merged and start <= merged[-1][1]:
+                earlier_start, earlier_end = merged[-1]
+                merged[-1] = (earlier_start, max(end, earlier_end))
+            else:
+                merged.append((start, end))
+        result[body_id] = merged
+    return result
 
 
 def initialize_spice_kernels(kernel_directory: Path | None = None, *, kernel_lock: dict | None = None, validate_coverage: bool = True) -> SpiceRuntimeStatus:
@@ -44,7 +65,7 @@ def initialize_spice_kernels(kernel_directory: Path | None = None, *, kernel_loc
     try:
         lock = validate_lock(kernel_lock if kernel_lock is not None else read_json(settings.spice_lock_path), "kernels")
         directory = effective_directory(settings.spice_kernel_root, lock) if kernel_directory is None else kernel_directory
-        verify_installation(directory, lock)
+        manifest = verify_installation(directory, lock)
         descriptor = lock["current"]
         _status.version = descriptor["version"]
         _status.manifest_sha256 = descriptor["manifest"]["sha256"]
@@ -66,10 +87,18 @@ def initialize_spice_kernels(kernel_directory: Path | None = None, *, kernel_loc
                 _status.covered_body_ids.append(body_id)
             except Exception:
                 _status.missing_required_ids.append(body_id)
+        # Full-orbit planet paths intentionally retain barycenter targets.
+        for body_id in OUTER_PLANET_BARYCENTERS:
+            target, observer = resolve_target_observer(body_id, full_orbit=True)
+            try:
+                spice.spkpos(target, 0.0, "ECLIPJ2000", "NONE", observer)
+            except Exception:
+                _status.missing_required_ids.append(f"{body_id}:fullOrbit")
         if _status.missing_required_ids:
             raise RuntimeError("Missing required relative-state coverage: " + ", ".join(_status.missing_required_ids))
         if spice.ktotal("ALL") != 8:
             raise RuntimeError("expected exactly eight loaded kernels")
+        _status.coverage_windows_et = _index_coverage(manifest["coverage"])
         _status.coverage_validated = True
         _status.ready = len(_status.loaded_files) == 8
         logger.info("[SPICE] version={} kernels=8 profile={} bodies={}", _status.version, PROFILE, len(ALL_BODY_IDS))

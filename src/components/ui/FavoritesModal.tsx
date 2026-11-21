@@ -4,7 +4,8 @@ import { useUIStore } from '@/store/uiStore';
 import { useFavorites, useRemoveFavorite } from '@/hooks/useFavorites';
 import { X, Heart, Trash2, Calendar, MapPin } from 'lucide-react';
 import { Button } from './Button';
-import { format } from 'date-fns';
+
+const favoriteDate = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
 export function FavoritesModal() {
   const { isFavoritesOpen, closeFavorites } = useUIStore();
@@ -75,7 +76,7 @@ export function FavoritesModal() {
                       </span>
                       <span className="flex items-center gap-1.5 px-2.5 py-1 bg-white/5 rounded-full border border-white/5 group-hover:bg-white/10">
                         <Calendar className="h-3 w-3" />
-                        {format(new Date(fav.created_at), 'dd/MM/yyyy')}
+                        {favoriteDate.format(new Date(fav.created_at))}
                       </span>
                     </div>
                     <button

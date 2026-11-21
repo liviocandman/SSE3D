@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Toaster, toast } from 'sonner';
 import { useEphemeris } from '@/hooks/useEphemeris';
@@ -28,9 +28,16 @@ interface HomePageProps {
 }
 
 export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: HomePageProps) {
-  const currentDate = useSolarStore((state) => state.currentDate);
   const trajectoryBaseDate = useSolarStore((state) => state.trajectoryBaseDate);
-  const setCurrentDate = useSolarStore((state) => state.setCurrentDate);
+  const [fatalSceneError, setFatalSceneError] = useState<AppError | null>(null);
+  const handleRendererInitializationError = useCallback((error: unknown) => {
+    setFatalSceneError({
+      type: 'SCENE_RENDER_ERROR',
+      message: 'The 3D renderer could not be initialized',
+      technicalDetails: error instanceof Error ? error.message : String(error),
+      canRetry: false,
+    });
+  }, []);
 
   // Trigger data merge if user just logged in
   useSessionMerge();
@@ -43,38 +50,30 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
     source,
     isFallback,
     retry,
-    retryCount,
-    refresh
+    retryCount
   } = useEphemeris({ date: trajectoryBaseDate, spanDays: 30 });
 
   // WebGL error detection
   const {
     error: webglError,
     isSupported: isWebGLSupported,
-    isContextLost: isWebGLContextLost,
   } = useWebGLError();
 
   // Track loading progress
   const loadingProgress = useLoadingProgress({
     isApiLoading: isLoading,
     hasApiData: ephemerisData.length > 0,
+    bodyIds: ephemerisData.map(body => body.bodyId),
   });
 
-  const activeError: AppError | null = webglError ?? (ephemerisError ? {
+  const activeError: AppError | null = fatalSceneError ?? webglError ?? (ephemerisError ? {
     type: ephemerisError.type,
     message: ephemerisError.message,
     technicalDetails: ephemerisError.technicalDetails,
     canRetry: ephemerisError.canRetry,
   } : null);
 
-  const isWebGLError = activeError?.type === 'WEBGL_NOT_SUPPORTED'
-    || activeError?.type === 'WEBGL_CONTEXT_LOST';
-  const showErrorOverlay = !!activeError && (isWebGLError || !isFallback);
-
-  const handleDateChange = (newDate: string) => {
-    setCurrentDate(newDate);
-    console.log(`[HomePage] Date changed to: ${newDate}`);
-  };
+  const showErrorOverlay = !!activeError && (!!fatalSceneError || !!webglError || !isFallback);
 
   useEffect(() => {
     if (!isFallback) toast.dismiss('degraded-ephemeris');
@@ -96,8 +95,8 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
       });
     }
 
-    console.log(`[HomePage] Ephemeris loaded - Source: ${source}, Bodies: ${ephemerisData.length}, Date: ${currentDate}`);
-  }, [source, isFallback, isLoading, ephemerisData.length, currentDate]);
+    console.log(`[HomePage] Ephemeris loaded - Source: ${source}, Bodies: ${ephemerisData.length}, Window: ${trajectoryBaseDate}`);
+  }, [source, isFallback, isLoading, ephemerisData.length, trajectoryBaseDate]);
 
   const showLoadingScreen = loadingProgress.stage !== 'ready' && !showErrorOverlay;
 
@@ -136,16 +135,17 @@ export function HomePage({ initialFullOrbits, initialTrajectoryData = [] }: Home
         <LoadingScreen progress={loadingProgress} />
       )}
 
-      {isWebGLSupported && !isWebGLContextLost && !isWebGLError && (
+      {/* Keep the canvas alive so its renderer and restoration listener can recover. */}
+      {isWebGLSupported && !fatalSceneError && (
         <SceneManager
           ephemerisData={ephemerisData}
+          onRendererInitializationError={handleRendererInitializationError}
+          onSceneError={setFatalSceneError}
         />
       )}
 
       {!showLoadingScreen && !showErrorOverlay && (
         <HUD
-          onDateChange={handleDateChange}
-          onRefresh={refresh}
           isFallback={isFallback}
         />
       )}

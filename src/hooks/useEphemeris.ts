@@ -6,7 +6,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { EphemerisData, EphemerisResponse, DataSource, OrbitLineProfile } from "@/lib/types";
 import { USE_BACKEND_ORBIT_READY } from "@/lib/types";
 import { isFallbackSource } from "@/lib/ephemerisStatus";
@@ -288,6 +288,9 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
     queryKey: ["ephemeris", date, spanDays, orbitReady, orbitProfile, orbitLineOnly],
     queryFn: ({ signal }) =>
       fetchEphemeris({ date, spanDays, timeoutMs, orbitReady, orbitProfile, orbitLineOnly, signal }),
+    // Keep bodies mounted while a Jump requests a different window. Scene
+    // consumers decide whether that retained window covers the current time.
+    placeholderData: keepPreviousData,
     enabled: autoFetch,
     retry: (failureCount, error) =>
       error.canRetry && failureCount < MAX_RETRIES,
@@ -320,7 +323,7 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
   }, [query.isFetching]);
 
   useEffect(() => {
-    if (!query.data) return;
+    if (!query.data || query.isPlaceholderData) return;
 
     const timeoutId = setTimeout(() => {
       setFallbackData(null);
@@ -329,7 +332,7 @@ export function useEphemeris(options: UseEphemerisOptions = {}) {
     }, 0);
 
     return () => clearTimeout(timeoutId);
-  }, [query.data]);
+  }, [query.data, query.isPlaceholderData]);
 
   useEffect(() => {
     if (!query.error || query.error.isAbort) return;

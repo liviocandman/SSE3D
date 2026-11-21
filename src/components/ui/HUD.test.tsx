@@ -10,30 +10,9 @@ global.config = global.config || {};
 
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { clockRuntime } from '@/lib/time/clockRuntime';
+import { buildTrajectorySegments, type TrajectorySegment } from '@/lib/trajectoryEngine';
 import { HUD } from './HUD';
-
-import type { HTMLAttributes, ReactNode } from 'react';
-
-type MockMotionDivProps = HTMLAttributes<HTMLDivElement> & {
-  children?: ReactNode;
-  'data-testid'?: string;
-};
-
-// Mock framer-motion to bypass animation delays in tests
-vi.mock('framer-motion', () => ({
-  motion: {
-    div: ({
-      children,
-      className,
-      'data-testid': dataTestId,
-      ...props
-    }: MockMotionDivProps) => (
-      <div className={className} data-testid={dataTestId} {...props}>
-        {children}
-      </div>
-    ),
-  },
-}));
 
 vi.mock('zustand/react/shallow', () => ({
   useShallow: <T,>(selector: T) => selector,
@@ -43,10 +22,11 @@ vi.mock('zustand/react/shallow', () => ({
 const { solarState } = vi.hoisted(() => {
   return {
     solarState: {
-      selectedPlanet: { bodyId: '399', englishName: 'Earth' } as { bodyId: string; englishName: string } | null,
+      selectedPlanet: { bodyId: '399', englishName: 'Earth' } as { bodyId: string; englishName: string; name?: string } | null,
       currentDate: '2026-03-26',
       currentTime: new Date('2026-03-26T00:00:00.000Z'),
-      masterTrajectorySegments: {},
+      masterTrajectorySegments: {} as Record<string, TrajectorySegment[]>,
+      baseTrajectorySegments: {},
       viewMode: 'didactic' as const,
       isPlaying: false,
       toggleViewMode: vi.fn(),
@@ -67,7 +47,8 @@ vi.mock('@/store/solarStore', () => {
 });
 
 const mockUIState = {
-  isMobile: false,
+  isFavoritesOpen: false,
+  isAuthModalOpen: false,
   openFavorites: vi.fn(),
 };
 
@@ -86,7 +67,11 @@ vi.mock('@/hooks/useFavorites', () => ({
 }));
 
 // Mock sub-components
-vi.mock('./PlanetInfo', () => ({ PlanetInfo: () => <div data-testid="planet-info" /> }));
+vi.mock('./PlanetInfo', () => ({
+  PlanetInfo: ({ onAskAstronomer }: { onAskAstronomer?: () => void }) => (
+    <button data-testid="planet-info" onClick={onAskAstronomer}>Ask astronomer</button>
+  ),
+}));
 vi.mock('./DateSelector', () => ({ DateSelector: () => <div data-testid="date-selector" /> }));
 vi.mock('./AstronomerModal', () => ({ AstronomerModal: () => <div data-testid="astronomer-modal" /> }));
 vi.mock('./AuthModal', () => ({ AuthModal: () => <div data-testid="auth-modal" /> }));
@@ -114,11 +99,14 @@ describe('HUD', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.innerWidth = 1024;
+    mockUIState.isFavoritesOpen = false;
+    mockUIState.isAuthModalOpen = false;
+    solarState.masterTrajectorySegments = {};
     solarState.selectedPlanet = { bodyId: '399', englishName: 'Earth' };
   });
 
   it('toggles minimize state when clicking the control tab', () => {
-    render(<HUD onDateChange={vi.fn()} />);
+    render(<HUD />);
 
     const toggleButton = screen.getByTitle('Hide panel');
     expect(toggleButton).toBeInTheDocument();
@@ -134,31 +122,68 @@ describe('HUD', () => {
     expect(screen.getByTitle('Hide panel')).toBeInTheDocument();
   });
 
+  it('mounts each optional dialog only after its first open request', async () => {
+    const { rerender } = render(<HUD />);
+    expect(screen.queryByTestId('favorites-modal')).toBeNull();
+    expect(screen.queryByTestId('auth-modal')).toBeNull();
+    expect(screen.queryByTestId('astronomer-modal')).toBeNull();
+
+    mockUIState.isFavoritesOpen = true;
+    rerender(<HUD />);
+    expect(await screen.findByTestId('favorites-modal')).toBeInTheDocument();
+
+    mockUIState.isFavoritesOpen = false;
+    mockUIState.isAuthModalOpen = true;
+    rerender(<HUD />);
+    expect(await screen.findByTestId('auth-modal')).toBeInTheDocument();
+    expect(screen.queryByTestId('favorites-modal')).toBeNull();
+
+    mockUIState.isAuthModalOpen = false;
+    rerender(<HUD />);
+    fireEvent.click(screen.getByRole('button', { name: 'Ask astronomer' }));
+    expect(await screen.findByTestId('astronomer-modal')).toBeInTheDocument();
+  });
+
   it('renders PlanetInfo by default when a planet is selected', () => {
-    render(<HUD onDateChange={vi.fn()} />);
+    render(<HUD />);
     expect(screen.getByTestId('planet-info')).toBeInTheDocument();
   });
 
   it.each([390, 1024])('shows the degraded data notice and clears it after recovery at width %i', (width) => {
     window.innerWidth = width;
-    const { rerender } = render(<HUD onDateChange={vi.fn()} isFallback />);
+    const { rerender } = render(<HUD isFallback />);
     expect(screen.getByRole('status')).toHaveTextContent(
-      'Algumas posições usam dados de referência e podem não representar a data selecionada.',
+      'Algumas posições são calculadas pelo baricentro do sistema ou usam dados de referência de outra data.',
     );
     expect(screen.getAllByText(/Dados degradados/).length).toBeGreaterThan(0);
     expect(screen.queryByText('Offline')).not.toBeInTheDocument();
-    rerender(<HUD onDateChange={vi.fn()} isFallback={false} />);
+    rerender(<HUD isFallback={false} />);
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.queryByText(/Dados degradados/)).not.toBeInTheDocument();
   });
 
+  it('labels the active barycentric sample even when the initial ephemeris is nominal', () => {
+    const timestamp = '2050-01-02T00:00:00.000Z';
+    clockRuntime.setTimeMs(Date.parse(timestamp));
+    solarState.selectedPlanet = { bodyId: '599', name: 'Júpiter', englishName: 'Jupiter' };
+    const trajectory = [{ timestamp, position: { x: 750_000_000, y: 0, z: 0 } }];
+    solarState.masterTrajectorySegments = { '599': buildTrajectorySegments(trajectory, '599', 'system_barycenter') };
+
+    const { rerender } = render(<HUD />);
+    expect(screen.getByRole('status')).toHaveTextContent('A posição exibida usa o baricentro do sistema como aproximação.');
+
+    solarState.masterTrajectorySegments = { '599': buildTrajectorySegments(trajectory, '599') };
+    rerender(<HUD />);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
   it('reopens the minimized drawer when a different planet is selected', async () => {
-    const { rerender } = render(<HUD onDateChange={vi.fn()} />);
+    const { rerender } = render(<HUD />);
     fireEvent.click(screen.getByTitle('Hide panel'));
     expect(screen.getByTitle('Show panel')).toBeInTheDocument();
 
     solarState.selectedPlanet = { bodyId: '499', englishName: 'Mars' };
-    rerender(<HUD onDateChange={vi.fn()} />);
+    rerender(<HUD />);
 
     await waitFor(() => expect(screen.getByTitle('Hide panel')).toBeInTheDocument());
   });
@@ -166,11 +191,11 @@ describe('HUD', () => {
   it('expands the mobile panel from the planetary preview without mission controls', () => {
     window.innerWidth = 390;
     solarState.selectedPlanet = null;
-    const { rerender } = render(<HUD onDateChange={vi.fn()} />);
+    const { rerender } = render(<HUD />);
     expect(screen.getByText('Tap to explore')).toBeInTheDocument();
 
     solarState.selectedPlanet = { bodyId: '399', englishName: 'Earth' };
-    rerender(<HUD onDateChange={vi.fn()} />);
+    rerender(<HUD />);
     fireEvent.click(screen.getByText('Earth'));
 
     expect(screen.queryByText('Tap to explore')).not.toBeInTheDocument();

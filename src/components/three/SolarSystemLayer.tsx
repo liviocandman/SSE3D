@@ -14,6 +14,7 @@ import { usePlanetInteraction } from './scene/usePlanetInteraction';
 import { PLANET_MOONS } from '@/lib/textureConfig';
 import { BODY_IDS } from '@/lib/types';
 import type { EphemerisData } from '@/lib/types';
+import { useLayoutEffect } from 'react';
 
 const ALL_PLANET_IDS = [
   BODY_IDS.MERCURY, BODY_IDS.VENUS, BODY_IDS.EARTH, BODY_IDS.MARS,
@@ -34,6 +35,7 @@ export function SolarSystemLayer({ ephemerisData }: SolarSystemLayerProps) {
     setViewMode,
     setTravelTarget,
     resetTravel,
+    setBaseTrajectoryData,
   } = useSolarStore(
     useShallow((state) => ({
       selectedPlanet: state.selectedPlanet,
@@ -42,10 +44,17 @@ export function SolarSystemLayer({ ephemerisData }: SolarSystemLayerProps) {
       setViewMode: state.setViewMode,
       setTravelTarget: state.setTravelTarget,
       resetTravel: state.resetTravel,
+      setBaseTrajectoryData: state.setBaseTrajectoryData,
     }))
   );
 
   useFullOrbits(ALL_PLANET_IDS);
+
+  // Publish the point-query window before the first scene frame. Rendering,
+  // focus and HUD then resolve the same covered source while the worker lags.
+  useLayoutEffect(() => {
+    if (ephemerisData?.length) setBaseTrajectoryData(ephemerisData);
+  }, [ephemerisData, setBaseTrajectoryData]);
 
   const { planetsToRender, ephemerisById } = usePlanetsToRender(ephemerisData, tier, viewMode);
 

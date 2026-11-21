@@ -38,6 +38,8 @@ export interface EphemerisTrajectory {
   timestamp: string;
 }
 
+export type EphemerisReferenceCenter = 'system_barycenter';
+
 export interface EphemerisData {
   bodyId: string;
   name: string;
@@ -45,7 +47,13 @@ export interface EphemerisData {
   velocity?: EphemerisPosition; // km/s from NASA API
   timestamp: string;
   parentId?: string;
+  referenceCenter?: EphemerisReferenceCenter | null;
   trajectory?: EphemerisTrajectory[];
+  /** Other portions of the request window, each with its own reference center. */
+  additionalTrajectories?: {
+    referenceCenter: EphemerisReferenceCenter | null;
+    trajectory: EphemerisTrajectory[];
+  }[] | null;
   orbitLine?: OrbitLineData;
 }
 

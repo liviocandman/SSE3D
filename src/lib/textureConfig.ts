@@ -39,6 +39,7 @@ export interface PlanetConfig {
   // Moon-specific metadata
   surfaceType?: string;  // e.g. 'Water Ice', 'Silicate Rock'
   discoverer?: string;   // e.g. 'Galileo Galilei (1610)'
+  surfaceTextureNote?: string;
 }
 
 // Helper to generate tiered texture paths
@@ -316,6 +317,7 @@ export const PLANET_CONFIG: Record<string, PlanetConfig> = {
     dayLength: 85.2,
     meanTemperature: -160,
     surfaceType: 'Water Ice (subsurface ocean)',
+    surfaceTextureNote: 'Approximate surface appearance. Europa and Titan currently share the same recovered map; it is not verified as dedicated imagery. Source attribution is unknown.',
     discoverer: 'Galileo Galilei (1610)',
   },
   '503': {
@@ -442,6 +444,7 @@ export const PLANET_CONFIG: Record<string, PlanetConfig> = {
     orbitalPeriod: 15.95, meanDistanceAU: 0.0082, orbitalInclination: 0.35, eccentricity: 0.0288,
     longAscNode: 0, longPerihelion: 0, surfaceGravity: 1.352, dayLength: 382.7, meanTemperature: -179,
     surfaceType: 'Nitrogen Ice & Hydrocarbon Lakes',
+    surfaceTextureNote: 'Approximate surface appearance. Europa and Titan currently share the same recovered map; it is not verified as dedicated imagery. Source attribution is unknown.',
     discoverer: 'Christiaan Huygens (1655)',
   },
   '608': {

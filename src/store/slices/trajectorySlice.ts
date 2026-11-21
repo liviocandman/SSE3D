@@ -3,6 +3,7 @@ import type { EphemerisData, EphemerisTrajectory, OrbitLineData } from '@/lib/ty
 import {
   type TrajectorySegment,
   flattenTrajectorySegments,
+  buildTrajectorySegments,
   upsertTrajectorySegments,
 } from '@/lib/trajectoryEngine';
 import { TimeSlice } from './timeSlice';
@@ -14,6 +15,8 @@ export interface TrajectoryState {
   // Master Buffer: Maps bodyId -> Sliding window of high-precision NASA vectors
   masterTrajectory: Record<string, EphemerisTrajectory[]>;
   masterTrajectorySegments: Record<string, TrajectorySegment[]>;
+  /** Current point-query trajectories, kept separately until merged into master coverage. */
+  baseTrajectorySegments: Record<string, TrajectorySegment[]>;
   
   // Full Cycle Buffer: Maps bodyId -> 100% of orbital period
   fullOrbits: Record<string, EphemerisTrajectory[]>;
@@ -26,6 +29,7 @@ export interface TrajectoryState {
 
 export interface TrajectoryActions {
   appendTrajectoryData: (data: EphemerisData[]) => void;
+  setBaseTrajectoryData: (data: EphemerisData[]) => void;
   appendFullOrbits: (data: EphemerisData[]) => void;
   clearTrajectoryBuffer: () => void;
   setFullOrbitStatus: (ids: string[], status: FullOrbitStatus, retryAt?: number) => void;
@@ -44,6 +48,7 @@ export const createTrajectorySlice: StateCreator<
 > = (set) => ({
   masterTrajectory: {},
   masterTrajectorySegments: {},
+  baseTrajectorySegments: {},
   fullOrbits: {},
   orbitLines: {},
   fullOrbitStatus: {},
@@ -85,17 +90,20 @@ export const createTrajectorySlice: StateCreator<
       let mergedSegments = state.masterTrajectorySegments;
 
       data.forEach((body) => {
-        if (!body.trajectory?.length) return;
-
         const existingSegments = mergedSegments[body.bodyId] || [];
-        const nextSegments = upsertTrajectorySegments(
-          existingSegments,
-          body.trajectory,
-          state.currentTime.getTime(),
-          MAX_SEGMENTS_PER_BODY,
-          undefined,
-          body.bodyId,
-        );
+        let nextSegments = existingSegments;
+        for (const { trajectory, referenceCenter } of [body, ...(body.additionalTrajectories ?? [])]) {
+          if (!trajectory?.length) continue;
+          nextSegments = upsertTrajectorySegments(
+            nextSegments,
+            trajectory,
+            state.currentTime.getTime(),
+            MAX_SEGMENTS_PER_BODY,
+            undefined,
+            body.bodyId,
+            referenceCenter ?? undefined,
+          );
+        }
 
         if (nextSegments === existingSegments) return;
         if (mergedSegments === state.masterTrajectorySegments) {
@@ -112,6 +120,17 @@ export const createTrajectorySlice: StateCreator<
         masterTrajectorySegments: mergedSegments,
       };
     }),
+
+  setBaseTrajectoryData: (data) => set(() => {
+    const next: Record<string, TrajectorySegment[]> = {};
+    data.forEach((body) => {
+      const segments = [body, ...(body.additionalTrajectories ?? [])].flatMap(({ trajectory, referenceCenter }) =>
+        trajectory?.length ? buildTrajectorySegments(trajectory, body.bodyId, referenceCenter ?? undefined) : [],
+      );
+      if (segments.length) next[body.bodyId] = segments.sort((a, b) => a.startTimeMs - b.startTimeMs);
+    });
+    return { baseTrajectorySegments: next };
+  }),
 
   appendFullOrbits: (data) =>
     set((state) => {

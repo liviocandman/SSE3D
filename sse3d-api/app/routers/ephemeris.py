@@ -127,7 +127,13 @@ async def get_ephemeris(
                 detail = f"SPICE kernels not ready: {'; '.join(status.errors)}"
             raise HTTPException(status_code=503, detail=detail)
 
-        source = "SPICE_AND_FALLBACK" if fallback_data else "SPICE_KERNELS"
+        degraded = bool(fallback_data) or any(
+            item.reference_center == "system_barycenter" or any(
+                section.reference_center == "system_barycenter" for section in item.additional_trajectories or ()
+            )
+            for item in spice_data
+        )
+        source = "SPICE_AND_FALLBACK" if degraded else "SPICE_KERNELS"
         return EphemerisResponse(
             data=response_data,
             meta=EphemerisMeta(

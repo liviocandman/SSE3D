@@ -1,14 +1,7 @@
-/**
- * useWebGLError Hook
- * Detects WebGL support and handles context loss events
- */
-
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import type { AppError } from '@/components/ui/ErrorOverlay';
-
-// --- Types ---
 
 interface UseWebGLErrorReturn {
   error: AppError | null;
@@ -16,134 +9,80 @@ interface UseWebGLErrorReturn {
   isContextLost: boolean;
 }
 
-// --- WebGL Support Detection (runs once, outside React) ---
+const SCENE_CANVAS_SELECTOR = '[data-solar-scene] canvas';
 
+/** Match the WebGL 2 requirement of the installed Three.js renderer. */
 function checkWebGLSupport(): { supported: boolean; error: AppError | null } {
-  if (typeof window === 'undefined') {
-    return { supported: true, error: null }; // SSR - assume supported
-  }
+  if (typeof window === 'undefined') return { supported: true, error: null };
 
+  let gl: WebGL2RenderingContext | null = null;
   try {
-    const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-
-    if (!gl) {
-      return {
-        supported: false,
-        error: {
-          type: 'WEBGL_NOT_SUPPORTED',
-          message: 'WebGL is not supported in this browser',
-          technicalDetails: 'No WebGL context could be created. Please use a modern browser with WebGL support.',
-          canRetry: false,
-        },
-      };
-    }
-
+    gl = document.createElement('canvas').getContext('webgl2');
+    if (!gl) throw new Error('No WebGL 2 context could be created.');
     return { supported: true, error: null };
-  } catch (e) {
+  } catch (error) {
     return {
       supported: false,
       error: {
         type: 'WEBGL_NOT_SUPPORTED',
-        message: 'WebGL is not supported',
-        technicalDetails: e instanceof Error ? e.message : 'Unknown error during WebGL detection',
+        message: 'WebGL 2 is not available in this browser',
+        technicalDetails: error instanceof Error ? error.message : 'WebGL 2 detection failed.',
         canRetry: false,
       },
     };
+  } finally {
+    // The probe must not retain a second GPU context for the lifetime of the page.
+    gl?.getExtension('WEBGL_lose_context')?.loseContext();
   }
 }
 
-// --- Hook ---
-
 export function useWebGLError(): UseWebGLErrorReturn {
-  // Check WebGL support on initial render (derived from function, not effect)
-  const [webglCheck] = useState(() => checkWebGLSupport());
-  const [contextLostError, setContextLostError] = useState<AppError | null>(null);
+  const [webglCheck] = useState(checkWebGLSupport);
+  const [contextError, setContextError] = useState<AppError | null>(null);
   const [isContextLost, setIsContextLost] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Listen for WebGL context loss on Three.js canvas
   useEffect(() => {
-    if (typeof window === 'undefined' || !webglCheck.supported) return;
+    if (!webglCheck.supported) return;
+    let canvas: HTMLCanvasElement | null = null;
 
     const handleContextLost = (event: Event) => {
       event.preventDefault();
-      console.error('[useWebGLError] WebGL context lost');
       setIsContextLost(true);
-      setContextLostError({
+      setContextError({
         type: 'WEBGL_CONTEXT_LOST',
         message: 'WebGL context was lost',
-        technicalDetails: 'The GPU context was lost, possibly due to memory issues or driver problems.',
+        technicalDetails: 'Waiting for the graphics context to be restored. Reload the page if it does not recover.',
         canRetry: false,
       });
     };
-
     const handleContextRestored = () => {
-      console.log('[useWebGLError] WebGL context restored');
       setIsContextLost(false);
-      setContextLostError(null);
+      setContextError(null);
     };
-
-    const attachToCanvas = (canvas: HTMLCanvasElement) => {
-      // Avoid duplicate listeners on same canvas
-      if (canvasRef.current === canvas) return;
-
-      // Clean up previous canvas if it changed
-      if (canvasRef.current) {
-        canvasRef.current.removeEventListener('webglcontextlost', handleContextLost);
-        canvasRef.current.removeEventListener('webglcontextrestored', handleContextRestored);
-      }
-
-      canvasRef.current = canvas;
-      canvas.addEventListener('webglcontextlost', handleContextLost);
-      canvas.addEventListener('webglcontextrestored', handleContextRestored);
+    const detach = () => {
+      canvas?.removeEventListener('webglcontextlost', handleContextLost);
+      canvas?.removeEventListener('webglcontextrestored', handleContextRestored);
     };
-
-    // Initial check for existing canvas
-    const existingCanvas = document.querySelector('canvas');
-    if (existingCanvas) {
-      attachToCanvas(existingCanvas);
-    }
-
-    // MutationObserver reacts to DOM changes without continuous polling
-    // Only triggers when nodes are added/removed - zero cost when nothing changes
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        for (const node of mutation.addedNodes) {
-          if (node instanceof HTMLCanvasElement) {
-            attachToCanvas(node);
-            return;
-          }
-          if (node instanceof Element) {
-            const canvas = node.querySelector('canvas');
-            if (canvas) {
-              attachToCanvas(canvas);
-              return;
-            }
-          }
-        }
-      }
-    });
-
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-    });
-
-    return () => {
-      observer.disconnect();
-      if (canvasRef.current) {
-        canvasRef.current.removeEventListener('webglcontextlost', handleContextLost);
-        canvasRef.current.removeEventListener('webglcontextrestored', handleContextRestored);
+    const observeSceneCanvas = () => {
+      const next = document.querySelector<HTMLCanvasElement>(SCENE_CANVAS_SELECTOR);
+      if (next === canvas) return;
+      detach();
+      canvas = next;
+      if (canvas) {
+        canvas.addEventListener('webglcontextlost', handleContextLost);
+        canvas.addEventListener('webglcontextrestored', handleContextRestored);
+        handleContextRestored();
       }
     };
+
+    observeSceneCanvas();
+    const observer = new MutationObserver(observeSceneCanvas);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => { observer.disconnect(); detach(); };
   }, [webglCheck.supported]);
 
-  // Return WebGL check error or context lost error
-  const error = webglCheck.error || contextLostError;
-
   return {
-    error,
+    error: webglCheck.error ?? contextError,
     isSupported: webglCheck.supported,
     isContextLost,
   };
