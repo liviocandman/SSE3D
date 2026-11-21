@@ -1,4 +1,4 @@
-import type { EphemerisPosition, EphemerisTrajectory } from '@/lib/types';
+import type { EphemerisPosition, EphemerisReferenceCenter, EphemerisTrajectory } from '@/lib/types';
 import {
   findTemporalInterval,
   resetCacheIfDataChanged,
@@ -15,6 +15,7 @@ export interface TrajectorySegment {
   points: EphemerisTrajectory[];
   /** Preserve the continuity bound through merges and retention slices. */
   maxGapMs: number;
+  referenceCenter?: EphemerisReferenceCenter;
 }
 
 export interface SampledTrajectoryPoint {
@@ -81,6 +82,7 @@ export function normalizeTrajectoryPoints(points: EphemerisTrajectory[]): Epheme
 
 function segmentFromSortedPoints(
   points: EphemerisTrajectory[], pointTimesMs: number[], maxGapMs: number,
+  referenceCenter?: TrajectorySegment['referenceCenter'],
 ): TrajectorySegment {
   return {
     startTime: points[0].timestamp,
@@ -90,10 +92,13 @@ function segmentFromSortedPoints(
     pointTimesMs,
     points,
     maxGapMs,
+    referenceCenter,
   };
 }
 
-export function buildTrajectorySegment(points: EphemerisTrajectory[], bodyId?: string): TrajectorySegment | null {
+export function buildTrajectorySegment(
+  points: EphemerisTrajectory[], bodyId?: string, referenceCenter?: TrajectorySegment['referenceCenter'],
+): TrajectorySegment | null {
   const normalized = normalizeTrajectoryPoints(points);
   if (normalized.length === 0) return null;
   const times = normalized.map((point) => parseTimeMs(point.timestamp));
@@ -105,7 +110,7 @@ export function buildTrajectorySegment(points: EphemerisTrajectory[], bodyId?: s
     cadenceMs === undefined ? 0 : cadenceMs * TRAJECTORY_CADENCE_GAP_FACTOR + TIMESTAMP_ROUNDING_MS,
     bodyId ? getMaxInterpolationGapMs(bodyId) + TIMESTAMP_ROUNDING_MS : Infinity,
   );
-  return segmentFromSortedPoints(normalized, times, maxGapMs);
+  return segmentFromSortedPoints(normalized, times, maxGapMs, referenceCenter);
 }
 
 function splitSegmentAtGaps(segment: TrajectorySegment): TrajectorySegment[] {
@@ -122,12 +127,15 @@ function splitSegmentAtGaps(segment: TrajectorySegment): TrajectorySegment[] {
 }
 
 /** Build continuous runs, including when one download contains missing samples. */
-export function buildTrajectorySegments(points: EphemerisTrajectory[], bodyId?: string): TrajectorySegment[] {
-  const segment = buildTrajectorySegment(points, bodyId);
+export function buildTrajectorySegments(
+  points: EphemerisTrajectory[], bodyId?: string, referenceCenter?: TrajectorySegment['referenceCenter'],
+): TrajectorySegment[] {
+  const segment = buildTrajectorySegment(points, bodyId, referenceCenter);
   return segment ? splitSegmentAtGaps(segment) : [];
 }
 
 function canMergeSegments(a: TrajectorySegment, b: TrajectorySegment): boolean {
+  if (a.referenceCenter !== b.referenceCenter) return false;
   const [left, right] = a.startTimeMs <= b.startTimeMs ? [a, b] : [b, a];
   if (left.endTimeMs >= right.startTimeMs) return true;
   const leftTimes = left.pointTimesMs;
@@ -171,7 +179,7 @@ function mergeSegments(a: TrajectorySegment, b: TrajectorySegment): TrajectorySe
   if (points.length === a.points.length && points.every((point, index) => point === a.points[index])) return a;
   // Each input is continuous; overlap or a validated boundary preserves that
   // coverage even when the two downloads have different sample cadences.
-  return segmentFromSortedPoints(points, times, Math.max(a.maxGapMs, b.maxGapMs));
+  return segmentFromSortedPoints(points, times, Math.max(a.maxGapMs, b.maxGapMs), a.referenceCenter);
 }
 
 function sortSegments(segments: TrajectorySegment[]): TrajectorySegment[] {
@@ -242,8 +250,9 @@ export function upsertTrajectorySegments(
   maxSegments = 3,
   retention: TrajectoryRetention = DEFAULT_RETENTION,
   bodyId?: string,
+  referenceCenter?: TrajectorySegment['referenceCenter'],
 ): TrajectorySegment[] {
-  const incoming = buildTrajectorySegments(incomingPoints, bodyId);
+  const incoming = buildTrajectorySegments(incomingPoints, bodyId, referenceCenter);
   if (!incoming.length) return existing;
 
   let compacted = existing.flatMap(splitSegmentAtGaps);
@@ -268,7 +277,8 @@ export function upsertTrajectorySegments(
   // the retained window when none of its scientific values actually changed.
   for (let i = 0; i < limited.length; i++) {
     const candidate = limited[i];
-    const previous = existing.find((segment) => segment.startTimeMs === candidate.startTimeMs
+    const previous = existing.find((segment) => segment.referenceCenter === candidate.referenceCenter
+      && segment.startTimeMs === candidate.startTimeMs
       && segment.endTimeMs === candidate.endTimeMs && segment.points.length === candidate.points.length);
     if (previous && previous !== candidate && candidate.points.every((point, index) =>
       candidate.pointTimesMs[index] === previous.pointTimesMs[index] && samePoint(point, previous.points[index]))) {
@@ -294,7 +304,7 @@ function lowerBound(times: number[], target: number): number {
 function sliceSegment(segment: TrajectorySegment, start: number, end: number): TrajectorySegment {
   if (start === 0 && end === segment.points.length) return segment;
   return segmentFromSortedPoints(
-    segment.points.slice(start, end), segment.pointTimesMs.slice(start, end), segment.maxGapMs,
+    segment.points.slice(start, end), segment.pointTimesMs.slice(start, end), segment.maxGapMs, segment.referenceCenter,
   );
 }
 
@@ -586,14 +596,16 @@ export function sampleTrajectoryAtTime(
 export function sampleTrajectoryStateAtTime(
   segments: TrajectorySegment[],
   timeMs: number,
-): { position: EphemerisPosition; velocity?: EphemerisPosition } | null {
+): { position: EphemerisPosition; velocity?: EphemerisPosition; referenceCenter?: EphemerisReferenceCenter } | null {
   if (!Number.isFinite(timeMs) || !hasCoverageAtTime(segments, timeMs)) return null;
   const sample = sampleTrajectoryAtTime(segments, timeMs);
   if (!sample) return null;
 
   const segment = segments[sample.segmentIndex];
   const point = segment.points[sample.pointIndex];
-  if (sample.clamped) return { position: sample.position, velocity: point.velocity };
+  if (sample.clamped) {
+    return { position: sample.position, velocity: point.velocity, referenceCenter: segment.referenceCenter };
+  }
 
   const next = segment.points[sample.pointIndex + 1];
   const startMs = segment.pointTimesMs[sample.pointIndex];
@@ -613,6 +625,7 @@ export function sampleTrajectoryStateAtTime(
   return {
     position: sample.position,
     velocity: Object.values(velocity).every(Number.isFinite) ? velocity : undefined,
+    referenceCenter: segment.referenceCenter,
   };
 }
 

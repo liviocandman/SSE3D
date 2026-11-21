@@ -90,17 +90,20 @@ export const createTrajectorySlice: StateCreator<
       let mergedSegments = state.masterTrajectorySegments;
 
       data.forEach((body) => {
-        if (!body.trajectory?.length) return;
-
         const existingSegments = mergedSegments[body.bodyId] || [];
-        const nextSegments = upsertTrajectorySegments(
-          existingSegments,
-          body.trajectory,
-          state.currentTime.getTime(),
-          MAX_SEGMENTS_PER_BODY,
-          undefined,
-          body.bodyId,
-        );
+        let nextSegments = existingSegments;
+        for (const { trajectory, referenceCenter } of [body, ...(body.additionalTrajectories ?? [])]) {
+          if (!trajectory?.length) continue;
+          nextSegments = upsertTrajectorySegments(
+            nextSegments,
+            trajectory,
+            state.currentTime.getTime(),
+            MAX_SEGMENTS_PER_BODY,
+            undefined,
+            body.bodyId,
+            referenceCenter ?? undefined,
+          );
+        }
 
         if (nextSegments === existingSegments) return;
         if (mergedSegments === state.masterTrajectorySegments) {
@@ -121,7 +124,10 @@ export const createTrajectorySlice: StateCreator<
   setBaseTrajectoryData: (data) => set(() => {
     const next: Record<string, TrajectorySegment[]> = {};
     data.forEach((body) => {
-      if (body.trajectory?.length) next[body.bodyId] = buildTrajectorySegments(body.trajectory, body.bodyId);
+      const segments = [body, ...(body.additionalTrajectories ?? [])].flatMap(({ trajectory, referenceCenter }) =>
+        trajectory?.length ? buildTrajectorySegments(trajectory, body.bodyId, referenceCenter ?? undefined) : [],
+      );
+      if (segments.length) next[body.bodyId] = segments.sort((a, b) => a.startTimeMs - b.startTimeMs);
     });
     return { baseTrajectorySegments: next };
   }),

@@ -38,9 +38,9 @@ def _cache_key(
     orbit_line_only: bool = False,
 ) -> str:
     parts = [f"ephemeris:{body_id}"]
-    # Only dynamic outer-planet states changed their reference frame.
+    # Only dynamic outer-planet entries carry the barycentric fallback marker.
     if body_id in OUTER_PLANET_BARYCENTERS and not full_orbit:
-        parts.append("physical_state_v2")
+        parts.append("dynamic_state_v3")
     if center != "10":
         parts.append(f"center_{center}")
     parts.append(date)

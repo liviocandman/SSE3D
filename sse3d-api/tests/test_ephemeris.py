@@ -2,7 +2,7 @@ import pytest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from app.models.schemas import EphemerisData, Position, OrbitLineProfile
+from app.models.schemas import EphemerisData, EphemerisTrajectory, EphemerisTrajectorySection, Position, OrbitLineProfile
 
 
 def _mock_planet(body_id: str) -> EphemerisData:
@@ -77,6 +77,35 @@ async def test_ephemeris_fallback_when_spice_missing(client):
     payload = response.json()
     assert payload["meta"]["source"] == "SPICE_AND_FALLBACK"
     assert len(payload["data"]) >= 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cache_hit", [False, True])
+@pytest.mark.parametrize("approximate_anchor", [False, True])
+async def test_ephemeris_reports_barycentric_approximation_in_mixed_response(client, cache_hit, approximate_anchor):
+    approximate = _mock_planet("599")
+    if approximate_anchor:
+        approximate.reference_center = "system_barycenter"
+    else:
+        approximate.additional_trajectories = [EphemerisTrajectorySection(
+            referenceCenter="system_barycenter",
+            trajectory=[EphemerisTrajectory(position=approximate.position, timestamp="2023-12-31")],
+        )]
+    cached = [approximate] if cache_hit else []
+    fetched = [_mock_planet("399")] if cache_hit else [_mock_planet("399"), approximate]
+    missing = [body.body_id for body in fetched]
+    with patch("app.routers.ephemeris.get_bulk_cached", new_callable=AsyncMock, return_value=(cached, missing)), \
+         patch("app.routers.ephemeris.fetch_all_spice", new_callable=AsyncMock, return_value=fetched), \
+         patch("app.routers.ephemeris.set_bulk_cached", new_callable=AsyncMock):
+        response = await client.get("/api/ephemeris?date=2051-01-01&ids=399,599")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["meta"]["source"] == "SPICE_AND_FALLBACK"
+    assert payload["meta"]["cacheHits"] == int(cache_hit)
+    jupiter = payload["data"][1]
+    marked = jupiter if approximate_anchor else jupiter["additionalTrajectories"][0]
+    assert marked["referenceCenter"] == "system_barycenter"
 
 
 @pytest.mark.asyncio

@@ -10,6 +10,8 @@ global.config = global.config || {};
 
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { clockRuntime } from '@/lib/time/clockRuntime';
+import { buildTrajectorySegments, type TrajectorySegment } from '@/lib/trajectoryEngine';
 import { HUD } from './HUD';
 
 vi.mock('zustand/react/shallow', () => ({
@@ -20,10 +22,10 @@ vi.mock('zustand/react/shallow', () => ({
 const { solarState } = vi.hoisted(() => {
   return {
     solarState: {
-      selectedPlanet: { bodyId: '399', englishName: 'Earth' } as { bodyId: string; englishName: string } | null,
+      selectedPlanet: { bodyId: '399', englishName: 'Earth' } as { bodyId: string; englishName: string; name?: string } | null,
       currentDate: '2026-03-26',
       currentTime: new Date('2026-03-26T00:00:00.000Z'),
-      masterTrajectorySegments: {},
+      masterTrajectorySegments: {} as Record<string, TrajectorySegment[]>,
       baseTrajectorySegments: {},
       viewMode: 'didactic' as const,
       isPlaying: false,
@@ -99,6 +101,7 @@ describe('HUD', () => {
     window.innerWidth = 1024;
     mockUIState.isFavoritesOpen = false;
     mockUIState.isAuthModalOpen = false;
+    solarState.masterTrajectorySegments = {};
     solarState.selectedPlanet = { bodyId: '399', englishName: 'Earth' };
   });
 
@@ -150,13 +153,28 @@ describe('HUD', () => {
     window.innerWidth = width;
     const { rerender } = render(<HUD isFallback />);
     expect(screen.getByRole('status')).toHaveTextContent(
-      'Algumas posições usam dados de referência e podem não representar a data selecionada.',
+      'Algumas posições são calculadas pelo baricentro do sistema ou usam dados de referência de outra data.',
     );
     expect(screen.getAllByText(/Dados degradados/).length).toBeGreaterThan(0);
     expect(screen.queryByText('Offline')).not.toBeInTheDocument();
     rerender(<HUD isFallback={false} />);
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.queryByText(/Dados degradados/)).not.toBeInTheDocument();
+  });
+
+  it('labels the active barycentric sample even when the initial ephemeris is nominal', () => {
+    const timestamp = '2050-01-02T00:00:00.000Z';
+    clockRuntime.setTimeMs(Date.parse(timestamp));
+    solarState.selectedPlanet = { bodyId: '599', name: 'Júpiter', englishName: 'Jupiter' };
+    const trajectory = [{ timestamp, position: { x: 750_000_000, y: 0, z: 0 } }];
+    solarState.masterTrajectorySegments = { '599': buildTrajectorySegments(trajectory, '599', 'system_barycenter') };
+
+    const { rerender } = render(<HUD />);
+    expect(screen.getByRole('status')).toHaveTextContent('A posição exibida usa o baricentro do sistema como aproximação.');
+
+    solarState.masterTrajectorySegments = { '599': buildTrajectorySegments(trajectory, '599') };
+    rerender(<HUD />);
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('reopens the minimized drawer when a different planet is selected', async () => {

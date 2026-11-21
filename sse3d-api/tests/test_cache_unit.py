@@ -162,14 +162,39 @@ def test_orbit_line_only_has_distinct_cache_key_without_orbit_ready():
     assert line_only.endswith(":orbit_line_only")
 
 
-def test_physical_center_planet_cache_is_versioned_without_changing_moon_keys():
+def test_dynamic_outer_planet_cache_is_versioned_without_changing_moon_or_full_orbit_keys():
     from app.services.cache_service import _cache_key
 
     assert _cache_key("599", "2024-01-01").startswith(
-        "ephemeris:599:physical_state_v2:"
+        "ephemeris:599:dynamic_state_v3:"
     )
-    assert "physical_state_v2" not in _cache_key("501", "2024-01-01")
-    assert "physical_state_v2" not in _cache_key("599", "2024-01-01", full_orbit=True)
+    assert "dynamic_state_v3" not in _cache_key("501", "2024-01-01")
+    assert "dynamic_state_v3" not in _cache_key("599", "2024-01-01", full_orbit=True)
+
+
+@pytest.mark.asyncio
+async def test_cached_outer_planet_retains_barycentric_reference_center():
+    from app.services.cache_service import get_bulk_cached, set_bulk_cached
+
+    item = EphemerisData.model_validate({
+        "bodyId": "599", "name": "Jupiter", "position": {"x": 1, "y": 2, "z": 3},
+        "timestamp": "2050-01-02", "referenceCenter": "system_barycenter",
+        "additionalTrajectories": [{"trajectory": [{
+            "position": {"x": 4, "y": 5, "z": 6}, "timestamp": "2050-01-01T00:00:00.000Z",
+        }]}],
+    })
+    pipeline = Mock(exec=AsyncMock())
+    redis = Mock(mget=AsyncMock())
+    redis.pipeline.return_value = pipeline
+    with patch("app.services.cache_service.get_redis", return_value=redis):
+        await set_bulk_cached("2050-01-02", [item])
+        key, cached_json = pipeline.set.call_args.args
+        redis.mget.return_value = [cached_json]
+        cached, missing = await get_bulk_cached(["599"], "2050-01-02")
+
+    redis.mget.assert_awaited_once_with(key)
+    assert cached == [item]
+    assert missing == []
 
 
 @pytest.mark.asyncio
@@ -191,7 +216,7 @@ async def test_set_bulk_cached_uses_one_pipeline_and_preserves_each_ttl():
     redis.set.assert_not_called()
     keys = [
         "ephemeris:399:2024-01-01:span_30:orbit_ready_orbit-ready-v1",
-        "ephemeris:599:physical_state_v2:2024-01-01:span_30:orbit_ready_orbit-ready-v1",
+        "ephemeris:599:dynamic_state_v3:2024-01-01:span_30:orbit_ready_orbit-ready-v1",
         "ephemeris:401:2024-01-01:span_30:orbit_ready_orbit-ready-v1",
     ]
     pipeline.set.assert_has_calls([

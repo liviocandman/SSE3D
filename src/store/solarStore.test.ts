@@ -55,6 +55,7 @@ describe('useSolarStore', () => {
       travelTargetRadius: undefined,
       masterTrajectory: {},
       masterTrajectorySegments: {},
+      baseTrajectorySegments: {},
       fullOrbits: {},
       orbitLines: {},
       fullOrbitStatus: {},
@@ -184,6 +185,29 @@ describe('useSolarStore', () => {
     state.appendTrajectoryData(bodyPayload('401', points.slice(2, 5)));
     expect(useSolarStore.getState().masterTrajectorySegments['401']).toHaveLength(1);
     expect(hasCoverageAtTime(useSolarStore.getState().masterTrajectorySegments['401'], start + 15 * 60_000)).toBe(true);
+  });
+
+  it('retains separate trajectories for the physical center and the system barycenter', () => {
+    const boundary = Date.parse('2050-01-01T00:00:00Z');
+    setTestState({ currentTime: new Date(boundary) });
+    const { appendTrajectoryData, setBaseTrajectoryData } = useSolarStore.getState();
+    const barycentric = bodyPayload('599', makeTrajectory('2050-01-01T00:00:00.002Z', 3));
+    barycentric[0].referenceCenter = 'system_barycenter';
+    barycentric[0].additionalTrajectories = [{
+      referenceCenter: null,
+      trajectory: makeTrajectory('2049-12-31T12:00:00Z', 3),
+    }];
+
+    appendTrajectoryData(barycentric);
+    setBaseTrajectoryData(barycentric);
+
+    const { masterTrajectorySegments, baseTrajectorySegments } = useSolarStore.getState();
+    const segments = masterTrajectorySegments['599'];
+    expect(segments.map(segment => segment.referenceCenter)).toEqual([undefined, 'system_barycenter']);
+    expect(hasCoverageAtTime(segments, boundary)).toBe(true);
+    expect(hasCoverageAtTime(segments, boundary + 1)).toBe(false);
+    expect(hasCoverageAtTime(segments, boundary + 2)).toBe(true);
+    expect(baseTrajectorySegments['599'].map(segment => segment.referenceCenter)).toEqual([undefined, 'system_barycenter']);
   });
 
   it('clearTrajectoryBuffer should clear both flattened and segmented pools', () => {

@@ -68,5 +68,7 @@ export function useSelectedPlanet() {
 
   const staleSampleAt = (!sample ? getHeldTimestamp(bodySegments, timeMs) : undefined)
     ?? (!parent ? getHeldTimestamp(parentSegments, timeMs) : undefined);
-  return { planet, earthPosition: earth?.position, staleSampleAt };
+  const isBarycentric = !!position && (sample?.referenceCenter === 'system_barycenter'
+    || parent?.referenceCenter === 'system_barycenter');
+  return { planet, earthPosition: earth?.position, staleSampleAt, isBarycentric };
 }
